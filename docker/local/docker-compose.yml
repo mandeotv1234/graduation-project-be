@@ -1,0 +1,24 @@
+services:
+  GRAD-db:
+    image: postgres
+    container_name: ${GRAD_DB_CONTAINER_NAME}
+    ports:
+      - ${GRAD_DB_PORT}:5432
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${GRAD_DB_NAME}
+      POSTGRES_USER: ${GRAD_DB_USER}
+      POSTGRES_PASSWORD: ${GRAD_DB_PASSWORD}
+    restart: on-failure
+    networks:
+      - GRAD-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10M"
+        max-file: "3"
+
+networks:
+  GRAD-network:
+    driver: bridge

@@ -1,0 +1,42 @@
+databaseChangeLog:
+  #   changeSet:
+  #  - id : ddmmyyhhmm
+  #  - user: authorname
+  - changeSet:
+      id: 0811252045
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: email
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: password
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 0811252046
+      author: manhuynh
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: 22120201@student.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy'

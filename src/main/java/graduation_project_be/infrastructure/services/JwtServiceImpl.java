@@ -14,15 +14,18 @@ import java.util.Map;
 
 public class JwtServiceImpl implements JwtService {
     private final Integer jwtTokenValidity;
+    private final Integer jwtRefreshTokenValidity;
     private final Key key;
     private final String EMAIL = "email";
     private final String STATUS = "status";
     private final String ROLE = "role";
     public JwtServiceImpl(
         Integer jwtTokenValidity,
+        Integer jwtRefreshTokenValidity,
         String secretKey
     ) {
         this.jwtTokenValidity = jwtTokenValidity;
+        this.jwtRefreshTokenValidity = jwtRefreshTokenValidity;
         this.key = Keys.hmacShaKeyFor(secretKey.getBytes());
     }
 
@@ -34,6 +37,18 @@ public class JwtServiceImpl implements JwtService {
             .setClaims(claims)
             .setIssuedAt(new Date(System.currentTimeMillis()))
             .setExpiration(new Date(System.currentTimeMillis() + jwtTokenValidity))
+            .signWith(key)
+            .compact();
+    }
+
+    @Override
+    public String generateRefreshToken(User user) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(EMAIL, user.getEmail());
+        return Jwts.builder()
+            .setClaims(claims)
+            .setIssuedAt(new Date(System.currentTimeMillis()))
+            .setExpiration(new Date(System.currentTimeMillis() + jwtRefreshTokenValidity))
             .signWith(key)
             .compact();
     }

@@ -6,6 +6,7 @@ import java.util.List;
 
 public interface JwtService {
     String generateToken(User user);
+    String generateRefreshToken(User user);
     boolean validateToken(String token);
     String extractEmail(String token);
     String extractRole(String token);

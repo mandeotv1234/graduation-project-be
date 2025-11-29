@@ -5,3 +5,13 @@ spring:
     active: local
   liquibase:
     change-log: classpath:db/changelog/grad-changelog-master.yaml
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+  info:
+    title: Graduation Project API
+    version: v1.0.0
+    description: "API documentation for Graduation Project Backend"

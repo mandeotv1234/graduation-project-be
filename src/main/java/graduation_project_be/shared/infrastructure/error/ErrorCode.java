@@ -1,0 +1,20 @@
+package graduation_project_be.shared.infrastructure.error;
+
+
+public enum ErrorCode {
+    VALIDATION_FAILED,
+    INTERNAL_SERVER_ERROR,
+    JWT_TOKEN_INVALID,
+    STATUS_NOT_FOUND,
+    ROLE_NOT_FOUND,
+    DUPLICATE_BOOKMARK,
+    INVALID_FORMAT,
+    INVALID_BUSINESS_RULE,
+    NOT_FOUND,
+    BAD_REQUEST,
+    UNAUTHORIZED,
+    CONFLICT,
+    OPERATION_FAILED,
+    INTERNAL_ERROR,
+    DATABASE_ERROR,
+}

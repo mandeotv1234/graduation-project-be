@@ -1,35 +1,30 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
-import java.util.Date;
 import java.util.List;
 
-public record PaginationResponseDto<T>(List<T> data, PaginationMetaDto pagination, Meta meta) {
+public record PaginationResponseDto<T>(List<T> data, MetaResponseDto meta, String code, String message) {
 
     public static <T> PaginationResponseDto<T> valueOf(List<T> data, PaginationMetaDto pagination) {
-        return new PaginationResponseDto<>(data, pagination, new Meta());
+        return new PaginationResponseDto<>(data, MetaResponseDto.of(pagination), "200", "OK");
+    }
+
+    public static <T> PaginationResponseDto<T> of(List<T> data, PaginationMetaDto pagination, String code, String message) {
+        return new PaginationResponseDto<>(data, MetaResponseDto.of(pagination), code, message);
     }
 
     public List<T> getData() {
         return data;
     }
 
-    public PaginationMetaDto getPagination() {
-        return pagination;
-    }
-
-    public Meta getMeta() {
+    public MetaResponseDto getMeta() {
         return meta;
     }
 
-    public static class Meta {
-        private final Date timestamp;
+    public String getCode() {
+        return code;
+    }
 
-        Meta() {
-            this.timestamp = new Date();
-        }
-
-        public Date getTimestamp() {
-            return timestamp;
-        }
+    public String getMessage() {
+        return message;
     }
 }

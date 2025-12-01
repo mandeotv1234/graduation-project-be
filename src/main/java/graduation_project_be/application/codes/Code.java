@@ -1,13 +1,12 @@
-package graduation_project_be.infrastructure.errors;
+package graduation_project_be.application.codes;
 
 
-public enum ErrorCode {
+public enum Code {
     VALIDATION_FAILED,
     INTERNAL_SERVER_ERROR,
     JWT_TOKEN_INVALID,
     STATUS_NOT_FOUND,
     ROLE_NOT_FOUND,
-    DUPLICATE_BOOKMARK,
     INVALID_FORMAT,
     INVALID_BUSINESS_RULE,
     NOT_FOUND,
@@ -17,4 +16,5 @@ public enum ErrorCode {
     OPERATION_FAILED,
     INTERNAL_ERROR,
     DATABASE_ERROR,
+    OK
 }

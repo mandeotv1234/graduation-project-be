@@ -30,8 +30,10 @@ public class LoginUsecase {
             throw new UnauthorizedException("Invalid email or password");
         }
 
-        String token = jwtService.generateToken(userOptional.get());
+        User user = userOptional.get();
+        String accessToken = jwtService.generateToken(user);
+        String refreshToken = jwtService.generateRefreshToken(user);
 
-        return new LoginResponse(token);
+        return LoginResponse.fromTokens(accessToken, refreshToken);
     }
 }

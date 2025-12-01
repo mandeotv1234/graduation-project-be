@@ -32,12 +32,14 @@ public class SecurityConfiguration {
 
     @Value("${spring.application.security.jwt.expiration}")
     private Integer jwtTokenValidity;
+    @Value("${spring.application.security.jwt.refresh-expiration}")
+    private Integer refreshTokenValidity;
     @Value("${spring.application.security.jwt.secret-key}")
     private String secretKey;
 
     @Bean
     JwtService jwtService(){
-        return new JwtServiceImpl(jwtTokenValidity, secretKey);
+        return new JwtServiceImpl(jwtTokenValidity, refreshTokenValidity, secretKey);
     }
 
     @Bean

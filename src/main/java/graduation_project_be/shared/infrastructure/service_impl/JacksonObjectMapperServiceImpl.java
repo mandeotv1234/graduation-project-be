@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-public class JacksonObjectMapperService<T> implements ObjectMapperService<T> {
+public class JacksonObjectMapperServiceImpl<T> implements ObjectMapperService<T> {
 
     private final ObjectMapper objectMapper;
 

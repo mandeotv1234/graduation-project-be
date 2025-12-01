@@ -120,7 +120,7 @@ src/main/java/graduation_project_be/
 │           │   └── UserController.java       # User management
 │           ├── dtos/                    # Data Transfer Objects
 │           │   ├── request/             # Request DTOs
-│           │   └── response/            # Response DTOs
+│           │   └── response/            # Response DTOs (see note below)
 │           └── exceptions/              # Web layer exceptions
 │
 ├── 💼 application/                      # APPLICATION LAYER
@@ -162,7 +162,7 @@ src/main/java/graduation_project_be/
     ├── errors/                          # Global error handling
     │   ├── GlobalExceptionHandler.java      # Centralized exception handler
     │   ├── ErrorResponse.java
-    │   ├── ErrorCode.java
+    │   ├── code.java
     │   └── FieldErrorDetail.java
     ├── persistence/                     # Database implementations
     │   ├── entities/
@@ -179,6 +179,23 @@ src/main/java/graduation_project_be/
         ├── CurrentUserServiceImpl.java
         └── JacksonObjectMapperService.java
 ```
+
+> Note on response DTOs
+>
+> The project uses a shared response wrapper to keep API responses consistent. The current shape is:
+>
+> {
+>   "data": { ... },         // the payload
+>   "meta": {                // metadata object
+>     "timestamp": "...",  // ISO timestamp
+>     "pagination": { ... }  // optional, present for paginated responses
+>   },
+>   "code": "OK",          // top-level string code (e.g. "OK", "ERROR")
+>   "message": "..."       // top-level human-readable message (English)
+> }
+>
+> - Use `ResponseDto` for normal responses. It contains `data`, `meta`, `code` and `message`.
+> - Use `PaginationResponseDto` for paginated results: `data` is a list, `meta.pagination` contains pagination info, `code` and `message` remain top-level strings.
 
 ---
 
@@ -224,7 +241,13 @@ src/main/java/graduation_project_be/
 ┌─────────────────────────────────────────────────────────────┐
 │  6. Application Ready to Accept Requests                    │
 │     🚀 Server running on port 8080                          │
-└─────────────────────────────────────────────────────────────┘
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  7. Application Ready to Accept Requests                    │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+                    [Client]
 ```
 
 ---
@@ -308,7 +331,7 @@ src/main/java/graduation_project_be/
 └────────────────────────┬────────────────────────────────────┘
                          ↓
                     [Client]
-         Receives: { accessToken: "jwt..." }
+- Receives top-level fields: `data`, `meta` (containing timestamp and optional pagination), `code` (String), `message` (String)
 ```
 
 ---
@@ -350,38 +373,6 @@ src/main/java/graduation_project_be/
 └────────────────────────┬────────────────────────────────────┘
                          ↓
                     [Client]
-```
-
----
-
-### 4️⃣ Error Handling Flow
-
-```
-  [Any Layer throws Exception]
-           ↓
-┌─────────────────────────────────────────────────────────────┐
-│  GlobalExceptionHandler                                     │
-│  📍 infrastructure/errors/GlobalExceptionHandler.java       │
-│                                                             │
-│  Catches:                                                   │
-│  - UnauthorizedException → 401                             │
-│  - BadRequestException → 400                               │
-│  - ResourceNotFoundException → 404                         │
-│  - ConflictException → 409                                 │
-│  - MethodArgumentNotValidException → 400 (validation)      │
-│  - DataIntegrityViolationException → 500                   │
-│  - Exception (generic) → 500                               │
-│                                                             │
-│  Returns ErrorResponse:                                     │
-│  {                                                          │
-│    "errorCode": "ERROR_CODE",                              │
-│    "message": "Error message",                             │
-│    "details": [...]                                        │
-│  }                                                          │
-└────────────────────────┬────────────────────────────────────┘
-                         ↓
-                    [Client]
-            Receives error response
 ```
 
 ---
@@ -607,7 +598,13 @@ curl -X POST http://localhost:8080/api/auth/login \
 {
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
+  },
+  "meta": {
+    "timestamp": "2025-11-08T...",
+    "pagination": null
+  },
+  "code": "OK",
+  "message": "login successful"
 }
 ```
 
@@ -728,6 +725,11 @@ public ResponseEntity<ResponseDto> register(@RequestBody RegisterRequestDto dto)
 ```java
 // SecurityConfiguration: permit /api/auth/register
 .requestMatchers("/api/auth/**").permitAll()
+```
+
+**Step 6: Update README or docs**
+```text
+Add new endpoint and example request/response
 ```
 
 ---

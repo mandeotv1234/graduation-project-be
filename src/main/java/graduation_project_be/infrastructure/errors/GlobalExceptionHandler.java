@@ -4,6 +4,7 @@ package graduation_project_be.infrastructure.errors;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 
 import graduation_project_be.adapter.web.api.exceptions.FileParsingException;
+import graduation_project_be.application.codes.Code;
 import graduation_project_be.application.exceptions.*;
 import graduation_project_be.domain.exceptions.InvalidBusinessRuleException;
 import graduation_project_be.domain.models.enums.Role;
@@ -25,7 +26,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 
-import static graduation_project_be.infrastructure.errors.ErrorCode.*;
+import static graduation_project_be.application.codes.Code.*;
 
 
 @RestControllerAdvice
@@ -37,7 +38,7 @@ public class GlobalExceptionHandler {
         logger.error("Database error", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(ErrorCode.DATABASE_ERROR)
+                .code(Code.DATABASE_ERROR)
                 .message("A database error occurred. Please try again later.")
                 .build();
 
@@ -49,7 +50,7 @@ public class GlobalExceptionHandler {
         logger.error("File parsing error", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(VALIDATION_FAILED)
+                .code(VALIDATION_FAILED)
                 .message("Invalid file format")
                 .build();
 
@@ -65,7 +66,7 @@ public class GlobalExceptionHandler {
             fieldError -> list.add(new FieldErrorDetail(fieldError.getField(), fieldError.getDefaultMessage()))
         );
         ErrorResponse error = ErrorResponse.builder()
-            .errorCode(VALIDATION_FAILED)
+            .code(VALIDATION_FAILED)
             .message("Invalid input(s)")
             .details(list)
             .build();
@@ -77,7 +78,7 @@ public class GlobalExceptionHandler {
         logger.error("Unhandled exception occurred", e);
 
         ErrorResponse error = ErrorResponse.builder()
-            .errorCode(INTERNAL_SERVER_ERROR)
+            .code(INTERNAL_SERVER_ERROR)
             .message(e.getMessage())
             .build();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
@@ -89,7 +90,7 @@ public class GlobalExceptionHandler {
         logger.error("JWT token is invalid", e);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(JWT_TOKEN_INVALID)
+                .code(JWT_TOKEN_INVALID)
                 .message(e.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
@@ -102,13 +103,13 @@ public class GlobalExceptionHandler {
             Class<?> targetType = invalidFormatException.getTargetType();
             if (targetType.equals(Status.class)) {
                 ErrorResponse error = ErrorResponse.builder()
-                    .errorCode(STATUS_NOT_FOUND)
+                    .code(STATUS_NOT_FOUND)
                     .message("Invalid status. Valid values are: [UNVERIFIED, ACTIVE, INACTIVE]")
                     .build();
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
             } else if (targetType.equals(Role.class)) {
                 ErrorResponse error = ErrorResponse.builder()
-                    .errorCode(ROLE_NOT_FOUND)
+                    .code(ROLE_NOT_FOUND)
                     .message("Invalid role. Valid values are: [ADMIN, USER]")
                     .build();
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -118,7 +119,7 @@ public class GlobalExceptionHandler {
         logger.error("HTTP message not readable exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-            .errorCode(VALIDATION_FAILED)
+            .code(VALIDATION_FAILED)
             .message("Invalid value in request")
             .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -129,7 +130,7 @@ public class GlobalExceptionHandler {
         logger.error("Method argument type mismatch exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(VALIDATION_FAILED)
+                .code(VALIDATION_FAILED)
                 .message("Invalid input(s)")
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -142,7 +143,7 @@ public class GlobalExceptionHandler {
         logger.error("Invalid format exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(INVALID_FORMAT)
+                .code(INVALID_FORMAT)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -153,7 +154,7 @@ public class GlobalExceptionHandler {
         logger.error("Invalid business rule exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(INVALID_BUSINESS_RULE)
+                .code(INVALID_BUSINESS_RULE)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -164,7 +165,7 @@ public class GlobalExceptionHandler {
         logger.error("Bad request exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(BAD_REQUEST)
+                .code(BAD_REQUEST)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -175,7 +176,7 @@ public class GlobalExceptionHandler {
         logger.error("Conflict exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(CONFLICT)
+                .code(CONFLICT)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
@@ -186,7 +187,7 @@ public class GlobalExceptionHandler {
         logger.error("Resource not found exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(NOT_FOUND)
+                .code(NOT_FOUND)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
@@ -197,7 +198,7 @@ public class GlobalExceptionHandler {
         logger.error("Operation Failed Exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(OPERATION_FAILED)
+                .code(OPERATION_FAILED)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
@@ -208,7 +209,7 @@ public class GlobalExceptionHandler {
         logger.error("Unauthorized exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(UNAUTHORIZED)
+                .code(UNAUTHORIZED)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
@@ -219,7 +220,7 @@ public class GlobalExceptionHandler {
         logger.error("Application exception", ex);
 
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(INTERNAL_ERROR)
+                .code(INTERNAL_ERROR)
                 .message(ex.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
@@ -228,7 +229,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException e){
         ErrorResponse error = ErrorResponse.builder()
-                .errorCode(UNAUTHORIZED)
+                .code(UNAUTHORIZED)
                 .message(e.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);

@@ -6,6 +6,7 @@ import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.PasswordEncoder;
 import graduation_project_be.application.usecases.request.LoginRequest;
 import graduation_project_be.application.usecases.response.LoginResponse;
+import graduation_project_be.domain.models.Token;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 
@@ -33,8 +34,8 @@ public class LoginUsecase {
         User user = userOptional.get();
         String accessToken = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
-
-        return LoginResponse.fromTokens(accessToken, refreshToken);
+        Token token = new Token(accessToken, refreshToken);
+        return LoginResponse.fromModel(token);
     }
 
 

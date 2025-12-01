@@ -91,7 +91,7 @@
                     "summary": "Invalid email format",
                     "value": {
                       "message": "Invalid input(s)",
-                      "errorCode": "VALIDATION_FAILED",
+                      "code": "VALIDATION_FAILED",
                       "details": [
                         {
                           "field": "email",
@@ -104,7 +104,7 @@
                     "summary": "Invalid password format",
                     "value": {
                       "message": "Invalid input(s)",
-                      "errorCode": "VALIDATION_FAILED",
+                      "code": "VALIDATION_FAILED",
                       "details": [
                         {
                           "field": "password",
@@ -129,7 +129,7 @@
                     "summary": "Invalid email or password",
                     "value": {
                       "message": "Invalid email or password",
-                      "errorCode": "UNAUTHORIZED"
+                      "code": "UNAUTHORIZED"
                     }
                   }
                 }
@@ -148,7 +148,7 @@
                     "summary": "Internal server error",
                     "value": {
                       "message": "An unexpected error occurred",
-                      "errorCode": "INTERNAL_SERVER_ERROR"
+                      "code": "INTERNAL_SERVER_ERROR"
                     }
                   }
                 }
@@ -223,14 +223,14 @@
       },
       "ErrorResponse": {
         "type": "object",
-        "required": ["message", "errorCode"],
+        "required": ["message", "code"],
         "properties": {
           "message": {
             "type": "string",
             "description": "Human-readable error message",
             "example": "Invalid email or password"
           },
-          "errorCode": {
+          "code": {
             "type": "string",
             "enum": [
               "VALIDATION_FAILED",

@@ -1,6 +1,5 @@
 package graduation_project_be.adapter.web.api.controller;
 
-
 import graduation_project_be.adapter.web.api.dtos.request.LoginRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.LoginResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
@@ -12,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 
 @RestController
 @RequestMapping("/api/auth")
@@ -29,6 +27,6 @@ public class AuthController {
 
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(new ResponseDto(loginResponseDto));
+                .body(ResponseDto.of(loginResponseDto, "Login successful"));
     }
 }

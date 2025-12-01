@@ -6,8 +6,9 @@ import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import graduation_project_be.shared.application.exception.*;
 import graduation_project_be.shared.domain.exception.InvalidBusinessRuleException;
 import graduation_project_be.shared.domain.models.enums.Status;
-import graduation_project_be.user.domain.enums.Role;
 import graduation_project_be.shared.infrastructure.error.exceptions.JwtInvalidException;
+import graduation_project_be.user.domain.models.enums.Role;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;

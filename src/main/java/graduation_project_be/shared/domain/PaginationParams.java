@@ -1,7 +1,7 @@
 package graduation_project_be.shared.domain;
 
-import graduation_project_be.shared.domain.enums.SortDirection;
-import graduation_project_be.shared.domain.enums.SortField;
+import graduation_project_be.shared.domain.models.enums.SortDirection;
+import graduation_project_be.shared.domain.models.enums.SortField;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

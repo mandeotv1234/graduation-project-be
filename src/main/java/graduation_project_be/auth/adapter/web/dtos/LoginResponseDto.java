@@ -1,6 +1,6 @@
 package graduation_project_be.auth.adapter.web.dtos;
 
-import graduation_project_be.auth.application.usecase.LoginUsecase.LoginResponse;
+import graduation_project_be.auth.application.usecase.dtos.response.LoginResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Response object containing the JWT access token")

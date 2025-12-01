@@ -1,7 +1,7 @@
 package graduation_project_be.user.infrastructure.services;
 
 import graduation_project_be.user.application.port.CurrentUserService;
-import graduation_project_be.user.domain.User;
+import graduation_project_be.user.domain.models.User;
 import graduation_project_be.shared.infrastructure.error.exceptions.UserNotFoundException;
 import graduation_project_be.user.infrastructure.persistence.jpa.UserJpaRepository;
 import lombok.AllArgsConstructor;

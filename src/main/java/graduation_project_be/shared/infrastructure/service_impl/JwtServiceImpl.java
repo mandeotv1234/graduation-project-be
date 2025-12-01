@@ -1,8 +1,8 @@
 package graduation_project_be.shared.infrastructure.service_impl;
 
 import graduation_project_be.auth.application.port.JwtService;
-import graduation_project_be.user.domain.User;
 import graduation_project_be.shared.infrastructure.error.exceptions.JwtInvalidException;
+import graduation_project_be.user.domain.models.User;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 

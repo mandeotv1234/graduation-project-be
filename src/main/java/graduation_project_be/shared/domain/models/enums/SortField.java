@@ -1,4 +1,4 @@
-package graduation_project_be.shared.domain.enums;
+package graduation_project_be.shared.domain.models.enums;
 
 public enum SortField {
     TIME;

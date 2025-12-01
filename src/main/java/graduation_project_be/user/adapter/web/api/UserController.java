@@ -1,4 +1,4 @@
-package graduation_project_be.user.adapter.web;
+package graduation_project_be.user.adapter.web.api;
 
 
 import jakarta.validation.Valid;

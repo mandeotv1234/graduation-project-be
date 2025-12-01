@@ -1,11 +1,12 @@
 package graduation_project_be.auth.application.usecase;
 
-import graduation_project_be.shared.application.exception.UnauthorizedException;
-import graduation_project_be.user.application.port.UserRepository;
 import graduation_project_be.auth.application.port.JwtService;
 import graduation_project_be.auth.application.port.PasswordEncoder;
-import graduation_project_be.user.domain.User;
-import lombok.Builder;
+import graduation_project_be.auth.application.usecase.dtos.request.LoginRequest;
+import graduation_project_be.auth.application.usecase.dtos.response.LoginResponse;
+import graduation_project_be.shared.application.exception.UnauthorizedException;
+import graduation_project_be.user.application.port.UserRepository;
+import graduation_project_be.user.domain.models.User;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Optional;
@@ -33,8 +34,4 @@ public class LoginUsecase {
 
         return new LoginResponse(token);
     }
-
-    public record LoginRequest(String email, String password) {}
-
-    public record LoginResponse(String accessToken) {}
 }

@@ -1,6 +1,6 @@
 package graduation_project_be.user.infrastructure.persistence;
 
-import graduation_project_be.user.domain.User;
+import graduation_project_be.user.domain.models.User;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

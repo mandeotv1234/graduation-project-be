@@ -1,8 +1,7 @@
 package graduation_project_be.user.infrastructure.persistence;
 
 import graduation_project_be.user.application.port.UserRepository;
-import graduation_project_be.user.domain.User;
-
+import graduation_project_be.user.domain.models.User;
 import graduation_project_be.user.infrastructure.persistence.UserEntity;
 import graduation_project_be.user.infrastructure.persistence.jpa.UserJpaRepository;
 import lombok.RequiredArgsConstructor;

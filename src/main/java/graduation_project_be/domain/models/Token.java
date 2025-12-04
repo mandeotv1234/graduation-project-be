@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -13,6 +15,7 @@ import lombok.NoArgsConstructor;
 public class Token {
     String accessToken;
     String refreshToken;
+    LocalDateTime expiresAt;
 
     public static Token.TokenBuilder builder() {
         return internalBuilder();

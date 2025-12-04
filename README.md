@@ -33,6 +33,7 @@ This is the backend of the **Graduation Project**, built with **Spring Boot 3.5.
 | JWT (jjwt) | 0.11.5 | Token-based Authentication |
 | Lombok | Latest | Reduce Boilerplate Code |
 | Gradle | Latest | Build Tool |
+| Redis | Latest | Caching & Token Storage |
 
 ---
 
@@ -467,6 +468,10 @@ src/main/java/graduation_project_be/
 **e) Error Handling:**
 - `GlobalExceptionHandler`: Centralized exception handling
 
+**f) Redis:**
+- `RedisConfiguration`: Configuration for Redis connection
+- `RedisRefreshTokenRepository`: Implementation for refresh token storage
+
 **Rules:**
 - ✅ Implement interfaces from Application layer
 - ✅ Use framework specifics (JPA, Spring, etc.)
@@ -475,36 +480,68 @@ src/main/java/graduation_project_be/
 
 ---
 
-## 🔐 Security Flow
+## 🔐 Authentication - Access + Refresh (HttpOnly cookie) with Redis Rotation
 
-### JWT Token Structure
+This project now implements a secure Access + Refresh Token strategy (similar to Auth0/Okta/Google Identity):
 
-```json
+- Access token: short-lived JWT returned in the JSON response body.
+- Refresh token: long-lived JWT stored in an HttpOnly, SameSite cookie. Refresh tokens are stored hashed in Redis using the key pattern `rt:{userId}:{tokenId}`.
+- Rotation: refresh tokens are rotated on `/auth/refresh`. On reuse detection the backend revokes all tokens for that user.
+
+### Endpoints
+
+1) POST /api/auth/login
+- Request body: { "email": string, "password": string }
+- Response body (JSON):
+  {
+    "data": { "accessToken": "...", "expiresAt": "2025-12-04T12:34:56" },
+    "meta": { "timestamp": "..." },
+    "code": "OK",
+    "message": "Login successful"
+  }
+- Server sets an HttpOnly cookie `refresh_token` (SameSite=Strict). The refresh token is NOT included in the JSON response.
+
+2) POST /api/auth/refresh
+- No body required. Client must send the `refresh_token` cookie.
+- Response body (JSON): same shape as login (new access token + `expiresAt` ISO datetime).
+- Server rotates the refresh token, updates Redis, and sets a new HttpOnly cookie.
+
+===
+
+Single-device session policy
+
+- This application enforces a single active session per user by device: when a successful login occurs, any existing refresh tokens for that user (i.e., any other device/session) are revoked. In short: one device allowed to be logged in at a time; a new login will sign out previous session(s).
+
+3) POST /api/auth/logout
+- No body required. Client must send the `refresh_token` cookie.
+- Server deletes the refresh token from Redis and clears the cookie.
+
+
+### Redis requirements
+- Redis is used to persist hashed refresh tokens with TTL (recommended: SHA-256 + pepper or BCrypt hashing). The project includes a `RedisConfiguration` and a `RedisRefreshTokenRepository` implementation.
+- Key pattern used: `rt:{userId}:{tokenId}` → hashedValue
+
+### Response wrapper (adapter layer)
+The API uses a single response wrapper placed in the adapter layer (package `adapter.web.api.dtos.response`). Shape:
+
 {
-  "sub": "user@example.com",      // Email
-  "role": "STUDENT",               // User role
-  "iat": 1699464000,               // Issued at
-  "exp": 1699550400                // Expiration
+  "data": { ... },
+  "meta": {
+    "timestamp": "...",
+    "pagination": { ... } // present only for paginated responses
+  },
+  "code": "OK",   // string code - top level
+  "message": "Human readable message"
 }
-```
 
-### Security Configuration
+Notes:
+- `ResponseDto` (used by non-paginated responses) and `PaginationResponseDto` (used only for paginated controller responses) live in the adapter layer.
+- `code` and `message` are top-level strings (not numeric) as requested.
+- Refresh tokens are deliberately not returned inside `data` — they are set as HttpOnly cookies.
 
-```
-Public Endpoints:
-  ✅ POST /api/auth/login
-
-Protected Endpoints:
-  🔒 /api/users/** (requires valid JWT)
-  🔒 Other endpoints (requires valid JWT)
-
-JWT Validation:
-  1. Extract token from Authorization header
-  2. Verify signature with secret key
-  3. Check expiration
-  4. Extract user info (email, role)
-  5. Set Spring Security Context
-```
+### Security notes
+- In production set `.secure(true)` on cookies and configure cookie domain/path appropriately.
+- Use environment variables to control cookie attributes and Redis connection.
 
 ---
 
@@ -604,7 +641,7 @@ curl -X POST http://localhost:8080/api/auth/login \
     "pagination": null
   },
   "code": "OK",
-  "message": "login successful"
+  "message": "Login successful"
 }
 ```
 

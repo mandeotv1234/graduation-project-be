@@ -32,7 +32,7 @@ public class SecurityConfiguration {
 
     @Value("${spring.application.security.jwt.expiration}")
     private Integer jwtTokenValidity;
-    @Value("${spring.application.security.jwt.refresh-expiration}")
+    @Value("${spring.application.security.refresh-token.expiration}")
     private Integer jwtRefreshTokenValidity;
     @Value("${spring.application.security.jwt.secret-key}")
     private String secretKey;

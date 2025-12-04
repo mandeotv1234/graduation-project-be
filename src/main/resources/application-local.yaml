@@ -1,9 +1,15 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/GRAD
-    username: dbadmin
-    password: dbadmin
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/GRAD}
+    username: ${SPRING_DATASOURCE_USERNAME:dbadmin}
+    password: ${SPRING_DATASOURCE_PASSWORD:dbadmin}
     driver-class-name: org.postgresql.Driver
+  redis:
+    host: ${SPRING_REDIS_HOST:localhost}
+    port: ${SPRING_REDIS_PORT:6379}
+    username: ${SPRING_REDIS_USERNAME:dbadmin}
+    password: ${SPRING_REDIS_PASSWORD:dbadmin}
+    database: ${SPRING_REDIS_DATABASE:0}
   jpa:
     hibernate:
       ddl-auto: none
@@ -13,7 +19,9 @@ spring:
   application:
     security:
       jwt:
-        secret-key: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5969
-        expiration: 18000000 # 5 hours in milliseconds
-        refresh-expiration: 604800000 # 7 days in milliseconds
-    url: http://localhost:5173
+        secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY:}
+        expiration: ${SPRING_APPLICATION_SECURITY_JWT_EXPIRATION:3600000}
+      refresh-token:
+        pepper: ${SECURITY_REFRESH_TOKEN_PEPPER:}
+        expiration: ${SPRING_APPLICATION_SECURITY_JWT_REFRESH_EXPIRATION:604800000}
+    url: ${SPRING_APPLICATION_URL:http://localhost:3000}

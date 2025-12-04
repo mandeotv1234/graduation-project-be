@@ -12,4 +12,8 @@ public interface JwtService {
     String extractRole(String token);
     String extractStatus(String token);
     List<String> extractPermissions(String token);
+    String extractUserId(String token);
+    String extractTokenId(String token);
+    int getJwtTokenValiditySeconds();
+    int getJwtRefreshTokenValiditySeconds();
 }

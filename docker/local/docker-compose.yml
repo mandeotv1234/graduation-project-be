@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   GRAD-db:
     image: postgres
@@ -19,6 +21,29 @@ services:
         max-size: "10M"
         max-file: "3"
 
+  redis:
+    image: redis:7-alpine
+    container_name: ${REDIS_CONTAINER_NAME:-grad-redis}
+    ports:
+      - ${REDIS_PORT:-6379}:6379
+    env_file:
+      - .env
+    volumes:
+      - redis-data:/data
+    command: ["sh","-c","mkdir -p /usr/local/etc/redis && printf 'user %s on >%s ~* +@all\n' \"$REDIS_USER\" \"$REDIS_PASSWORD\" > /usr/local/etc/redis/redis.conf && echo 'dir /data' >> /usr/local/etc/redis/redis.conf && echo 'appendonly yes' >> /usr/local/etc/redis/redis.conf && redis-server /usr/local/etc/redis/redis.conf"]
+    restart: on-failure
+    networks:
+      - GRAD-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10M"
+        max-file: "3"
+
 networks:
   GRAD-network:
     driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

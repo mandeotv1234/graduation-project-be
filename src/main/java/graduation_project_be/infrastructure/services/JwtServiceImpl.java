@@ -7,10 +7,12 @@ import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 
 import java.security.Key;
-import java.util.Date;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.Date;
 
 public class JwtServiceImpl implements JwtService {
     private final Integer jwtTokenValidity;
@@ -19,6 +21,8 @@ public class JwtServiceImpl implements JwtService {
     private final String EMAIL = "email";
     private final String STATUS = "status";
     private final String ROLE = "role";
+    private final String UID = "uid";
+    private final String TID = "tid";
     public JwtServiceImpl(
         Integer jwtTokenValidity,
         Integer jwtRefreshTokenValidity,
@@ -33,10 +37,12 @@ public class JwtServiceImpl implements JwtService {
     public String generateToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(EMAIL, user.getEmail());
+        claims.put(UID, user.getId());
+        Instant now = Instant.now();
         return Jwts.builder()
             .setClaims(claims)
-            .setIssuedAt(new Date(System.currentTimeMillis()))
-            .setExpiration(new Date(System.currentTimeMillis() + jwtTokenValidity))
+            .setIssuedAt(Date.from(now))
+            .setExpiration(Date.from(now.plusMillis(jwtTokenValidity)))
             .signWith(key)
             .compact();
     }
@@ -45,10 +51,14 @@ public class JwtServiceImpl implements JwtService {
     public String generateRefreshToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(EMAIL, user.getEmail());
+        claims.put(UID, user.getId());
+        String tokenId = UUID.randomUUID().toString();
+        claims.put(TID, tokenId);
+        Instant now = Instant.now();
         return Jwts.builder()
             .setClaims(claims)
-            .setIssuedAt(new Date(System.currentTimeMillis()))
-            .setExpiration(new Date(System.currentTimeMillis() + jwtRefreshTokenValidity))
+            .setIssuedAt(Date.from(now))
+            .setExpiration(Date.from(now.plusMillis(jwtRefreshTokenValidity)))
             .signWith(key)
             .compact();
     }
@@ -99,6 +109,38 @@ public class JwtServiceImpl implements JwtService {
         } catch (JwtException e){
             throw new JwtInvalidException("Extract permissions from token failed: ", e.getMessage());
         }
+    }
+
+    @Override
+    public String extractUserId(String token) {
+        try {
+            Claims claims = extractAllClaims(token);
+            Object uid = claims.get(UID);
+            return uid == null ? null : String.valueOf(uid);
+        } catch (JwtException e) {
+            throw new JwtInvalidException("Extract user id from token failed: ", e.getMessage());
+        }
+    }
+
+    @Override
+    public String extractTokenId(String token) {
+        try {
+            Claims claims = extractAllClaims(token);
+            Object tid = claims.get(TID);
+            return tid == null ? null : String.valueOf(tid);
+        } catch (JwtException e) {
+            throw new JwtInvalidException("Extract token id from token failed: ", e.getMessage());
+        }
+    }
+
+    @Override
+    public int getJwtTokenValiditySeconds() {
+        return Math.toIntExact(jwtTokenValidity / 1000L);
+    }
+
+    @Override
+    public int getJwtRefreshTokenValiditySeconds() {
+        return Math.toIntExact(jwtRefreshTokenValidity / 1000L);
     }
 
     private Claims extractAllClaims(String token) {

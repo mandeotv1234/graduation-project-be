@@ -68,13 +68,25 @@
                     "summary": "Successful login response",
                     "value": {
                       "data": {
-                        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.xxx"
+                        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.xxx",
+                        "expiresAt": "2025-11-09T11:30:00.000"
                       },
                       "meta": {
-                        "timestamp": "2025-11-09T10:30:00.000Z"
-                      }
+                        "timestamp": "2025-11-09T10:30:00.000"
+                      },
+                      "code": "OK",
+                      "message": "Login successful"
                     }
                   }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "HttpOnly cookie containing refresh token",
+                "schema": {
+                  "type": "string",
+                  "example": "refresh_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; Path=/api/auth/refresh; HttpOnly; Secure; SameSite=None"
                 }
               }
             }
@@ -157,6 +169,171 @@
           }
         }
       }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Refresh access token",
+        "description": "Generate a new access token using the refresh token stored in HttpOnly cookie",
+        "operationId": "refresh",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "description": "Refresh token stored in HttpOnly cookie",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Token refreshed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshSuccessResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Successful token refresh",
+                    "value": {
+                      "data": {
+                        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.xxx",
+                        "expiresAt": "2025-11-09T11:30:00.000"
+                      },
+                      "meta": {
+                        "timestamp": "2025-11-09T10:30:00.000"
+                      },
+                      "code": "OK",
+                      "message": "Token refreshed"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "HttpOnly cookie containing new refresh token",
+                "schema": {
+                  "type": "string",
+                  "example": "refresh_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; Path=/api/auth/refresh; HttpOnly; Secure; SameSite=None"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or expired refresh token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalidToken": {
+                    "summary": "Invalid refresh token",
+                    "value": {
+                      "message": "Invalid or expired refresh token",
+                      "code": "UNAUTHORIZED"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "serverError": {
+                    "summary": "Internal server error",
+                    "value": {
+                      "message": "An unexpected error occurred",
+                      "code": "INTERNAL_SERVER_ERROR"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "User logout",
+        "description": "Logout user and invalidate refresh token",
+        "operationId": "logout",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "description": "Refresh token stored in HttpOnly cookie",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logout successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "Successful logout",
+                    "value": {
+                      "meta": {
+                        "timestamp": "2025-11-09T10:30:00.000"
+                      },
+                      "code": "OK",
+                      "message": "Logout successful"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "HttpOnly cookie with expired refresh token to clear it",
+                "schema": {
+                  "type": "string",
+                  "example": "refresh_token=; Path=/api/auth/refresh; HttpOnly; Secure; SameSite=None; Max-Age=0"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "serverError": {
+                    "summary": "Internal server error",
+                    "value": {
+                      "message": "An unexpected error occurred",
+                      "code": "INTERNAL_SERVER_ERROR"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -185,28 +362,105 @@
       },
       "LoginResponseDto": {
         "type": "object",
-        "required": ["accessToken"],
+        "required": ["accessToken", "expiresAt"],
         "properties": {
           "accessToken": {
             "type": "string",
             "description": "JWT access token for authenticated requests",
             "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.signature"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Access token expiration timestamp",
+            "example": "2025-11-09T11:30:00.000"
           }
         },
-        "description": "Login response containing JWT access token"
+        "description": "Login response containing JWT access token and expiration time"
       },
       "LoginSuccessResponse": {
         "type": "object",
-        "required": ["data", "meta"],
+        "required": ["data", "meta", "code", "message"],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/LoginResponseDto"
           },
           "meta": {
             "$ref": "#/components/schemas/Meta"
+          },
+          "code": {
+            "type": "string",
+            "description": "Response code",
+            "example": "OK"
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Login successful"
           }
         },
         "description": "Wrapper object for successful login response"
+      },
+      "RefreshTokenResponseDto": {
+        "type": "object",
+        "required": ["accessToken", "expiresAt"],
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "New JWT access token",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.signature"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "New access token expiration timestamp",
+            "example": "2025-11-09T11:30:00.000"
+          }
+        },
+        "description": "Refresh token response containing new JWT access token"
+      },
+      "RefreshSuccessResponse": {
+        "type": "object",
+        "required": ["data", "meta", "code", "message"],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RefreshTokenResponseDto"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "code": {
+            "type": "string",
+            "description": "Response code",
+            "example": "OK"
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Token refreshed"
+          }
+        },
+        "description": "Wrapper object for successful refresh response"
+      },
+      "MessageResponse": {
+        "type": "object",
+        "required": ["meta", "code", "message"],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "code": {
+            "type": "string",
+            "description": "Response code",
+            "example": "OK"
+          },
+          "message": {
+            "type": "string",
+            "description": "Response message",
+            "example": "Logout successful"
+          }
+        },
+        "description": "Simple message response without data"
       },
       "Meta": {
         "type": "object",

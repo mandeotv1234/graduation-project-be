@@ -8,13 +8,13 @@ import java.time.LocalDateTime;
 
 
 @Builder
-public record LoginResponse (
+public record RefreshTokenResponse(
         String accessToken,
         String refreshToken,
         LocalDateTime expiresAt
         ) {
-    public static LoginResponse fromModel(Token token) {
-        return LoginResponse.builder()
+    public static RefreshTokenResponse fromModel(Token token) {
+        return RefreshTokenResponse.builder()
                 .accessToken(token.getAccessToken())
                 .refreshToken(token.getRefreshToken())
                 .expiresAt(token.getExpiresAt())

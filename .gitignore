@@ -39,3 +39,6 @@ media
 ### Jet Client ###
 .jetclient/
 
+### Environment files (do not commit secrets) ###
+.env
+docker/local/.env

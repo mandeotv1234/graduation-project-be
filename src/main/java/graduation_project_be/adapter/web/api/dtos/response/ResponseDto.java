@@ -1,7 +1,7 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
 
-import java.util.Date;
+import java.time.LocalDateTime;
 import graduation_project_be.application.codes.Code;
 
 public record ResponseDto(
@@ -12,7 +12,7 @@ public record ResponseDto(
 ) {
 
     public ResponseDto(Object data) {
-        this(data, new Meta(new Date()), Code.OK.toString(), "OK");
+        this(data, new Meta(LocalDateTime.now()), Code.OK.toString(), "OK");
     }
 
     public static ResponseDto of(Object data) {
@@ -24,12 +24,13 @@ public record ResponseDto(
     }
 
     public static ResponseDto of(Object data, String code, String message) {
-        return new ResponseDto(data, new Meta(new Date()), code, message);
+        return new ResponseDto(data, new Meta(LocalDateTime.now()), code, message);
     }
 
     public static ResponseDto of(Object data, String message) {
-        return new ResponseDto(data, new Meta(new Date()),Code.OK.toString(), message);
+        return new ResponseDto(data, new Meta(LocalDateTime.now()),Code.OK.toString(), message);
     }
-    record Meta (Date timestamp) {}
+    record Meta (LocalDateTime timestamp) {}
 
 }
+

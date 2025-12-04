@@ -16,5 +16,5 @@ public enum Code {
     OPERATION_FAILED,
     INTERNAL_ERROR,
     DATABASE_ERROR,
-    OK
+    OK,
 }

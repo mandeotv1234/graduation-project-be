@@ -2,9 +2,13 @@ package graduation_project_be.infrastructure.configurations;
 
 
 import graduation_project_be.application.port.repositories.UserRepository;
+import graduation_project_be.application.port.repositories.RefreshTokenRepository;
 import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.PasswordEncoder;
+import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.application.usecases.LoginUsecase;
+import graduation_project_be.application.usecases.RefreshUsecase;
+import graduation_project_be.application.usecases.LogoutUsecase;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,13 +20,34 @@ public class UsecasesConfiguration {
     LoginUsecase authenticationUsecase(
         UserRepository userRepository,
         PasswordEncoder passwordEncoder,
-        JwtService jwtService
+        JwtService jwtService,
+        RefreshTokenRepository refreshTokenRepository,
+        RefreshTokenHasher refreshTokenHasher
     ) {
         return new LoginUsecase(
             userRepository,
             passwordEncoder,
-            jwtService
+            jwtService,
+            refreshTokenRepository,
+            refreshTokenHasher
         );
+    }
+
+    @Bean
+    RefreshUsecase refreshUsecase(
+        RefreshTokenRepository refreshTokenRepository,
+        JwtService jwtService,
+        RefreshTokenHasher refreshTokenHasher
+    ) {
+        return new RefreshUsecase(refreshTokenRepository, jwtService, refreshTokenHasher);
+    }
+
+    @Bean
+    LogoutUsecase logoutUsecase(
+        RefreshTokenRepository refreshTokenRepository,
+        JwtService jwtService
+    ) {
+        return new LogoutUsecase(refreshTokenRepository, jwtService);
     }
 
 }

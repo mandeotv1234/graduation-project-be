@@ -9,15 +9,17 @@ import java.time.LocalDateTime;
 
 @Builder
 public record LoginResponse (
-        String accessToken,
-        String refreshToken,
-        LocalDateTime expiresAt
-        ) {
+    String accessToken,
+    String refreshToken,
+    LocalDateTime accessTokenExpiresAt,
+    LocalDateTime refreshTokenExpiresAt
+    ) {
     public static LoginResponse fromModel(Token token) {
         return LoginResponse.builder()
                 .accessToken(token.getAccessToken())
                 .refreshToken(token.getRefreshToken())
-                .expiresAt(token.getExpiresAt())
+                .accessTokenExpiresAt(token.getAccessTokenExpiresAt())
+                .refreshTokenExpiresAt(token.getRefreshTokenExpiresAt())
                 .build();
     }
 }

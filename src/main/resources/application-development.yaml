@@ -1,0 +1,32 @@
+server:
+  port: ${PORT}
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  redis:
+    host: ${SPRING_REDIS_HOST}
+    port: ${SPRING_REDIS_PORT}
+    username: ${SPRING_REDIS_USERNAME}
+    password: ${SPRING_REDIS_PASSWORD}
+    database: ${SPRING_REDIS_DATABASE}
+    ssl:
+      enabled: ${SPRING_DATA_REDIS_SSL_ENABLED}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    database: postgresql
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  application:
+    security:
+      jwt:
+        secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY}
+        expiration: ${SPRING_APPLICATION_SECURITY_JWT_EXPIRATION}
+      refresh-token:
+        pepper: ${SECURITY_REFRESH_TOKEN_PEPPER}
+        expiration: ${SPRING_APPLICATION_SECURITY_JWT_REFRESH_EXPIRATION}
+    url: ${SPRING_APPLICATION_URL}

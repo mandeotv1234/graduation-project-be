@@ -19,7 +19,7 @@ import java.util.Optional;
 public class LoginUsecase {
 
     private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder; // for password verification
+    private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final RefreshTokenHasher refreshTokenHasher;
@@ -47,8 +47,16 @@ public class LoginUsecase {
         String hashed = refreshTokenHasher.hash(refreshToken);
         refreshTokenRepository.save(userId, tokenId, hashed, jwtService.getJwtRefreshTokenValiditySeconds());
 
-        LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
-        Token token = new Token(accessToken, refreshToken, expiresAt);
+        LocalDateTime accessTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
+        LocalDateTime refreshTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtRefreshTokenValiditySeconds());
+
+        Token token = Token.builder()
+            .accessToken(accessToken)
+            .refreshToken(refreshToken)
+            .accessTokenExpiresAt(accessTokenExpiresAt)
+            .refreshTokenExpiresAt(refreshTokenExpiresAt)
+            .build();
+
         return LoginResponse.fromModel(token);
     }
 

@@ -5,8 +5,8 @@ import jakarta.validation.constraints.Pattern;
 
 public record LoginRequestDto(
         @Pattern(
-                regexp = "^[a-zA-Z0-9._%+-]+@student\\.hcmus\\.edu\\.vn$",
-                message = "Email must end with @student.hcmus.edu.vn"
+                regexp = "^[a-zA-Z0-9._%+-]+@(student|fit)\\.hcmus\\.edu\\.vn$",
+                message = "Email must end with @student.hcmus.edu.vn or @fit.hcmus.edu.vn"
         )
         String email,
 
@@ -23,3 +23,4 @@ public record LoginRequestDto(
                 .build();
     }
 }
+

@@ -9,15 +9,13 @@ import java.time.LocalDateTime;
 
 @Builder
 public record RefreshTokenResponse(
-        String accessToken,
-        String refreshToken,
-        LocalDateTime expiresAt
-        ) {
+    String accessToken,
+    LocalDateTime accessTokenExpiresAt
+    ) {
     public static RefreshTokenResponse fromModel(Token token) {
         return RefreshTokenResponse.builder()
                 .accessToken(token.getAccessToken())
-                .refreshToken(token.getRefreshToken())
-                .expiresAt(token.getExpiresAt())
+        .accessTokenExpiresAt(token.getAccessTokenExpiresAt())
                 .build();
     }
 }

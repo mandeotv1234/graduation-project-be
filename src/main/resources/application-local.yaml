@@ -1,3 +1,6 @@
+server:
+  port: ${PORT:8080}
+
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/GRAD}
@@ -10,6 +13,8 @@ spring:
     username: ${SPRING_REDIS_USERNAME:dbadmin}
     password: ${SPRING_REDIS_PASSWORD:dbadmin}
     database: ${SPRING_REDIS_DATABASE:0}
+    ssl:
+      enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:false}
   jpa:
     hibernate:
       ddl-auto: none

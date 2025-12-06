@@ -15,7 +15,8 @@ import java.time.LocalDateTime;
 public class Token {
     String accessToken;
     String refreshToken;
-    LocalDateTime expiresAt;
+    LocalDateTime accessTokenExpiresAt;
+    LocalDateTime refreshTokenExpiresAt;
 
     public static Token.TokenBuilder builder() {
         return internalBuilder();

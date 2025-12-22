@@ -45,9 +45,10 @@ public class UsecasesConfiguration {
     @Bean
     LogoutUsecase logoutUsecase(
         RefreshTokenRepository refreshTokenRepository,
-        JwtService jwtService
+        JwtService jwtService,
+        RefreshTokenHasher refreshTokenHasher
     ) {
-        return new LogoutUsecase(refreshTokenRepository, jwtService);
+        return new LogoutUsecase(refreshTokenRepository, jwtService, refreshTokenHasher);
     }
 
 }

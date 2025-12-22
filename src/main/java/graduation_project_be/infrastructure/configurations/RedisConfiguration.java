@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -33,20 +34,33 @@ public class RedisConfiguration {
     @Value("${spring.redis.database:0}")
     private int redisDatabase;
 
+    @Value("${spring.redis.ssl.enabled}")
+    private boolean sslEnabled;
+
     @Value("${security.application.security.refresh-token.pepper:}")
     private String refreshTokenPepper;
 
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
-        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(redisHost, redisPort);
-        config.setDatabase(redisDatabase);
+        RedisStandaloneConfiguration redisConfig = new RedisStandaloneConfiguration(redisHost, redisPort);
+        redisConfig.setDatabase(redisDatabase);
+
         if (redisUsername != null && !redisUsername.isBlank()) {
-            config.setUsername(redisUsername);
+            redisConfig.setUsername(redisUsername);
         }
         if (redisPassword != null && !redisPassword.isBlank()) {
-            config.setPassword(RedisPassword.of(redisPassword));
+            redisConfig.setPassword(RedisPassword.of(redisPassword));
         }
-        return new LettuceConnectionFactory(config);
+
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder clientConfigBuilder = LettuceClientConfiguration.builder();
+
+        if (sslEnabled) {
+            clientConfigBuilder.useSsl();
+        }
+
+        LettuceClientConfiguration clientConfig = clientConfigBuilder.build();
+
+        return new LettuceConnectionFactory(redisConfig, clientConfig);
     }
 
     @Bean

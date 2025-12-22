@@ -8,12 +8,12 @@ import java.time.LocalDateTime;
 @Builder
 public record RefreshTokenResponseDto(
         String accessToken,
-        LocalDateTime expiresAt
+    LocalDateTime accessTokenExpiresAt
 ) {
     public static RefreshTokenResponseDto fromResponse(RefreshTokenResponse refreshTokenResponse) {
         return RefreshTokenResponseDto.builder()
                 .accessToken(refreshTokenResponse.accessToken())
-                .expiresAt(refreshTokenResponse.expiresAt())
+        .accessTokenExpiresAt(refreshTokenResponse.accessTokenExpiresAt())
                 .build();
     }
 }

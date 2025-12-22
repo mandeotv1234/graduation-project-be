@@ -117,7 +117,7 @@ src/main/java/graduation_project_be/
 │   └── web/
 │       └── api/
 │           ├── controller/              # REST Controllers
-│           │   ├── AuthController.java       # Login endpoint
+│           │   ├── AuthController.java       # Login, Refresh, Logout endpoints
 │           │   └── UserController.java       # User management
 │           ├── dtos/                    # Data Transfer Objects
 │           │   ├── request/             # Request DTOs
@@ -142,6 +142,8 @@ src/main/java/graduation_project_be/
 │   │       └── ObjectMapperService.java
 │   └── usecases/                        # Use Cases (Business Logic)
 │       ├── LoginUsecase.java                # Login logic
+│       ├── RefreshUsecase.java              # Token refresh logic
+│       ├── LogoutUsecase.java               # Logout logic
 │       ├── request/                     # Use case requests
 │       └── response/                    # Use case responses
 │
@@ -337,7 +339,116 @@ src/main/java/graduation_project_be/
 
 ---
 
-### 3️⃣ Authenticated Request Flow (with JWT)
+### 3️⃣ Refresh Token Flow (Token Rotation)
+
+```
+  [Client]
+     │
+     │ POST /api/auth/refresh
+     │ Body: { refreshToken }
+     ↓
+┌─────────────────────────────────────────────────────────────┐
+│  AuthController.refresh()                                   │
+│  📍 adapter/web/api/controller/AuthController.java          │
+│                                                             │
+│  1. Validate request (Spring Validation)                   │
+│  2. Convert RefreshTokenRequestDto → RefreshTokenRequest   │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  RefreshUsecase.execute()                                   │
+│  📍 application/usecases/RefreshUsecase.java                │
+│                                                             │
+│  3. Validate refresh token: jwtService.validateToken()     │
+│  4. Extract userId, tokenId from token                      │
+│  5. Lookup token in Redis: refreshTokenRepository.find()   │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  6. If token not found:                                     │
+│     - Revoke all tokens: refreshTokenRepository.deleteAll   │
+│     - Throw UnauthorizedException (reuse detected)          │
+│                                                             │
+│  7. If hash mismatch:                                       │
+│     - Revoke all tokens: refreshTokenRepository.deleteAll   │
+│     - Throw UnauthorizedException (reuse detected)          │
+│                                                             │
+│  8. Verify hash: refreshTokenHasher.verify()               │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  9. Generate new tokens:                                    │
+│     - New access token (short-lived)                        │
+│     - New refresh token (long-lived)                        │
+│  10. Save new refresh token to Redis                        │
+│  11. Return new access token + refresh token               │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  AuthController (continued)                                 │
+│                                                             │
+│  12. Convert RefreshTokenResponse → RefreshTokenResponseDto │
+│  13. Wrap in ResponseDto                                   │
+│  14. Return HTTP 200 OK                                    │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+                    [Client]
+- Receives new access token in `data`, meta with timestamp, code "OK", message "Token refreshed"
+```
+
+---
+
+### 4️⃣ Logout Flow (Token Revocation)
+
+```
+  [Client]
+     │
+     │ POST /api/auth/logout
+     │ Body: { refreshToken }
+     ↓
+┌─────────────────────────────────────────────────────────────┐
+│  AuthController.logout()                                    │
+│  📍 adapter/web/api/controller/AuthController.java          │
+│                                                             │
+│  1. Validate request (Spring Validation)                   │
+│  2. Convert LogoutRequestDto → LogoutRequest               │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  LogoutUsecase.execute()                                    │
+│  📍 application/usecases/LogoutUsecase.java                │
+│                                                             │
+│  3. If token is blank → return (logout succeeds)            │
+│  4. Try to validate token: jwtService.validateToken()      │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  5a. If token is valid:                                     │
+│      - Extract userId, tokenId                             │
+│      - Delete specific token: refreshTokenRepository.delete │
+│                                                             │
+│  5b. If token is expired/invalid (catch Exception):        │
+│      - Try to extract userId (JWT claims still accessible) │
+│      - Delete all user tokens: deleteAllByUserId()          │
+│      - Ensures complete logout even with expired token      │
+│                                                             │
+│  6. Return successfully (no exception thrown)               │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│  AuthController (continued)                                 │
+│                                                             │
+│  7. Return HTTP 200 OK                                     │
+│  8. Response: { "message": "Logout successful" }            │
+└────────────────────────┬────────────────────────────────────┘
+                         ↓
+                    [Client]
+- Logout always succeeds with HTTP 200, regardless of token state
+```
+
+---
+
+### 5️⃣ Authenticated Request Flow (with JWT)
 
 ```
   [Client]
@@ -407,6 +518,8 @@ src/main/java/graduation_project_be/
 **Components:**
 - **Use Cases:** Business flows
   - `LoginUsecase`: Handle login logic
+  - `RefreshUsecase`: Handle token refresh and rotation
+  - `LogoutUsecase`: Handle logout and token revocation
 - **Ports (Interfaces):** Define contracts
   - `UserRepository`: Interface for user queries
   - `JwtService`: Interface for JWT handling
@@ -490,34 +603,49 @@ This project now implements a secure Access + Refresh Token strategy (similar to
 
 ### Endpoints
 
-1) POST /api/auth/login
-- Request body: { "email": string, "password": string }
-- Response body (JSON):
-  {
-    "data": { "accessToken": "...", "expiresAt": "2025-12-04T12:34:56" },
-    "meta": { "timestamp": "..." },
-    "code": "OK",
-    "message": "Login successful"
-  }
-- Server sets an HttpOnly cookie `refresh_token` (SameSite=Strict). The refresh token is NOT included in the JSON response.
+1) **POST /api/auth/login**
+   - Request body: `{ "email": string, "password": string }`
+   - Response body (JSON):
+     ```json
+     {
+       "data": { "accessToken": "...", "refreshToken": "...", "accessTokenExpiresAt": "...", "refreshTokenExpiresAt": "..." },
+       "meta": { "timestamp": "..." },
+       "code": "OK",
+       "message": "Login successful"
+     }
+     ```
+   - Creates new access and refresh tokens
+   - Revokes any previous tokens for this user (single-device session)
 
-2) POST /api/auth/refresh
-- No body required. Client must send the `refresh_token` cookie.
-- Response body (JSON): same shape as login (new access token + `expiresAt` ISO datetime).
-- Server rotates the refresh token, updates Redis, and sets a new HttpOnly cookie.
+2) **POST /api/auth/refresh**
+   - Request body: `{ "refreshToken": string }`
+   - Response body (JSON):
+     ```json
+     {
+       "data": { "accessToken": "...", "refreshToken": "...", "accessTokenExpiresAt": "...", "refreshTokenExpiresAt": "..." },
+       "meta": { "timestamp": "..." },
+       "code": "OK",
+       "message": "Token refreshed"
+     }
+     ```
+   - Validates refresh token and generates new access token
+   - Detects token reuse and revokes all tokens for that user if detected
+   - Rotates refresh token
 
-===
+3) **POST /api/auth/logout**
+   - Request body: `{ "refreshToken": string }`
+   - Response body (JSON):
+     ```json
+     {
+       "message": "Logout successful"
+     }
+     ```
+   - Deletes refresh token from Redis
+   - Handles expiration gracefully (logout succeeds even if token is expired)
 
-Single-device session policy
+### Single-Device Session Policy
 
-- This application enforces a single active session per user by device: when a successful login occurs, any existing refresh tokens for that user (i.e., any other device/session) are revoked. In short: one device allowed to be logged in at a time; a new login will sign out previous session(s).
-
-3) POST /api/auth/logout
-- No body required. Client must send the `refresh_token` cookie.
-- Server deletes the refresh token from Redis and clears the cookie.
-
-
-### Redis requirements
+This application enforces a **single active session per user**: when a successful login occurs, any existing refresh tokens for that user (from other devices/sessions) are revoked. In other words: one device allowed to be logged in at a time; a new login automatically signs out previous session(s).
 - Redis is used to persist hashed refresh tokens with TTL (recommended: SHA-256 + pepper or BCrypt hashing). The project includes a `RedisConfiguration` and a `RedisRefreshTokenRepository` implementation.
 - Key pattern used: `rt:{userId}:{tokenId}` → hashedValue
 
@@ -622,27 +750,80 @@ spring:
 Or run from IDE (Run `GraduationProjectBeApplication.main()`)
 
 ### Step 5: Test API
+
+**Login Example:**
 ```bash
-# Login
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "22120201@student.hcmus.edu.vn",
     "password": "your_password"
   }'
+```
 
-# Response
+**Response:**
+```json
 {
   "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessTokenExpiresAt": "2025-12-04T12:34:56",
+    "refreshTokenExpiresAt": "2025-12-18T12:34:56"
   },
   "meta": {
-    "timestamp": "2025-11-08T...",
-    "pagination": null
+    "timestamp": "2025-11-20T10:30:00"
   },
   "code": "OK",
   "message": "Login successful"
 }
+```
+
+**Refresh Token Example:**
+```bash
+curl -X POST http://localhost:8080/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessTokenExpiresAt": "2025-12-04T12:35:00",
+    "refreshTokenExpiresAt": "2025-12-18T12:35:00"
+  },
+  "meta": {
+    "timestamp": "2025-11-20T10:30:30"
+  },
+  "code": "OK",
+  "message": "Token refreshed"
+}
+```
+
+**Logout Example:**
+```bash
+curl -X POST http://localhost:8080/api/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'
+```
+
+**Response:**
+```json
+{
+  "message": "Logout successful"
+}
+```
+
+**Authenticated Request Example:**
+```bash
+curl -X GET http://localhost:8080/api/users/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
 ---
@@ -791,4 +972,4 @@ Add new endpoint and example request/response
 
 ---
 
-**Last Updated:** November 8, 2025
+**Last Updated:** December 22, 2025

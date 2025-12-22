@@ -4,6 +4,7 @@ import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.RefreshTokenRepository;
 import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
+import graduation_project_be.application.usecases.request.RefreshTokenRequest;
 import graduation_project_be.application.usecases.response.RefreshTokenResponse;
 import graduation_project_be.domain.models.Token;
 import graduation_project_be.domain.models.User;
@@ -17,7 +18,8 @@ public class RefreshUsecase {
     private final JwtService jwtService;
     private final RefreshTokenHasher refreshTokenHasher;
 
-    public RefreshTokenResponse execute(String refreshToken) {
+    public RefreshTokenResponse execute(RefreshTokenRequest refreshTokenRequest) {
+        String refreshToken = refreshTokenRequest.refreshToken();
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new UnauthorizedException("Missing refresh token");
         }
@@ -40,19 +42,22 @@ public class RefreshUsecase {
             throw new UnauthorizedException("Refresh token reuse detected");
         }
 
-        refreshTokenRepository.delete(userId, tokenId);
-
         String email = jwtService.extractEmail(refreshToken);
         User user = User.builder().id(Long.valueOf(userId)).email(email).build();
-
         String newAccess = jwtService.generateToken(user);
-        String newRefresh = jwtService.generateRefreshToken(user);
-        String newTokenId = jwtService.extractTokenId(newRefresh);
-        String hashed = refreshTokenHasher.hash(newRefresh);
-        refreshTokenRepository.save(userId, newTokenId, hashed, jwtService.getJwtRefreshTokenValiditySeconds());
 
-        LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
-        Token token = new Token(newAccess, newRefresh, expiresAt);
+        refreshTokenRepository.save(userId, tokenId, storedHash, jwtService.getJwtRefreshTokenValiditySeconds());
+
+        LocalDateTime accessTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
+        LocalDateTime refreshTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtRefreshTokenValiditySeconds());
+
+        Token token = Token.builder()
+            .accessToken(newAccess)
+            .refreshToken(refreshToken)
+            .accessTokenExpiresAt(accessTokenExpiresAt)
+            .refreshTokenExpiresAt(refreshTokenExpiresAt)
+            .build();
+
         return RefreshTokenResponse.fromModel(token);
     }
 }

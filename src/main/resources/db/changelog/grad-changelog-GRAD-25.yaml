@@ -1,0 +1,575 @@
+databaseChangeLog:
+  # =========================
+  # GROUP I: USER MANAGEMENT
+  # =========================
+
+  # Update users table to match the complete schema
+  - changeSet:
+      id: 2212251601
+      author: manhuynh
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: full_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addConstraint:
+            tableName: users
+            constraintName: chk_user_role
+            deferrable: false
+            initiallyDeferred: false
+            validate: true
+            checkConstraint: "role IN ('admin', 'teacher', 'student')"
+
+  # Create classes table
+  - changeSet:
+      id: 2212251602
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: classes
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: class_code
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: teacher_id
+                  type: INT
+              - column:
+                  name: semester
+                  type: VARCHAR(20)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: classes
+            baseColumnNames: teacher_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_class_teacher
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  # Create class_enrollments table
+  - changeSet:
+      id: 2212251603
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: class_enrollments
+            columns:
+              - column:
+                  name: class_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: student_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: joined_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: class_enrollments
+            baseColumnNames: class_id
+            referencedTableName: classes
+            referencedColumnNames: id
+            constraintName: fk_enroll_class
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: class_enrollments
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_enroll_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+  # =========================
+  # GROUP II: TEMPLATES & QUESTION BANK
+  # =========================
+
+  # Create schema_templates table
+  - changeSet:
+      id: 2212251604
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: schema_templates
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ddl_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: default_data_script
+                  type: TEXT
+              - column:
+                  name: created_by
+                  type: INT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: schema_templates
+            baseColumnNames: created_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_template_creator
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  # Create questions table
+  - changeSet:
+      id: 2212251605
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: questions
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: template_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: correct_query
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: difficulty_level
+                  type: INT
+                  defaultValueNumeric: 1
+        - addForeignKeyConstraint:
+            baseTableName: questions
+            baseColumnNames: template_id
+            referencedTableName: schema_templates
+            referencedColumnNames: id
+            constraintName: fk_question_template
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addConstraint:
+            tableName: questions
+            constraintName: chk_question_difficulty
+            deferrable: false
+            initiallyDeferred: false
+            validate: true
+            checkConstraint: "difficulty_level BETWEEN 1 AND 5"
+
+  # =========================
+  # GROUP III: EXAMS & VARIANTS
+  # =========================
+
+  # Create exams table
+  - changeSet:
+      id: 2212251606
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: exams
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: template_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: class_id
+                  type: INT
+              - column:
+                  name: creator_id
+                  type: INT
+              - column:
+                  name: exam_matrix
+                  type: JSON
+              - column:
+                  name: duration_minutes
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_time
+                  type: TIMESTAMP
+              - column:
+                  name: end_time
+                  type: TIMESTAMP
+              - column:
+                  name: is_published
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: template_id
+            referencedTableName: schema_templates
+            referencedColumnNames: id
+            constraintName: fk_exam_template
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: class_id
+            referencedTableName: classes
+            referencedColumnNames: id
+            constraintName: fk_exam_class
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: creator_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_exam_creator
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  # Create exam_variants table
+  - changeSet:
+      id: 2212251607
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: exam_variants
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: variant_code
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: VARCHAR(255)
+        - addForeignKeyConstraint:
+            baseTableName: exam_variants
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_variant_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: exam_variants
+            columnNames: exam_id, variant_code
+            constraintName: uq_exam_variant
+
+  # Create exam_questions table
+  - changeSet:
+      id: 2212251608
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: variant_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: question_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: points
+                  type: DECIMAL(5,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_index
+                  type: INT
+        - addForeignKeyConstraint:
+            baseTableName: exam_questions
+            baseColumnNames: variant_id
+            referencedTableName: exam_variants
+            referencedColumnNames: id
+            constraintName: fk_eq_variant
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_questions
+            baseColumnNames: question_id
+            referencedTableName: questions
+            referencedColumnNames: id
+            constraintName: fk_eq_question
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+  # =========================
+  # GROUP IV: EXECUTION & GRADING
+  # =========================
+
+  # Create exam_sessions table
+  - changeSet:
+      id: 2212251609
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: exam_sessions
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: INT
+              - column:
+                  name: variant_id
+                  type: INT
+              - column:
+                  name: student_id
+                  type: INT
+              - column:
+                  name: assigned_schema_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: start_time
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: submit_time
+                  type: TIMESTAMP
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+              - column:
+                  name: ip_address
+                  type: VARCHAR(45)
+              - column:
+                  name: total_score
+                  type: DECIMAL(5,2)
+        - addForeignKeyConstraint:
+            baseTableName: exam_sessions
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_session_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_sessions
+            baseColumnNames: variant_id
+            referencedTableName: exam_variants
+            referencedColumnNames: id
+            constraintName: fk_session_variant
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_sessions
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_session_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addConstraint:
+            tableName: exam_sessions
+            constraintName: chk_session_status
+            deferrable: false
+            initiallyDeferred: false
+            validate: true
+            checkConstraint: "status IN ('IN_PROGRESS', 'SUBMITTED', 'CANCELLED')"
+
+  # Create submissions table
+  - changeSet:
+      id: 2212251610
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: submissions
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: session_id
+                  type: INT
+              - column:
+                  name: question_id
+                  type: INT
+              - column:
+                  name: student_query
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_correct
+                  type: BOOLEAN
+              - column:
+                  name: score_earned
+                  type: DECIMAL(5,2)
+              - column:
+                  name: error_message
+                  type: TEXT
+              - column:
+                  name: execution_time_ms
+                  type: INT
+              - column:
+                  name: submitted_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: submissions
+            baseColumnNames: session_id
+            referencedTableName: exam_sessions
+            referencedColumnNames: id
+            constraintName: fk_submission_session
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: submissions
+            baseColumnNames: question_id
+            referencedTableName: questions
+            referencedColumnNames: id
+            constraintName: fk_submission_question
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+  # =========================
+  # GROUP V: SYSTEM LOGS
+  # =========================
+
+  # Create system_logs table
+  - changeSet:
+      id: 2212251611
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: system_logs
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: user_id
+                  type: INT
+              - column:
+                  name: action
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: system_logs
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_log_user
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  # Insert a new user with email tdhoang@fit.hcmus.edu.vn
+  - changeSet:
+      id: 2212251612
+      author: manhuynh
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: tdhoang@fit.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy"
+              - column:
+                  name: full_name
+                  value: Tran Duy Hoang
+              - column:
+                  name: role
+                  value: admin
+              - column:
+                  name: is_active
+                  valueBoolean: true

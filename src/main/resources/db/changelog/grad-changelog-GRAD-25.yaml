@@ -1,9 +1,4 @@
 databaseChangeLog:
-  # =========================
-  # GROUP I: USER MANAGEMENT
-  # =========================
-
-  # Update users table to match the complete schema
   - changeSet:
       id: 2212251601
       author: manhuynh
@@ -14,11 +9,13 @@ databaseChangeLog:
               - column:
                   name: full_name
                   type: VARCHAR(100)
+                  defaultValue: "Unknown"
                   constraints:
                     nullable: false
               - column:
                   name: role
                   type: VARCHAR(20)
+                  defaultValue: "STUDENT"
                   constraints:
                     nullable: false
               - column:
@@ -29,15 +26,9 @@ databaseChangeLog:
                   name: created_at
                   type: TIMESTAMP
                   defaultValueComputed: CURRENT_TIMESTAMP
-        - addConstraint:
-            tableName: users
-            constraintName: chk_user_role
-            deferrable: false
-            initiallyDeferred: false
-            validate: true
-            checkConstraint: "role IN ('admin', 'teacher', 'student')"
+        - sql:
+            sql: ALTER TABLE users ADD CONSTRAINT chk_user_role CHECK (role IN ('ADMIN', 'TEACHER', 'STUDENT'))
 
-  # Create classes table
   - changeSet:
       id: 2212251602
       author: manhuynh
@@ -76,7 +67,6 @@ databaseChangeLog:
             onDelete: SET NULL
             onUpdate: CASCADE
 
-  # Create class_enrollments table
   - changeSet:
       id: 2212251603
       author: manhuynh
@@ -117,11 +107,6 @@ databaseChangeLog:
             onDelete: CASCADE
             onUpdate: CASCADE
 
-  # =========================
-  # GROUP II: TEMPLATES & QUESTION BANK
-  # =========================
-
-  # Create schema_templates table
   - changeSet:
       id: 2212251604
       author: manhuynh
@@ -164,7 +149,6 @@ databaseChangeLog:
             onDelete: SET NULL
             onUpdate: CASCADE
 
-  # Create questions table
   - changeSet:
       id: 2212251605
       author: manhuynh
@@ -205,19 +189,9 @@ databaseChangeLog:
             constraintName: fk_question_template
             onDelete: CASCADE
             onUpdate: CASCADE
-        - addConstraint:
-            tableName: questions
-            constraintName: chk_question_difficulty
-            deferrable: false
-            initiallyDeferred: false
-            validate: true
-            checkConstraint: "difficulty_level BETWEEN 1 AND 5"
+        - sql:
+            sql: ALTER TABLE questions ADD CONSTRAINT chk_question_difficulty CHECK (difficulty_level BETWEEN 1 AND 5)
 
-  # =========================
-  # GROUP III: EXAMS & VARIANTS
-  # =========================
-
-  # Create exams table
   - changeSet:
       id: 2212251606
       author: manhuynh
@@ -285,7 +259,6 @@ databaseChangeLog:
             onDelete: SET NULL
             onUpdate: CASCADE
 
-  # Create exam_variants table
   - changeSet:
       id: 2212251607
       author: manhuynh
@@ -325,7 +298,6 @@ databaseChangeLog:
             columnNames: exam_id, variant_code
             constraintName: uq_exam_variant
 
-  # Create exam_questions table
   - changeSet:
       id: 2212251608
       author: manhuynh
@@ -370,11 +342,6 @@ databaseChangeLog:
             onDelete: CASCADE
             onUpdate: CASCADE
 
-  # =========================
-  # GROUP IV: EXECUTION & GRADING
-  # =========================
-
-  # Create exam_sessions table
   - changeSet:
       id: 2212251609
       author: manhuynh
@@ -442,15 +409,9 @@ databaseChangeLog:
             constraintName: fk_session_student
             onDelete: CASCADE
             onUpdate: CASCADE
-        - addConstraint:
-            tableName: exam_sessions
-            constraintName: chk_session_status
-            deferrable: false
-            initiallyDeferred: false
-            validate: true
-            checkConstraint: "status IN ('IN_PROGRESS', 'SUBMITTED', 'CANCELLED')"
+        - sql:
+            sql: ALTER TABLE exam_sessions ADD CONSTRAINT chk_session_status CHECK (status IN ('IN_PROGRESS', 'SUBMITTED', 'CANCELLED'))
 
-  # Create submissions table
   - changeSet:
       id: 2212251610
       author: manhuynh
@@ -508,11 +469,6 @@ databaseChangeLog:
             onDelete: CASCADE
             onUpdate: CASCADE
 
-  # =========================
-  # GROUP V: SYSTEM LOGS
-  # =========================
-
-  # Create system_logs table
   - changeSet:
       id: 2212251611
       author: manhuynh
@@ -550,7 +506,6 @@ databaseChangeLog:
             onDelete: SET NULL
             onUpdate: CASCADE
 
-  # Insert a new user with email tdhoang@fit.hcmus.edu.vn
   - changeSet:
       id: 2212251612
       author: manhuynh
@@ -569,7 +524,19 @@ databaseChangeLog:
                   value: Tran Duy Hoang
               - column:
                   name: role
-                  value: admin
+                  value: ADMIN
               - column:
                   name: is_active
                   valueBoolean: true
+
+  - changeSet:
+      id: 2212251613
+      author: manhuynh
+      changes:
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: role
+                  value: TEACHER
+            where: email = 'tdhoang@fit.hcmus.edu.vn'

@@ -58,6 +58,9 @@ public class SecurityConfiguration {
                         auth -> auth.requestMatchers(
                                         "/api/auth/**")
                                 .permitAll()
+                                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                                .requestMatchers("/api/teachers/**").hasRole("TEACHER")
+                                .requestMatchers("/api/students/**").hasRole("STUDENT")
                                 .anyRequest().authenticated()
                 )
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

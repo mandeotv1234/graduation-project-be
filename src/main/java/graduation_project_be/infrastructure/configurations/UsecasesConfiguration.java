@@ -1,11 +1,15 @@
 package graduation_project_be.infrastructure.configurations;
 
 
+import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.repositories.RefreshTokenRepository;
+import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.PasswordEncoder;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
+import graduation_project_be.application.usecases.CreateClassUsecase;
 import graduation_project_be.application.usecases.LoginUsecase;
 import graduation_project_be.application.usecases.RefreshUsecase;
 import graduation_project_be.application.usecases.LogoutUsecase;
@@ -15,6 +19,17 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class UsecasesConfiguration {
+
+    @Bean
+    CreateClassUsecase createClassUsecase(
+            ClassRepository classRepository,
+            UserRepository userRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            PasswordEncoder passwordEncoder,
+            CurrentUserService currentUserService
+    ) {
+        return new CreateClassUsecase(classRepository, userRepository, classEnrollmentRepository, passwordEncoder, currentUserService);
+    }
 
     @Bean
     LoginUsecase authenticationUsecase(

@@ -21,4 +21,20 @@ public class UserRepositoryImpl implements UserRepository {
         Optional<UserEntity> userEntity = userJpaRepository.findByEmail(email);
         return userEntity.map(UserEntity::toModel);
     }
+
+    @Override
+    public User save(User user) {
+        UserEntity entity = UserEntity.fromModel(user);
+        return userJpaRepository.save(entity).toModel();
+    }
+
+    @Override
+    public List<User> saveAll(List<User> users) {
+        List<UserEntity> entities = users.stream()
+                .map(UserEntity::fromModel)
+                .toList();
+        return userJpaRepository.saveAll(entities).stream()
+                .map(UserEntity::toModel)
+                .toList();
+    }
 }

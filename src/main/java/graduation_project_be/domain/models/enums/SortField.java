@@ -16,6 +16,8 @@ public enum SortField {
     }
 
     public String getFieldName() {
-        return this.name().toLowerCase();
+        return switch (this) {
+            case TIME -> "createdAt";
+        };
     }
 }

@@ -42,10 +42,8 @@ public class TeacherController {
                         @RequestParam(defaultValue = "10") int size,
                         @RequestParam(defaultValue = "CREATED_AT") String sortBy,
                         @RequestParam(defaultValue = "DESC") String sortOrder) {
-                // FE truyền page=1 thì backend query page=0
-                int backendPage = page > 0 ? page - 1 : 0;
                 GetClassesRequestDto requestDto = GetClassesRequestDto.builder()
-                                .page(backendPage)
+                                .page(page)
                                 .size(size)
                                 .sortBy(sortBy)
                                 .sortOrder(sortOrder)

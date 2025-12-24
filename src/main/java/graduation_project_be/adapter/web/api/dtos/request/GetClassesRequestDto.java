@@ -1,15 +1,14 @@
 package graduation_project_be.adapter.web.api.dtos.request;
 
 import graduation_project_be.application.usecases.request.GetClassesRequest;
-import lombok.Data;
+import lombok.Builder;
 
-@Data
-public class GetClassesRequestDto {
-    private int page = 0;
-    private int size = 10;
-    private String sortBy = "TIME";
-    private String sortOrder = "DESC";
-
+@Builder
+public record GetClassesRequestDto(
+        int page,
+        int size,
+        String sortBy,
+        String sortOrder) {
     public GetClassesRequest toRequest() {
         return GetClassesRequest.builder()
                 .page(page)

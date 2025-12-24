@@ -4,11 +4,12 @@ import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.request.GetClassesRequest;
 import graduation_project_be.application.usecases.response.GetClassesResponse;
+import graduation_project_be.application.usecases.response.PaginationResponse;
 import graduation_project_be.domain.models.PaginatedResult;
 import graduation_project_be.domain.models.PaginationParams;
+import graduation_project_be.domain.models.Class;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import graduation_project_be.application.usecases.response.PaginationResponse;
 
 import java.util.List;
 
@@ -16,32 +17,27 @@ import java.util.List;
 @RequiredArgsConstructor
 public class GetClassesUsecase {
 
-    private final ClassRepository classRepository;
-    private final CurrentUserService currentUserService;
+        private final ClassRepository classRepository;
+        private final CurrentUserService currentUserService;
 
-    public PaginationResponse<GetClassesResponse> execute(GetClassesRequest request) {
-        Long teacherId = currentUserService.getCurrentUserId();
+        public PaginationResponse<GetClassesResponse> execute(GetClassesRequest request) {
+                Long teacherId = currentUserService.getCurrentUserId();
 
-        PaginationParams paginationParams = request.getPaginationParams();
+                PaginationParams paginationParams = request.getPaginationParams();
 
-        PaginatedResult<graduation_project_be.domain.models.Class> classes = classRepository.findByTeacherId(teacherId,
-                paginationParams);
+                PaginatedResult<Class> classes = classRepository.findByTeacherId(
+                                teacherId,
+                                paginationParams);
 
-        List<GetClassesResponse> classResponses = classes.getData().stream()
-                .map(clazz -> GetClassesResponse.builder()
-                        .id(clazz.getId())
-                        .classCode(clazz.getClassCode())
-                        .teacherId(clazz.getTeacherId())
-                        .semester(clazz.getSemester())
-                        .createdAt(clazz.getCreatedAt())
-                        .build())
-                .toList();
+                List<GetClassesResponse> classResponses = classes.getData().stream()
+                                .map(GetClassesResponse::fromModel)
+                                .toList();
 
-        return PaginationResponse.valueOf(
-                classResponses,
-                PaginationResponse.PaginationMeta.valueOf(
-                        paginationParams.getPage(),
-                        paginationParams.getSize(),
-                        classes.getPagination().getTotal()));
-    }
+                return PaginationResponse.valueOf(
+                                classResponses,
+                                PaginationResponse.PaginationMeta.valueOf(
+                                                paginationParams.getPage(),
+                                                paginationParams.getSize(),
+                                                classes.getPagination().getTotal()));
+        }
 }

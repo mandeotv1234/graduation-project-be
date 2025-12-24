@@ -12,6 +12,8 @@ import graduation_project_be.application.usecases.GetClassesUsecase;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
 import graduation_project_be.application.usecases.request.GetClassesRequest;
 import graduation_project_be.application.usecases.response.CreateClassResponse;
+import graduation_project_be.application.usecases.response.GetClassesResponse;
+import graduation_project_be.application.usecases.response.PaginationResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,22 +43,21 @@ public class TeacherController {
         public ResponseEntity<PaginationResponseDto<GetClassesResponseDto>> getClasses(
                         @RequestParam(defaultValue = "0") int page,
                         @RequestParam(defaultValue = "10") int size,
-                        @RequestParam(defaultValue = "TIME") String sortBy,
+                        @RequestParam(defaultValue = "CREATED_AT") String sortBy,
                         @RequestParam(defaultValue = "DESC") String sortOrder) {
-                GetClassesRequestDto requestDto = new GetClassesRequestDto();
-                requestDto.setPage(page);
-                requestDto.setSize(size);
-                requestDto.setSortBy(sortBy);
-                requestDto.setSortOrder(sortOrder);
-
+                GetClassesRequestDto requestDto = GetClassesRequestDto.builder()
+                                .page(page)
+                                .size(size)
+                                .sortBy(sortBy)
+                                .sortOrder(sortOrder)
+                                .build();
                 GetClassesRequest usecaseRequest = requestDto.toRequest();
-                var usecaseResponse = getClassesUsecase.execute(usecaseRequest);
+                PaginationResponse<GetClassesResponse> usecaseResponse = getClassesUsecase.execute(usecaseRequest);
 
                 List<GetClassesResponseDto> responseDtos = usecaseResponse.data().stream()
                                 .map(GetClassesResponseDto::fromResponse)
                                 .toList();
 
-                // Tạo pagination meta từ usecase response
                 PaginationMetaDto paginationMeta = new PaginationMetaDto(
                                 usecaseResponse.pagination().getPage(),
                                 usecaseResponse.pagination().getSize(),

@@ -1,23 +1,23 @@
 package graduation_project_be.domain.models.enums;
 
 public enum SortField {
-    TIME;
+    CREATED_AT;
 
     public static SortField fromString(String field) {
         if (field == null) {
-            return TIME;
+            return CREATED_AT;
         }
 
         try {
             return SortField.valueOf(field.toUpperCase());
         } catch (IllegalArgumentException e) {
-            return TIME;
+            return CREATED_AT;
         }
     }
 
     public String getFieldName() {
         return switch (this) {
-            case TIME -> "createdAt";
+            case CREATED_AT -> "createdAt";
         };
     }
 }

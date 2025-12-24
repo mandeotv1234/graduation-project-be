@@ -1,20 +1,24 @@
 package graduation_project_be.application.usecases.response;
 
-import lombok.AllArgsConstructor;
+import graduation_project_be.domain.models.Class;
 import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-@Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class GetClassesResponse {
-    private Long id;
-    private String classCode;
-    private Long teacherId;
-    private String semester;
-    private LocalDateTime createdAt;
+public record GetClassesResponse(
+        Long id,
+        String classCode,
+        Long teacherId,
+        String semester,
+        LocalDateTime createdAt) {
+    public static GetClassesResponse fromModel(Class clazz) {
+        return GetClassesResponse.builder()
+                .id(clazz.getId())
+                .classCode(clazz.getClassCode())
+                .teacherId(clazz.getTeacherId())
+                .semester(clazz.getSemester())
+                .createdAt(clazz.getCreatedAt())
+                .build();
+    }
 }

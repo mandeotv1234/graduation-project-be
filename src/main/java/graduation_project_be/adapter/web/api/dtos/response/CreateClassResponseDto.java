@@ -7,12 +7,11 @@ import java.time.LocalDateTime;
 
 @Builder
 public record CreateClassResponseDto(
-    Long id,
-    String classCode,
-    String semester,
-    Long teacherId,
-    LocalDateTime createdAt
-) {
+        Long id,
+        String classCode,
+        String semester,
+        Long teacherId,
+        LocalDateTime createdAt) {
     public static CreateClassResponseDto fromResponse(CreateClassResponse response) {
         return CreateClassResponseDto.builder()
                 .id(response.id())

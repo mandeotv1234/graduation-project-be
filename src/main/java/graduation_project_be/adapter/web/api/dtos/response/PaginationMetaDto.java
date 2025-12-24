@@ -21,10 +21,10 @@ public record PaginationMetaDto(int page, int size, long total) {
     }
 
     public static PaginationMetaDto fromResponse(PaginationResponse.PaginationMeta paginationMeta) {
+        // FE mong muốn page bắt đầu từ 1, backend từ 0
         return new PaginationMetaDto(
-                paginationMeta.getPage(),
+                paginationMeta.getPage() + 1,
                 paginationMeta.getSize(),
-                paginationMeta.getTotal()
-        );
+                paginationMeta.getTotal());
     }
 }

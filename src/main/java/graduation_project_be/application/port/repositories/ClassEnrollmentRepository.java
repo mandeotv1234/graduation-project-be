@@ -5,4 +5,5 @@ import java.util.List;
 
 public interface ClassEnrollmentRepository {
     List<ClassEnrollment> saveAll(List<ClassEnrollment> enrollments);
+    boolean existsByClassIdAndStudentId(Long classId, Long studentId);
 }

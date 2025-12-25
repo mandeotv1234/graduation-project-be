@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/grad-changelog-init.yaml
   - include:
       file: db/changelog/grad-changelog-GRAD-25.yaml
+  - include:
+      file: db/changelog/grad-changelog-GRAD-26.yaml

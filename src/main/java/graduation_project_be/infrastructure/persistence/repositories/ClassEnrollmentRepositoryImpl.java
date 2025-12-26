@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -24,6 +25,19 @@ public class ClassEnrollmentRepositoryImpl implements ClassEnrollmentRepository 
         return classEnrollmentJpaRepository.saveAll(entities).stream()
                 .map(ClassEnrollmentEntity::toModel)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ClassEnrollment> findByClassId(Long classId) {
+        return classEnrollmentJpaRepository.findByClassId(classId).stream()
+                .map(ClassEnrollmentEntity::toModel)
+                .toList();
+    }
+
+    @Override
+    public Optional<ClassEnrollment> findByClassIdAndStudentId(Long classId, Long studentId) {
+        return classEnrollmentJpaRepository.findByClassIdAndStudentId(classId, studentId)
+                .map(ClassEnrollmentEntity::toModel);
     }
 
     @Override

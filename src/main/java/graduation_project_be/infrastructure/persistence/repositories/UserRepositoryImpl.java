@@ -7,6 +7,7 @@ import graduation_project_be.infrastructure.persistence.entities.UserEntity;
 import graduation_project_be.infrastructure.persistence.repositories.jpa.UserJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +35,21 @@ public class UserRepositoryImpl implements UserRepository {
                 .map(UserEntity::fromModel)
                 .toList();
         return userJpaRepository.saveAll(entities).stream()
+                .map(UserEntity::toModel)
+                .toList();
+    }
+
+    @Override
+    public Optional<User> findById(Long id) {
+        return userJpaRepository.findById(id)
+                .map(UserEntity::toModel);
+    }
+
+    @Override
+    public List<User> findByIdIn(List<Long> ids, int limit, int offset) {
+        int page = offset / limit;
+        return userJpaRepository.findByIdIn(ids, PageRequest.of(page,limit))
+                .stream()
                 .map(UserEntity::toModel)
                 .toList();
     }

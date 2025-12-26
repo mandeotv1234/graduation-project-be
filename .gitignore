@@ -42,3 +42,5 @@ media
 ### Environment files (do not commit secrets) ###
 .env
 docker/local/.env
+
+docs

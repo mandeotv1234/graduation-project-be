@@ -14,6 +14,10 @@ import graduation_project_be.application.usecases.LoginUsecase;
 import graduation_project_be.application.usecases.RefreshUsecase;
 import graduation_project_be.application.usecases.LogoutUsecase;
 import graduation_project_be.application.usecases.GetClassesUsecase;
+import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
+
+import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
+
 import graduation_project_be.application.usecases.GetStudentExamUsecase;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,11 +75,22 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GetStudentsInClassUsecase getStudentsInClassUsecase(
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ClassRepository classRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetStudentsInClassUsecase(
+                classEnrollmentRepository,
+                classRepository,
+                userRepository,
+                currentUserService);
+            }
+    @Bean
     GetStudentExamUsecase getStudentExamUsecase(
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService) {
         return new GetStudentExamUsecase(examRepository, classEnrollmentRepository, currentUserService);
     }
-
 }

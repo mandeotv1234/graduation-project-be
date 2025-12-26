@@ -52,4 +52,9 @@ public class ClassRepositoryImpl implements ClassRepository {
                 params.getSize(),
                 page.getTotalElements());
     }
+
+    @Override
+    public boolean existsByIdAndTeacherId(Long classId, Long teacherId) {
+        return classJpaRepository.existsByIdAndTeacherId(classId, teacherId);
+    }
 }

@@ -1,0 +1,109 @@
+databaseChangeLog:
+  # Seed data for student exam feature
+  - changeSet:
+      id: 2512252001
+      author: Phan Phuc
+      comment: "Add a student user"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: 22120280@student.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy"
+              - column:
+                  name: full_name
+                  value: Phan Minh Phuc
+              - column:
+                  name: role
+                  value: STUDENT
+              - column:
+                  name: is_active
+                  valueBoolean: true
+
+  - changeSet:
+      id: 2512252002
+      author: Phan Phuc
+      comment: "Add a class"
+      changes:
+        - insert:
+            tableName: classes
+            columns:
+              - column:
+                  name: class_code
+                  value: CSC101-2025
+              - column:
+                  name: teacher_id
+                  valueNumeric: 2
+              - column:
+                  name: semester
+                  value: "2025-1"
+
+  - changeSet:
+      id: 2512252003
+      author: Phan Phuc
+      comment: "Add a schema template"
+      changes:
+        - insert:
+            tableName: schema_templates
+            columns:
+              - column:
+                  name: name
+                  value: "Northwind Database Schema"
+              - column:
+                  name: ddl_script
+                  value: "CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR(100), department VARCHAR(50), salary DECIMAL(10,2));"
+              - column:
+                  name: default_data_script
+                  value: "INSERT INTO employees VALUES (1, 'Tran Quoc Bao', 'IT', 15000000);"
+              - column:
+                  name: created_by
+                  valueNumeric: 2
+
+  - changeSet:
+      id: 2512252004
+      author: Phan Phuc
+      comment: "Add an exam"
+      changes:
+        - insert:
+            tableName: exams
+            columns:
+              - column:
+                  name: template_id
+                  valueNumeric: 1
+              - column:
+                  name: class_id
+                  valueNumeric: 1
+              - column:
+                  name: creator_id
+                  valueNumeric: 2
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 60
+              - column:
+                  name: start_time
+                  valueDate: "2025-01-15T09:00:00"
+              - column:
+                  name: end_time
+                  valueDate: "2025-01-15T10:00:00"
+              - column:
+                  name: is_published
+                  valueBoolean: true
+
+  - changeSet:
+      id: 2512252005
+      author: Phan Phuc
+      comment: "Enroll the student in the class"
+      changes:
+        - insert:
+            tableName: class_enrollments
+            columns:
+              - column:
+                  name: class_id
+                  valueNumeric: 1
+              - column:
+                  name: student_id
+                  valueNumeric: 3

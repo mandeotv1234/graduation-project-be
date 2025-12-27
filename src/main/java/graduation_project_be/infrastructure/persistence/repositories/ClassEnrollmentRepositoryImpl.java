@@ -25,4 +25,9 @@ public class ClassEnrollmentRepositoryImpl implements ClassEnrollmentRepository 
                 .map(ClassEnrollmentEntity::toModel)
                 .collect(Collectors.toList());
     }
+
+    @Override
+    public boolean existsByClassIdAndStudentId(Long classId, Long studentId) {
+        return classEnrollmentJpaRepository.existsByClassIdAndStudentId(classId, studentId);
+    }
 }

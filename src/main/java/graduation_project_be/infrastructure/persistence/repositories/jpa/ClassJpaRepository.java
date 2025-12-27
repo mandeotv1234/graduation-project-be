@@ -9,4 +9,5 @@ import org.springframework.data.domain.Pageable;
 @Repository
 public interface ClassJpaRepository extends JpaRepository<ClassEntity, Long> {
     Page<ClassEntity> findByTeacherId(Long teacherId, Pageable pageable);
+    boolean existsByIdAndTeacherId(Long id, Long teacherId);
 }

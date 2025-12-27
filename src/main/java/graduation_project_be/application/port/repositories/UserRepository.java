@@ -11,4 +11,6 @@ public interface UserRepository {
     Optional<User> findByEmail(String email);
     User save(User user);
     List<User> saveAll(List<User> users);
+    Optional<User> findById(Long id);
+    List<User> findByIdIn(List<Long> ids, int limit, int offset);
 }

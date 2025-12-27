@@ -7,5 +7,7 @@ import graduation_project_be.domain.models.PaginationParams;
 public interface ClassRepository {
     Class save(Class clazz);
 
+    Class findById(Long classId);
+
     PaginatedResult<Class> findByTeacherId(Long teacherId, PaginationParams paginationParams);
 }

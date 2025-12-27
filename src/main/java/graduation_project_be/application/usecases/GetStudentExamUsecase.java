@@ -7,6 +7,7 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.response.GetStudentExamResponse;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.application.usecases.request.GetStudentExamDetailRequest;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
@@ -16,8 +17,9 @@ public class GetStudentExamUsecase {
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
 
-    public GetStudentExamResponse execute(Long examId) {
+    public GetStudentExamResponse execute(GetStudentExamDetailRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
+        Long examId = request.examId();
 
         // Find published exam by ID
         Exam exam = examRepository.findByIdAndIsPublished(examId, true)

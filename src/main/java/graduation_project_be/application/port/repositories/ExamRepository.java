@@ -6,4 +6,6 @@ import java.util.Optional;
 
 public interface ExamRepository {
     Optional<Exam> findByIdAndIsPublished(Long id, Boolean isPublished);
+
+    Exam save(Exam exam);
 }

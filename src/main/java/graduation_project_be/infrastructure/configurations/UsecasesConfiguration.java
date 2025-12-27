@@ -9,16 +9,10 @@ import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.PasswordEncoder;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
-import graduation_project_be.application.usecases.CreateClassUsecase;
-import graduation_project_be.application.usecases.LoginUsecase;
-import graduation_project_be.application.usecases.RefreshUsecase;
-import graduation_project_be.application.usecases.LogoutUsecase;
-import graduation_project_be.application.usecases.GetClassesUsecase;
-import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
+import graduation_project_be.application.usecases.*;
 
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 
-import graduation_project_be.application.usecases.GetStudentExamUsecase;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -93,4 +87,22 @@ public class UsecasesConfiguration {
             CurrentUserService currentUserService) {
         return new GetStudentExamUsecase(examRepository, classEnrollmentRepository, currentUserService);
     }
+
+    @Bean
+    CreateExamUsecase createExamUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new graduation_project_be.application.usecases.CreateExamUsecase(examRepository, classRepository,
+                currentUserService);
+    }
+
+    @Bean
+    GetClassDetailUsecase getClassDetailUsecase(
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new graduation_project_be.application.usecases.GetClassDetailUsecase(classRepository,
+                currentUserService);
+    }
+
 }

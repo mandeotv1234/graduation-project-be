@@ -1,9 +1,9 @@
 package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateClassRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassesRequestDto;
-import graduation_project_be.adapter.web.api.dtos.response.CreateClassResponseDto;
-import graduation_project_be.adapter.web.api.dtos.response.GetClassDetailResponseDto;
+import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.GetClassesResponseDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentsInClassRequestDto;
@@ -17,8 +17,9 @@ import graduation_project_be.application.usecases.GetClassesUsecase;
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
-import graduation_project_be.application.usecases.request.GetClassDetailRequest;
+import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.request.GetClassesRequest;
+import graduation_project_be.application.usecases.response.*;
 import graduation_project_be.application.usecases.request.GetStudentsInClassRequest;
 import graduation_project_be.application.usecases.request.GetStudentsInClassRequest;
 import graduation_project_be.application.usecases.response.CreateClassResponse;
@@ -28,9 +29,11 @@ import graduation_project_be.application.usecases.response.GetStudentsInClassRes
 import graduation_project_be.application.usecases.response.GetStudentsInClassResponse;
 import graduation_project_be.application.usecases.response.PaginationResponse;
 import graduation_project_be.application.usecases.GetClassDetailUsecase;
+import graduation_project_be.application.usecases.CreateExamUsecase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -42,6 +45,7 @@ public class TeacherController {
         private final GetClassesUsecase getClassesUsecase;
         private final GetStudentsInClassUsecase getStudentsInClassUsecase;
         private final GetClassDetailUsecase getClassDetailUsecase;
+        private final CreateExamUsecase createExamUsecase;
 
     @PostMapping("/classes")
         public ResponseEntity<ResponseDto> createClass(
@@ -49,7 +53,7 @@ public class TeacherController {
                 CreateClassRequest usecaseRequest = requestDto.toRequest();
                 CreateClassResponse usecaseResponse = createClassUsecase.execute(usecaseRequest);
                 return ResponseEntity.status(HttpStatus.CREATED)
-                                .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "OK",
+                                .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "CREATED",
                                                 "Class created successfully"));
         }
 
@@ -112,5 +116,17 @@ public class TeacherController {
                 return ResponseEntity.ok()
                                 .body(ResponseDto.of(GetClassDetailResponseDto.fromResponse(usecaseResponse), "OK",
                                                 "Class detail retrieved successfully"));
+        }
+
+        @PostMapping("/exams")
+        public ResponseEntity<ResponseDto> createExam( @RequestBody CreateExamRequestDto requestDto) {
+
+            CreateExamRequest request = requestDto.toRequest();
+            CreateExamResponse response = createExamUsecase.execute(request);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(ResponseDto.of(
+                    CreateExamResponseDto.fromResponse(response),
+                                "CREATED",
+                                "Exam created successfully"));
         }
 }

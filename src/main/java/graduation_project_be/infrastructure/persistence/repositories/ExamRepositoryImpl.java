@@ -20,4 +20,10 @@ public class ExamRepositoryImpl implements ExamRepository {
         return examJpaRepository.findByIdAndIsPublished(id, isPublished)
                 .map(ExamEntity::toModel);
     }
+
+    @Override
+    public Exam save(Exam exam) {
+        ExamEntity entity = ExamEntity.fromModel(exam);
+        return examJpaRepository.save(entity).toModel();
+    }
 }

@@ -7,6 +7,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.LocalDateTime;
 
 @Table(name = "exams")
@@ -30,7 +33,8 @@ public class ExamEntity {
     @Column(name = "creator_id")
     private Long creatorId;
 
-    @Column(name = "exam_matrix", columnDefinition = "JSON")
+    @Column(name = "exam_matrix", columnDefinition = "json")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String examMatrix;
 
     @Column(name = "duration_minutes", nullable = false)

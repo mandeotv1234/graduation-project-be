@@ -27,12 +27,22 @@
     {
       "name": "Users",
       "description": "User management endpoints"
+    },
+    {
+      "name": "Classes",
+      "description": "Class management endpoints (requires TEACHER role)"
+    },
+    {
+      "name": "Exams",
+      "description": "Exam management endpoints"
     }
   ],
   "paths": {
     "/api/auth/login": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "User login",
         "description": "Authenticate user with email and password. Returns JWT access token upon successful authentication.",
         "operationId": "login",
@@ -172,7 +182,9 @@
     },
     "/api/auth/refresh": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "Refresh access token",
         "description": "Generate a new access token using the refresh token stored in HttpOnly cookie",
         "operationId": "refresh",
@@ -266,7 +278,9 @@
     },
     "/api/auth/logout": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "User logout",
         "description": "Logout user and invalidate refresh token",
         "operationId": "logout",
@@ -334,13 +348,337 @@
           }
         }
       }
+    },
+    "/api/classes": {
+      "post": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Create a new class",
+        "description": "Create a new class with students. Requires TEACHER role.",
+        "operationId": "createClass",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClassRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Class created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get list of classes",
+        "description": "Get paginated list of classes for the authenticated teacher. Requires TEACHER role.",
+        "operationId": "getClasses",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "CREATED_AT"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "DESC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classes retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}": {
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get class detail",
+        "description": "Get detail of a specific class. Requires TEACHER role.",
+        "operationId": "getClassDetail",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Class detail retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          },
+          "404": {
+            "description": "Class not found"
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}/students": {
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get students in a class",
+        "description": "Get paginated list of students enrolled in a specific class. Requires TEACHER role.",
+        "operationId": "getStudentsInClass",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "FULL_NAME"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "ASC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Students retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/exams": {
+      "post": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Create a new exam",
+        "description": "Create a new exam for a class. Requires TEACHER role.",
+        "operationId": "createExam",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExamRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exam created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/exams/{examId}": {
+      "get": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Get exam detail",
+        "description": "Get detail of a specific published exam. Requires STUDENT role and enrollment in the exam's class.",
+        "operationId": "getExamDetail",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exam retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires STUDENT role"
+          },
+          "404": {
+            "description": "Exam not found"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
       "LoginRequestDto": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -362,7 +700,10 @@
       },
       "LoginResponseDto": {
         "type": "object",
-        "required": ["accessToken", "expiresAt"],
+        "required": [
+          "accessToken",
+          "expiresAt"
+        ],
         "properties": {
           "accessToken": {
             "type": "string",
@@ -380,7 +721,12 @@
       },
       "LoginSuccessResponse": {
         "type": "object",
-        "required": ["data", "meta", "code", "message"],
+        "required": [
+          "data",
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/LoginResponseDto"
@@ -403,7 +749,10 @@
       },
       "RefreshTokenResponseDto": {
         "type": "object",
-        "required": ["accessToken", "expiresAt"],
+        "required": [
+          "accessToken",
+          "expiresAt"
+        ],
         "properties": {
           "accessToken": {
             "type": "string",
@@ -421,7 +770,12 @@
       },
       "RefreshSuccessResponse": {
         "type": "object",
-        "required": ["data", "meta", "code", "message"],
+        "required": [
+          "data",
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/RefreshTokenResponseDto"
@@ -444,7 +798,11 @@
       },
       "MessageResponse": {
         "type": "object",
-        "required": ["meta", "code", "message"],
+        "required": [
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "meta": {
             "$ref": "#/components/schemas/Meta"
@@ -464,7 +822,9 @@
       },
       "Meta": {
         "type": "object",
-        "required": ["timestamp"],
+        "required": [
+          "timestamp"
+        ],
         "properties": {
           "timestamp": {
             "type": "string",
@@ -477,7 +837,10 @@
       },
       "ErrorResponse": {
         "type": "object",
-        "required": ["message", "code"],
+        "required": [
+          "message",
+          "code"
+        ],
         "properties": {
           "message": {
             "type": "string",
@@ -518,7 +881,10 @@
       },
       "FieldErrorDetail": {
         "type": "object",
-        "required": ["field", "message"],
+        "required": [
+          "field",
+          "message"
+        ],
         "properties": {
           "field": {
             "type": "string",
@@ -545,4 +911,3 @@
   },
   "security": []
 }
-

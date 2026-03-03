@@ -21,6 +21,12 @@ spring:
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
+  exam-datasource:
+    url: ${EXAM_DATASOURCE_URL:jdbc:sqlserver://localhost:1433;encrypt=true;trustServerCertificate=true}
+    username: ${EXAM_DATASOURCE_USERNAME:sa}
+    password: ${EXAM_DATASOURCE_PASSWORD:Password123!}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+
   application:
     security:
       jwt:

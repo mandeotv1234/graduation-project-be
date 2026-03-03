@@ -21,6 +21,23 @@ services:
         max-size: "10M"
         max-file: "3"
 
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: grad-mssql
+    ports:
+      - 1433:1433
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Password123!}
+    restart: on-failure
+    networks:
+      - GRAD-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10M"
+        max-file: "3"
+
   redis:
     image: redis:7-alpine
     container_name: ${REDIS_CONTAINER_NAME:-grad-redis}

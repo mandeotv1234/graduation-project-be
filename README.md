@@ -118,6 +118,8 @@ src/main/java/graduation_project_be/
 │       └── api/
 │           ├── controller/              # REST Controllers
 │           │   ├── AuthController.java       # Login, Refresh, Logout endpoints
+│           │   ├── ClassController.java      # Class CRUD + nested students
+│           │   ├── ExamController.java       # Exam create + detail
 │           │   └── UserController.java       # User management
 │           ├── dtos/                    # Data Transfer Objects
 │           │   ├── request/             # Request DTOs
@@ -496,8 +498,10 @@ src/main/java/graduation_project_be/
 **Responsibility:** Receive requests from clients and return responses
 
 **Components:**
-- **Controllers:** Handle HTTP requests
-  - `AuthController`: Endpoint `/api/auth/login`
+- **Controllers:** Handle HTTP requests (resource-based, with `@PreAuthorize` for authorization)
+  - `AuthController`: Endpoint `/api/auth/**` (login, refresh, logout)
+  - `ClassController`: Endpoint `/api/classes/**` (CRUD classes, nested students)
+  - `ExamController`: Endpoint `/api/exams/**` (create exam, get exam detail)
   - `UserController`: Endpoint `/api/users/**`
 - **DTOs:** Data Transfer Objects for JSON serialization/deserialization
 - **Exceptions:** Web-specific exceptions

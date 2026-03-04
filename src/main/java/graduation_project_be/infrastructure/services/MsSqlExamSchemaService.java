@@ -162,6 +162,36 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
+    public void dropSchema(String schemaName) {
+        String userName = schemaName + "_user";
+
+        try {
+            // First reset all objects inside the schema
+            resetSchema(schemaName);
+
+            // Then drop the user and schema
+            jdbcTemplate.execute((Connection conn) -> {
+                try (Statement stmt = conn.createStatement()) {
+                    // Drop user if exists
+                    stmt.execute("IF EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '" + userName + "') " +
+                            "DROP USER [" + userName + "]");
+                }
+                try (Statement stmt = conn.createStatement()) {
+                    // Drop schema if exists
+                    stmt.execute("IF EXISTS (SELECT 1 FROM sys.schemas WHERE name = '" + schemaName + "') " +
+                            "DROP SCHEMA [" + schemaName + "]");
+                }
+                return null;
+            });
+
+            log.info("Dropped schema [{}] and user [{}]", schemaName, userName);
+        } catch (Exception e) {
+            log.error("Failed to drop schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Failed to drop schema: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void loadTemplateIntoSchema(String schemaName, String ddlScript, String defaultDataScript) {
         String userName = schemaName + "_user";
         ensureSchemaAndUser(schemaName);
@@ -216,27 +246,39 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
 
                 try {
-                    String trimmedUpper = sql.trim().toUpperCase();
+                    try (Statement stmt = conn.createStatement()) {
+                        boolean isResultSet = stmt.execute(sql);
 
-                    if (trimmedUpper.startsWith("SELECT")) {
-                        // SELECT → return result set
-                        try (Statement stmt = conn.createStatement();
-                                ResultSet rs = stmt.executeQuery(sql)) {
-                            ResultSetMetaData meta = rs.getMetaData();
-                            int colCount = meta.getColumnCount();
-                            while (rs.next()) {
-                                Map<String, Object> row = new LinkedHashMap<>();
-                                for (int i = 1; i <= colCount; i++) {
-                                    row.put(meta.getColumnLabel(i), rs.getObject(i));
+                        // Walk through ALL results using correct JDBC pattern
+                        // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
+                        while (true) {
+                            if (isResultSet) {
+                                try (ResultSet rs = stmt.getResultSet()) {
+                                    ResultSetMetaData meta = rs.getMetaData();
+                                    int colCount = meta.getColumnCount();
+                                    while (rs.next()) {
+                                        Map<String, Object> row = new LinkedHashMap<>();
+                                        for (int i = 1; i <= colCount; i++) {
+                                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                                        }
+                                        results.add(row);
+                                    }
                                 }
-                                results.add(row);
+                            } else {
+                                // Current result is an update count
+                                int updateCount = stmt.getUpdateCount();
+                                if (updateCount == -1) {
+                                    // No more results of any kind
+                                    break;
+                                }
                             }
+                            // Advance to next result (only call ONCE per iteration!)
+                            isResultSet = stmt.getMoreResults();
                         }
-                    } else {
-                        // DDL/DML → execute and return status message
-                        try (Statement stmt = conn.createStatement()) {
-                            stmt.execute(sql);
-                        }
+                    }
+
+                    // If no result set was returned (pure DDL/DML), return a status
+                    if (results.isEmpty()) {
                         results.add(Map.of("result", "Statement executed successfully"));
                     }
                 } finally {

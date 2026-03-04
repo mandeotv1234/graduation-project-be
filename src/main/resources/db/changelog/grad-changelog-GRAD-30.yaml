@@ -737,3 +737,96 @@ databaseChangeLog:
                   value: "SELECT 998 AS SoHD, 1 AS MaXe, 1 AS MaKH"
             where: id = 10
 
+  # ==================== Fix verify_script for FUNCTION (remove dbo. prefix) ====================
+  - changeSet:
+      id: 0203260019
+      author: manhuynh
+      comment: "Fix verify_script for Q9: remove dbo. prefix — function is in student's default schema, not dbo"
+      changes:
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: verify_script
+                  value: "SELECT fn_TinhSoNgayThue(1) AS result"
+            where: id = 9
+
+  # ==================== Fix Q9 verify_script: use {SCHEMA} placeholder for scalar function ====================
+  - changeSet:
+      id: 0203260020
+      author: manhuynh
+      comment: "Fix Q9: MSSQL scalar functions require schema-qualified name. Use {SCHEMA} placeholder replaced at runtime."
+      changes:
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: verify_script
+                  value: "SELECT {SCHEMA}.fn_TinhSoNgayThue(1) AS result"
+            where: id = 9
+
+  # ==================== Create exam_results table — stores total score per student per exam ====================
+  - changeSet:
+      id: 0203260021
+      author: manhuynh
+      comment: "Create exam_results table to store aggregated exam scores for each student"
+      changes:
+        - createTable:
+            tableName: exam_results
+            columns:
+              - column:
+                  name: id
+                  type: int
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: exam_id
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_score
+                  type: decimal(5,2)
+              - column:
+                  name: max_score
+                  type: decimal(5,2)
+              - column:
+                  name: total_questions
+                  type: int
+              - column:
+                  name: correct_count
+                  type: int
+              - column:
+                  name: submitted_at
+                  type: timestamp
+                  defaultValueComputed: now()
+
+        - addForeignKeyConstraint:
+            baseTableName: exam_results
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_result_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableName: exam_results
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_result_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - addUniqueConstraint:
+            tableName: exam_results
+            columnNames: exam_id, student_id
+            constraintName: uq_exam_student_result

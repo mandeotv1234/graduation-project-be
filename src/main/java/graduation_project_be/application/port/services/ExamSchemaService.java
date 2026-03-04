@@ -8,6 +8,8 @@ public interface ExamSchemaService {
 
     void resetSchema(String schemaName);
 
+    void dropSchema(String schemaName);
+
     void loadTemplateIntoSchema(String schemaName, String ddlScript, String defaultDataScript);
 
     List<Map<String, Object>> executeSql(String schemaName, String sql);

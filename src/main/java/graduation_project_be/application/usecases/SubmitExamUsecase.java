@@ -8,6 +8,7 @@ import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class SubmitExamUsecase {
     private final ExamRepository examRepository;
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamSubmissionRepository examSubmissionRepository;
+    private final ExamResultRepository examResultRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
@@ -129,6 +131,25 @@ public class SubmitExamUsecase {
                     executionTimeMs));
         }
 
+        // 6. Save total result to exam_results table
+        ExamResult examResult = ExamResult.builder()
+                .examId(examId)
+                .studentId(studentId)
+                .totalScore(totalScore)
+                .maxScore(maxScore)
+                .totalQuestions(results.size())
+                .correctCount(correctCount)
+                .submittedAt(submittedAt)
+                .build();
+        examResultRepository.save(examResult);
+
+        // 7. Cleanup — drop the student's schema after grading is complete
+        try {
+            examSchemaService.dropSchema(schemaName);
+        } catch (Exception e) {
+            log.warn("Failed to drop schema [{}] after grading: {}", schemaName, e.getMessage());
+        }
+
         return new SubmitExamResponse(
                 examId, studentId, totalScore, maxScore,
                 results.size(), correctCount, submittedAt, results);
@@ -194,8 +215,12 @@ public class SubmitExamUsecase {
         }
 
         try {
+            // Replace {SCHEMA} placeholder with actual schema name
+            // (MSSQL requires schema-qualified names for scalar functions)
+            String resolvedScript = verifyScript.replace("{SCHEMA}", schemaName);
+
             List<Map<String, Object>> actual = examSchemaService.executeSql(
-                    schemaName, verifyScript);
+                    schemaName, resolvedScript);
             List<Map<String, Object>> expected = examSchemaService.executeSql(
                     schemaName, question.getCorrectQuery());
 

@@ -140,12 +140,13 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ExamQuestionRepository examQuestionRepository,
             ExamSubmissionRepository examSubmissionRepository,
+            ExamResultRepository examResultRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                classEnrollmentRepository, currentUserService, examSchemaService);
+                examResultRepository, classEnrollmentRepository, currentUserService, examSchemaService);
     }
 
     @Bean

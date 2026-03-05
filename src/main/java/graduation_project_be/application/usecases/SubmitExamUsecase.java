@@ -55,45 +55,66 @@ public class SubmitExamUsecase {
         Map<Long, ExamQuestion> questionMap = allQuestions.stream()
                 .collect(Collectors.toMap(ExamQuestion::getId, Function.identity()));
 
+        // Compute maxScore from ALL exam questions (not from submitted answers)
+        BigDecimal maxScore = allQuestions.stream()
+                .map(ExamQuestion::getPoints)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int totalQuestions = allQuestions.size();
+
+        // 3b. Validate submitted answers: no duplicates, all questionIds must belong to
+        // this exam
+        Map<Long, String> answerMap = new java.util.LinkedHashMap<>();
+        for (SubmitExamRequest.AnswerItem answer : request.answers()) {
+            if (!questionMap.containsKey(answer.questionId())) {
+                throw new IllegalArgumentException("Question " + answer.questionId() + " does not belong to this exam");
+            }
+            if (answerMap.containsKey(answer.questionId())) {
+                throw new IllegalArgumentException("Duplicate answer for question " + answer.questionId());
+            }
+            answerMap.put(answer.questionId(), answer.studentQuery());
+        }
+
         String schemaName = String.format("exam_%d_student_%d", examId, studentId);
 
         // 4. Reset schema — drop all existing objects so student SQL runs cleanly
         log.info("Resetting schema [{}] before grading", schemaName);
         examSchemaService.resetSchema(schemaName);
 
-        // 5. Grade each answer sequentially (order matters for DDL → DML → SELECT)
+        // 5. Grade ALL questions sequentially (order by orderIndex, DDL → DML → SELECT)
+        // Missing answers are treated as incorrect (0 score)
         List<SubmitExamResponse.QuestionResult> results = new ArrayList<>();
         BigDecimal totalScore = BigDecimal.ZERO;
-        BigDecimal maxScore = BigDecimal.ZERO;
         int correctCount = 0;
 
-        for (SubmitExamRequest.AnswerItem answer : request.answers()) {
-            ExamQuestion question = questionMap.get(answer.questionId());
-            if (question == null) {
-                log.warn("Question {} not found in exam {}, skipping", answer.questionId(), examId);
-                continue;
-            }
+        // Sort questions by orderIndex to ensure correct execution order
+        List<ExamQuestion> sortedQuestions = allQuestions.stream()
+                .sorted((a, b) -> Integer.compare(a.getOrderIndex(), b.getOrderIndex()))
+                .toList();
 
-            maxScore = maxScore.add(question.getPoints());
+        for (ExamQuestion question : sortedQuestions) {
+            String studentQuery = answerMap.get(question.getId());
 
-            // Grade this answer
             boolean isCorrect = false;
             String errorMessage = null;
             int executionTimeMs = 0;
 
-            long startTime = System.currentTimeMillis();
-            try {
-                // Execute student's SQL
-                examSchemaService.executeSql(schemaName, answer.studentQuery());
-                executionTimeMs = (int) (System.currentTimeMillis() - startTime);
+            if (studentQuery == null || studentQuery.isBlank()) {
+                // Student did not answer this question
+                errorMessage = "No answer submitted";
+            } else {
+                long startTime = System.currentTimeMillis();
+                try {
+                    // Execute student's SQL
+                    examSchemaService.executeSql(schemaName, studentQuery);
+                    executionTimeMs = (int) (System.currentTimeMillis() - startTime);
 
-                // Grade based on question type
-                isCorrect = gradeAnswer(schemaName, question);
-
-            } catch (Exception e) {
-                executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-                errorMessage = e.getMessage();
-                log.warn("Q{} execution failed: {}", answer.questionId(), e.getMessage());
+                    // Grade based on question type
+                    isCorrect = gradeAnswer(schemaName, question);
+                } catch (Exception e) {
+                    executionTimeMs = (int) (System.currentTimeMillis() - startTime);
+                    errorMessage = e.getMessage();
+                    log.warn("Q{} execution failed: {}", question.getId(), e.getMessage());
+                }
             }
 
             BigDecimal scoreEarned = isCorrect ? question.getPoints() : BigDecimal.ZERO;
@@ -101,13 +122,13 @@ public class SubmitExamUsecase {
                 correctCount++;
             totalScore = totalScore.add(scoreEarned);
 
-            // Save individual submission to DB
+            // Save individual submission to DB (upsert — see Issue 6)
             ExamSubmission submission = ExamSubmission.builder()
                     .examId(examId)
-                    .questionId(answer.questionId())
+                    .questionId(question.getId())
                     .studentId(studentId)
                     .assignedSchemaName(schemaName)
-                    .studentQuery(answer.studentQuery())
+                    .studentQuery(studentQuery != null ? studentQuery : "")
                     .isCorrect(isCorrect)
                     .scoreEarned(scoreEarned)
                     .errorMessage(errorMessage)
@@ -116,14 +137,15 @@ public class SubmitExamUsecase {
                     .submittedAt(submittedAt)
                     .build();
 
-            ExamSubmission saved = examSubmissionRepository.save(submission);
+            // Upsert: update existing submission if student re-submits
+            ExamSubmission saved = upsertSubmission(submission);
 
             // Add to results
             results.add(new SubmitExamResponse.QuestionResult(
                     saved.getId(),
-                    answer.questionId(),
+                    question.getId(),
                     question.getOrderIndex(),
-                    answer.studentQuery(),
+                    studentQuery != null ? studentQuery : "",
                     isCorrect,
                     scoreEarned,
                     question.getPoints(),
@@ -131,17 +153,17 @@ public class SubmitExamUsecase {
                     executionTimeMs));
         }
 
-        // 6. Save total result to exam_results table
+        // 6. Upsert total result to exam_results table
         ExamResult examResult = ExamResult.builder()
                 .examId(examId)
                 .studentId(studentId)
                 .totalScore(totalScore)
                 .maxScore(maxScore)
-                .totalQuestions(results.size())
+                .totalQuestions(totalQuestions)
                 .correctCount(correctCount)
                 .submittedAt(submittedAt)
                 .build();
-        examResultRepository.save(examResult);
+        upsertExamResult(examResult);
 
         // 7. Cleanup — drop the student's schema after grading is complete
         try {
@@ -152,7 +174,43 @@ public class SubmitExamUsecase {
 
         return new SubmitExamResponse(
                 examId, studentId, totalScore, maxScore,
-                results.size(), correctCount, submittedAt, results);
+                totalQuestions, correctCount, submittedAt, results);
+    }
+
+    // ========== Upsert helpers ==========
+
+    private ExamSubmission upsertSubmission(ExamSubmission submission) {
+        var existing = examSubmissionRepository.findByExamIdAndQuestionIdAndStudentId(
+                submission.getExamId(), submission.getQuestionId(), submission.getStudentId());
+        if (existing.isPresent()) {
+            // Update existing submission
+            ExamSubmission toUpdate = existing.get();
+            toUpdate.setStudentQuery(submission.getStudentQuery());
+            toUpdate.setIsCorrect(submission.getIsCorrect());
+            toUpdate.setScoreEarned(submission.getScoreEarned());
+            toUpdate.setErrorMessage(submission.getErrorMessage());
+            toUpdate.setExecutionTimeMs(submission.getExecutionTimeMs());
+            toUpdate.setStatus(submission.getStatus());
+            toUpdate.setSubmittedAt(submission.getSubmittedAt());
+            return examSubmissionRepository.save(toUpdate);
+        }
+        return examSubmissionRepository.save(submission);
+    }
+
+    private void upsertExamResult(ExamResult examResult) {
+        var existing = examResultRepository.findByExamIdAndStudentId(
+                examResult.getExamId(), examResult.getStudentId());
+        if (existing.isPresent()) {
+            ExamResult toUpdate = existing.get();
+            toUpdate.setTotalScore(examResult.getTotalScore());
+            toUpdate.setMaxScore(examResult.getMaxScore());
+            toUpdate.setTotalQuestions(examResult.getTotalQuestions());
+            toUpdate.setCorrectCount(examResult.getCorrectCount());
+            toUpdate.setSubmittedAt(examResult.getSubmittedAt());
+            examResultRepository.save(toUpdate);
+        } else {
+            examResultRepository.save(examResult);
+        }
     }
 
     // ========== Grading Logic ==========

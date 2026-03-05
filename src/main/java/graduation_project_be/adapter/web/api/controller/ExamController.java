@@ -67,11 +67,28 @@ public class ExamController {
         public ResponseEntity<ResponseDto> getExamQuestions(
                         @PathVariable @Positive Long examId) {
                 List<ExamQuestionResponse> responses = getExamQuestionsUsecase.execute(examId);
-                List<ExamQuestionResponseDto> dtos = responses.stream()
-                                .map(ExamQuestionResponseDto::fromResponse)
-                                .toList();
-                return ResponseEntity.ok(
-                                ResponseDto.of(dtos, "OK", "Questions retrieved successfully"));
+
+                // Return different DTO based on role
+                var auth = org.springframework.security.core.context.SecurityContextHolder
+                                .getContext().getAuthentication();
+                boolean isTeacher = auth.getAuthorities().stream()
+                                .anyMatch(a -> a.getAuthority().equals("ROLE_TEACHER"));
+
+                if (isTeacher) {
+                        // Teacher sees full question details (correctQuery, verifyScript)
+                        List<ExamQuestionResponseDto> dtos = responses.stream()
+                                        .map(ExamQuestionResponseDto::fromResponse)
+                                        .toList();
+                        return ResponseEntity.ok(
+                                        ResponseDto.of(dtos, "OK", "Questions retrieved successfully"));
+                } else {
+                        // Student sees only content/metadata (no answers)
+                        List<StudentExamQuestionResponseDto> dtos = responses.stream()
+                                        .map(StudentExamQuestionResponseDto::fromResponse)
+                                        .toList();
+                        return ResponseEntity.ok(
+                                        ResponseDto.of(dtos, "OK", "Questions retrieved successfully"));
+                }
         }
 
         // ===== STUDENT ENDPOINTS =====

@@ -7,6 +7,8 @@ import graduation_project_be.infrastructure.persistence.repositories.jpa.ExamRes
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 @RequiredArgsConstructor
 public class ExamResultRepositoryImpl implements ExamResultRepository {
@@ -18,5 +20,11 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
         ExamResultEntity entity = ExamResultEntity.fromDomain(examResult);
         ExamResultEntity saved = jpaRepository.save(entity);
         return saved.toModel();
+    }
+
+    @Override
+    public Optional<ExamResult> findByExamIdAndStudentId(Long examId, Long studentId) {
+        return jpaRepository.findByExamIdAndStudentId(examId, studentId)
+                .map(ExamResultEntity::toModel);
     }
 }

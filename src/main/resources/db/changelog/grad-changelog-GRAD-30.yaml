@@ -830,3 +830,23 @@ databaseChangeLog:
             tableName: exam_results
             columnNames: exam_id, student_id
             constraintName: uq_exam_student_result
+
+  # ==================== Add unique constraint on exam_submissions ====================
+  - changeSet:
+      id: 0203260022
+      author: manhuynh
+      comment: "Remove duplicate submissions (keep latest), then add unique constraint"
+      changes:
+        # First: delete older duplicate rows, keeping only the one with the highest id
+        - sql:
+            sql: >-
+              DELETE FROM exam_submissions
+              WHERE id NOT IN (
+                SELECT MAX(id) FROM exam_submissions
+                GROUP BY exam_id, question_id, student_id
+              )
+        # Then: add the unique constraint
+        - addUniqueConstraint:
+            tableName: exam_submissions
+            columnNames: exam_id, question_id, student_id
+            constraintName: uq_exam_question_student

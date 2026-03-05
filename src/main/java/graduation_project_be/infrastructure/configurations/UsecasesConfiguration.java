@@ -115,8 +115,12 @@ public class UsecasesConfiguration {
     @Bean
     GetExamQuestionsUsecase getExamQuestionsUsecase(
             ExamQuestionRepository examQuestionRepository,
-            ExamRepository examRepository) {
-        return new GetExamQuestionsUsecase(examQuestionRepository, examRepository);
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamQuestionsUsecase(examQuestionRepository, examRepository,
+                classRepository, classEnrollmentRepository, currentUserService);
     }
 
     @Bean

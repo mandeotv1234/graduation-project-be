@@ -236,6 +236,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         // createExamSchemaForStudent was never called)
         ensureSchemaAndUser(schemaName);
 
+        // Sanitize SQL — block privilege escalation keywords
+        validateStudentSql(sql);
+
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
@@ -293,6 +296,44 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         } catch (Exception e) {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
             throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Block SQL statements that could escalate privileges or escape the
+     * sandboxed EXECUTE AS USER context.
+     */
+    private void validateStudentSql(String sql) {
+        if (sql == null || sql.isBlank())
+            return;
+
+        String upper = sql.toUpperCase().replaceAll("\\s+", " ").trim();
+
+        String[] blockedPatterns = {
+                "REVERT", // escape EXECUTE AS context
+                "EXECUTE AS", // switch to another user
+                "GRANT ", // modify permissions
+                "DENY ", // modify permissions
+                "REVOKE ", // modify permissions
+                "ALTER LOGIN", // modify logins
+                "CREATE LOGIN", // create logins
+                "DROP LOGIN", // drop logins
+                "ALTER USER", // modify user
+                "CREATE USER", // create user
+                "DROP USER", // drop user
+                "ALTER SCHEMA", // modify schema ownership
+                "DROP SCHEMA", // drop schema
+                "OPENROWSET", // external data access
+                "OPENDATASOURCE", // external data access
+                "XP_CMDSHELL", // OS command execution
+                "SP_CONFIGURE", // server configuration
+        };
+
+        for (String blocked : blockedPatterns) {
+            if (upper.contains(blocked)) {
+                throw new SecurityException(
+                        "SQL contains blocked statement: " + blocked + ". This operation is not allowed.");
+            }
         }
     }
 }

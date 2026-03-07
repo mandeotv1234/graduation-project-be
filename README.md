@@ -28,7 +28,8 @@ This is the backend of the **Graduation Project**, built with **Spring Boot 3.5.
 | Spring Boot | 3.5.7 | Main Framework |
 | Spring Security | 3.x | Authentication & Authorization |
 | Spring Data JPA | 3.x | ORM & Database |
-| PostgreSQL | 42.5.6 | Database |
+| PostgreSQL | 42.5.6 | Core Database |
+| MSSQL | Latest | Student Exam Schemas (isolated per student) |
 | Liquibase | Latest | Database Migration |
 | JWT (jjwt) | 0.11.5 | Token-based Authentication |
 | Lombok | Latest | Reduce Boilerplate Code |
@@ -118,6 +119,8 @@ src/main/java/graduation_project_be/
 │       └── api/
 │           ├── controller/              # REST Controllers
 │           │   ├── AuthController.java       # Login, Refresh, Logout endpoints
+│           │   ├── ClassController.java      # Class CRUD + nested students
+│           │   ├── ExamController.java       # Exam create + detail
 │           │   └── UserController.java       # User management
 │           ├── dtos/                    # Data Transfer Objects
 │           │   ├── request/             # Request DTOs
@@ -496,8 +499,11 @@ src/main/java/graduation_project_be/
 **Responsibility:** Receive requests from clients and return responses
 
 **Components:**
-- **Controllers:** Handle HTTP requests
-  - `AuthController`: Endpoint `/api/auth/login`
+- **Controllers:** Handle HTTP requests (resource-based, with `@PreAuthorize` for authorization)
+  - `AuthController`: Endpoint `/api/auth/**` (login, refresh, logout)
+  - `ClassController`: Endpoint `/api/classes/**` (CRUD classes, nested students)
+  - `ExamController`: Endpoint `/api/exams/**` (create exam, questions, submit, execute SQL)
+  - `SchemaTemplateController`: Endpoint `/api/schema-templates/**` (create/list templates)
   - `UserController`: Endpoint `/api/users/**`
 - **DTOs:** Data Transfer Objects for JSON serialization/deserialization
 - **Exceptions:** Web-specific exceptions
@@ -828,6 +834,117 @@ curl -X GET http://localhost:8080/api/users/me \
 
 ---
 
+## 📝 Exam & Grading System APIs
+
+### Overview
+The exam system allows teachers to create SQL exams with multiple question types, and students to practice and submit their answers. Each student gets an **isolated MSSQL schema** to work in. Upon submission, the server **resets the schema**, re-runs all answers, grades each question, and returns the total score.
+
+### Question Types (Enum: `QuestionType`)
+| Type | Grading Strategy |
+|---|---|
+| `CREATE_TABLE` | Strict: compare schema columns/types against hardcoded expected |
+| `INSERT_DATA` | Strict: compare inserted data against hardcoded expected |
+| `SELECT_QUERY` | Strict: compare query result against hardcoded expected |
+| `TRIGGER` | Behavioral: run verify_script, compare output to expected |
+| `FUNCTION` | Behavioral: call function via verify_script, compare result |
+| `STORED_PROCEDURE` | Behavioral: execute SP via verify_script, compare result |
+
+### Exam Endpoints
+
+#### 🔹 `POST /api/exams` — Create Exam (TEACHER)
+```json
+{
+  "title": "Bài thi CSDL",
+  "classId": 1,
+  "startTime": "2026-01-01T00:00:00",
+  "endTime": "2027-12-31T23:59:59"
+}
+```
+
+#### 🔹 `POST /api/exams/{examId}/questions` — Add Question (TEACHER)
+```json
+{
+  "content": "Tạo bảng Xe gồm: MaXe (INT, PK), BienSo (NVARCHAR(20))...",
+  "correctQuery": "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Xe' ORDER BY ORDINAL_POSITION",
+  "points": 1.0,
+  "orderIndex": 1,
+  "questionType": "CREATE_TABLE",
+  "verifyScript": "SELECT 'MaXe' AS COLUMN_NAME, 'int' AS DATA_TYPE UNION ALL SELECT 'BienSo', 'nvarchar'..."
+}
+```
+
+#### 🔹 `GET /api/exams/{examId}/questions` — Get Questions (TEACHER/STUDENT)
+Returns list of exam questions with `id`, `content`, `points`, `orderIndex`, `questionType`.
+
+#### 🔹 `GET /api/exams/enrolled` — Get Enrolled Exams (STUDENT)
+Returns published exams for classes the student is enrolled in.
+
+#### 🔹 `GET /api/exams/{examId}` — Get Exam Detail (STUDENT)
+Returns exam detail with schema info.
+
+#### 🔹 `POST /api/exams/{examId}/execute-sql` — Execute SQL (STUDENT)
+```json
+{ "sql": "SELECT * FROM Xe ORDER BY MaXe" }
+```
+→ Returns `resultSet`, `rowCount`, `executionTimeMs`
+
+#### 🔹 `POST /api/exams/{examId}/submit` — Submit Entire Exam (STUDENT) ⭐
+**One API for all questions.** Submits, grades, and returns total score.
+
+**Request:**
+```json
+{
+  "answers": [
+    { "questionId": 1, "studentQuery": "CREATE TABLE Xe (...)" },
+    { "questionId": 2, "studentQuery": "INSERT INTO Xe VALUES (...)" },
+    { "questionId": 3, "studentQuery": "CREATE TABLE KhachHang (...)" },
+    ...
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "examId": 1,
+    "studentId": 1,
+    "totalScore": 8.00,
+    "maxScore": 10.00,
+    "totalQuestions": 10,
+    "correctCount": 8,
+    "submittedAt": "2026-03-03T20:30:00",
+    "questionResults": [
+      { "submissionId": 1, "questionId": 1, "orderIndex": 1, "isCorrect": true, "scoreEarned": 1.0, "maxPoints": 1.0, "errorMessage": null, "executionTimeMs": 25 },
+      { "submissionId": 2, "questionId": 2, "orderIndex": 2, "isCorrect": false, "scoreEarned": 0.0, "maxPoints": 1.0, "errorMessage": "Data mismatch", "executionTimeMs": 15 }
+    ]
+  },
+  "meta": { "timestamp": "2026-03-03T20:30:00" },
+  "code": "CREATED",
+  "message": "Exam submitted and graded successfully"
+}
+```
+
+**Grading Flow:**
+1. Reset student's schema (drop all objects)
+2. Execute each answer sequentially (CREATE → INSERT → SELECT → ...)
+3. Grade each by question type
+4. Save 10 individual submissions to `exam_submissions` table
+5. Return total + per-question breakdown
+
+### Schema Template Endpoints
+
+#### 🔹 `POST /api/schema-templates` — Create Template (TEACHER)
+```json
+{ "name": "Đề thuê xe", "ddlScript": "CREATE TABLE...", "defaultDataScript": "INSERT INTO..." }
+```
+
+#### 🔹 `GET /api/schema-templates` — Get All Templates (TEACHER)
+
+### Class Exam Endpoints
+
+#### 🔹 `GET /api/classes/{classId}/exams` — Get Class Exams (TEACHER)
+
 ## 🧪 Testing Strategy
 
 ```
@@ -972,4 +1089,4 @@ Add new endpoint and example request/response
 
 ---
 
-**Last Updated:** December 22, 2025
+**Last Updated:** March 3, 2026

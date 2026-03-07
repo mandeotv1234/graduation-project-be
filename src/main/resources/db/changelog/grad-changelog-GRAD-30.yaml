@@ -1,0 +1,852 @@
+databaseChangeLog:
+  # ============================================================
+  # GRAD-30: Simplify database schema
+  # - Drop: submissions, exam_sessions, exam_questions (old),
+  #         exam_variants, questions, system_logs
+  # - Modify: exams (remove exam_matrix, add title + created_at)
+  # - Create: exam_questions (new), exam_submissions (new)
+  # ============================================================
+
+  # ---- STEP 1: Drop tables (leaf → parent order) ----
+
+  - changeSet:
+      id: 0203260001
+      author: manhuynh
+      comment: "Drop submissions table (depends on exam_sessions, questions)"
+      changes:
+        - dropTable:
+            tableName: submissions
+
+  - changeSet:
+      id: 0203260002
+      author: manhuynh
+      comment: "Drop exam_sessions table (depends on exams, exam_variants, users)"
+      changes:
+        - dropTable:
+            tableName: exam_sessions
+
+  - changeSet:
+      id: 0203260003
+      author: manhuynh
+      comment: "Drop exam_questions table - old join table (depends on exam_variants, questions)"
+      changes:
+        - dropTable:
+            tableName: exam_questions
+
+  - changeSet:
+      id: 0203260004
+      author: manhuynh
+      comment: "Drop exam_variants table (depends on exams)"
+      changes:
+        - dropTable:
+            tableName: exam_variants
+
+  - changeSet:
+      id: 0203260005
+      author: manhuynh
+      comment: "Drop questions table (depends on schema_templates)"
+      changes:
+        - dropTable:
+            tableName: questions
+
+  - changeSet:
+      id: 0203260006
+      author: manhuynh
+      comment: "Drop system_logs table - use logging framework instead"
+      changes:
+        - dropTable:
+            tableName: system_logs
+
+  # ---- STEP 2: Modify exams table ----
+
+  - changeSet:
+      id: 0203260007
+      author: manhuynh
+      comment: "Remove exam_matrix JSON column from exams"
+      changes:
+        - dropColumn:
+            tableName: exams
+            columnName: exam_matrix
+
+  - changeSet:
+      id: 0203260008
+      author: manhuynh
+      comment: "Add title and created_at to exams"
+      changes:
+        - addColumn:
+            tableName: exams
+            columns:
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  defaultValue: "Untitled Exam"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+
+  # ---- STEP 3: Create new simplified tables ----
+
+  - changeSet:
+      id: 0203260009
+      author: manhuynh
+      comment: "Create new exam_questions table - questions embedded directly in exam"
+      changes:
+        - createTable:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: correct_query
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: difficulty_level
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: points
+                  type: DECIMAL(5,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_index
+                  type: INT
+        - addForeignKeyConstraint:
+            baseTableName: exam_questions
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_eq_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - sql:
+            sql: ALTER TABLE exam_questions ADD CONSTRAINT chk_eq_difficulty CHECK (difficulty_level BETWEEN 1 AND 5)
+
+  - changeSet:
+      id: 0203260010
+      author: manhuynh
+      comment: "Create new exam_submissions table - merged from exam_sessions + submissions"
+      changes:
+        - createTable:
+            tableName: exam_submissions
+            columns:
+              - column:
+                  name: id
+                  type: INT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: question_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: assigned_schema_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_query
+                  type: TEXT
+              - column:
+                  name: is_correct
+                  type: BOOLEAN
+              - column:
+                  name: score_earned
+                  type: DECIMAL(5,2)
+              - column:
+                  name: error_message
+                  type: TEXT
+              - column:
+                  name: execution_time_ms
+                  type: INT
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: "IN_PROGRESS"
+              - column:
+                  name: submitted_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: exam_submissions
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_sub_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_submissions
+            baseColumnNames: question_id
+            referencedTableName: exam_questions
+            referencedColumnNames: id
+            constraintName: fk_sub_question
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_submissions
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_sub_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - sql:
+            sql: ALTER TABLE exam_submissions ADD CONSTRAINT chk_sub_status CHECK (status IN ('IN_PROGRESS', 'SUBMITTED'))
+
+  # ---- STEP 4: Update existing data + Seed exam questions ----
+
+  - changeSet:
+      id: 0203260011
+      author: manhuynh
+      comment: "Update schema template for car rental exam (empty DDL - students create tables themselves)"
+      changes:
+        - update:
+            tableName: schema_templates
+            columns:
+              - column:
+                  name: name
+                  value: "Quan Ly Thue Xe - Empty Schema"
+              - column:
+                  name: ddl_script
+                  value: "-- Schema rong, sinh vien tu tao bang theo yeu cau bai thi"
+              - column:
+                  name: default_data_script
+                  value: "-- Khong co du lieu mac dinh"
+            where: id = 1
+
+  - changeSet:
+      id: 0203260012
+      author: manhuynh
+      comment: "Update exam title for car rental exam"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: title
+                  value: "Bài thi Thực hành CSDL - Quản lý Thuê xe"
+            where: id = 1
+
+  - changeSet:
+      id: 0203260013
+      author: manhuynh
+      comment: "Add 10 exam questions for car rental exam"
+      changes:
+        # Câu 1: Tạo bảng Xe
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Tạo bảng Xe gồm các cột: MaXe (INT, khóa chính), BienSo (NVARCHAR(20)), HangXe (NVARCHAR(50)), GiaThueNgay (DECIMAL(10,2))"
+              - column:
+                  name: correct_query
+                  value: "CREATE TABLE Xe (MaXe INT PRIMARY KEY, BienSo NVARCHAR(20), HangXe NVARCHAR(50), GiaThueNgay DECIMAL(10,2));"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 1
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+
+        # Câu 2: Thêm dữ liệu mẫu vào bảng Xe
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Thêm ít nhất 3 dòng dữ liệu mẫu vào bảng Xe"
+              - column:
+                  name: correct_query
+                  value: "INSERT INTO Xe (MaXe, BienSo, HangXe, GiaThueNgay) VALUES (1, N'30A-12345', N'Toyota Vios', 500000.00), (2, N'51B-67890', N'Honda City', 450000.00), (3, N'43C-11111', N'Ford Ranger', 700000.00);"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 1
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+
+        # Câu 3: Tạo bảng KhachHang
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Tạo bảng KhachHang gồm các cột: MaKH (INT, khóa chính), HoTen (NVARCHAR(100)), DienThoai (NVARCHAR(15))"
+              - column:
+                  name: correct_query
+                  value: "CREATE TABLE KhachHang (MaKH INT PRIMARY KEY, HoTen NVARCHAR(100), DienThoai NVARCHAR(15));"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 1
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+
+        # Câu 4: Thêm dữ liệu mẫu vào bảng KhachHang
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Thêm ít nhất 3 dòng dữ liệu mẫu vào bảng KhachHang"
+              - column:
+                  name: correct_query
+                  value: "INSERT INTO KhachHang (MaKH, HoTen, DienThoai) VALUES (1, N'Nguyễn Văn A', '0901234567'), (2, N'Trần Thị B', '0912345678'), (3, N'Lê Văn C', '0923456789');"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 1
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 4
+
+        # Câu 5: Tạo bảng HopDong với khóa ngoại
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Tạo bảng HopDong gồm: SoHD (INT, khóa chính), MaXe (INT), MaKH (INT), NgayThue (DATE), NgayTra (DATE). Trong đó MaXe là khóa ngoại tham chiếu đến bảng Xe, MaKH là khóa ngoại tham chiếu đến bảng KhachHang"
+              - column:
+                  name: correct_query
+                  value: "CREATE TABLE HopDong (SoHD INT PRIMARY KEY, MaXe INT FOREIGN KEY REFERENCES Xe(MaXe), MaKH INT FOREIGN KEY REFERENCES KhachHang(MaKH), NgayThue DATE, NgayTra DATE);"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 2
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 5
+
+        # Câu 6: Thêm dữ liệu mẫu vào bảng HopDong
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Thêm ít nhất 3 dòng dữ liệu mẫu vào bảng HopDong (đảm bảo MaXe và MaKH đã tồn tại trong bảng Xe và KhachHang)"
+              - column:
+                  name: correct_query
+                  value: "INSERT INTO HopDong (SoHD, MaXe, MaKH, NgayThue, NgayTra) VALUES (1, 1, 1, '2025-01-01', '2025-01-05'), (2, 2, 2, '2025-02-10', '2025-02-15'), (3, 3, 3, '2025-03-01', '2025-03-07');"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 1
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 6
+
+        # Câu 7: Truy vấn JOIN
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Viết truy vấn hiển thị danh sách các Hợp đồng bao gồm: SoHD, HoTen (tên khách hàng), BienSo (biển số xe), NgayThue, NgayTra"
+              - column:
+                  name: correct_query
+                  value: "SELECT hd.SoHD, kh.HoTen, x.BienSo, hd.NgayThue, hd.NgayTra FROM HopDong hd JOIN KhachHang kh ON hd.MaKH = kh.MaKH JOIN Xe x ON hd.MaXe = x.MaXe;"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 2
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 7
+
+        # Câu 8: Trigger
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Viết Trigger trên bảng HopDong để chặn không cho nhập NgayTra nhỏ hơn NgayThue khi INSERT hoặc UPDATE"
+              - column:
+                  name: correct_query
+                  value: "CREATE TRIGGER trg_CheckNgayTra ON HopDong FOR INSERT, UPDATE AS BEGIN IF EXISTS (SELECT 1 FROM inserted WHERE NgayTra < NgayThue) BEGIN RAISERROR(N'Ngày trả phải lớn hơn hoặc bằng ngày thuê', 16, 1); ROLLBACK TRANSACTION; END END;"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 3
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 8
+
+        # Câu 9: Function
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Tạo FUNCTION fn_TinhSoNgayThue nhận vào @SoHD (INT), trả về số ngày thuê (INT) được tính bằng hiệu số giữa NgayTra và NgayThue"
+              - column:
+                  name: correct_query
+                  value: "CREATE FUNCTION fn_TinhSoNgayThue(@SoHD INT) RETURNS INT AS BEGIN DECLARE @SoNgay INT; SELECT @SoNgay = DATEDIFF(DAY, NgayThue, NgayTra) FROM HopDong WHERE SoHD = @SoHD; RETURN @SoNgay; END;"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 3
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 9
+
+        # Câu 10: Stored Procedure
+        - insert:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: content
+                  value: "Tạo STORED PROCEDURE sp_ThemHopDong nhận vào @SoHD (INT), @MaXe (INT), @MaKH (INT), @NgayThue (DATE), @NgayTra (DATE) để thêm một hợp đồng mới vào bảng HopDong"
+              - column:
+                  name: correct_query
+                  value: "CREATE PROCEDURE sp_ThemHopDong @SoHD INT, @MaXe INT, @MaKH INT, @NgayThue DATE, @NgayTra DATE AS BEGIN INSERT INTO HopDong (SoHD, MaXe, MaKH, NgayThue, NgayTra) VALUES (@SoHD, @MaXe, @MaKH, @NgayThue, @NgayTra); END;"
+              - column:
+                  name: difficulty_level
+                  valueNumeric: 3
+              - column:
+                  name: points
+                  valueNumeric: 1.00
+              - column:
+                  name: order_index
+                  valueNumeric: 10
+
+  # ---- STEP 5: Fix missing data ----
+
+  - changeSet:
+      id: 0203260014
+      author: manhuynh
+      comment: "Enroll student 22120201 (user ID=1) into class 1"
+      changes:
+        - insert:
+            tableName: class_enrollments
+            columns:
+              - column:
+                  name: class_id
+                  valueNumeric: 1
+              - column:
+                  name: student_id
+                  valueNumeric: 1
+
+  - changeSet:
+      id: 0203260015
+      author: manhuynh
+      comment: "Update full_name for student 22120201"
+      changes:
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: full_name
+                  value: "Huynh Man"
+            where: id = 1
+
+  - changeSet:
+      id: 0203260016
+      author: manhuynh
+      comment: "Update exam time range to future dates for testing"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: start_time
+                  valueDate: "2026-01-01T00:00:00"
+              - column:
+                  name: end_time
+                  valueDate: "2027-12-31T23:59:59"
+            where: id = 1
+
+  # ---- STEP 6: Add grading fields to exam_questions ----
+
+  - changeSet:
+      id: 0203260017
+      author: manhuynh
+      comment: "Add question_type and verify_script columns to exam_questions for grading"
+      changes:
+        - addColumn:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  type: VARCHAR(20)
+                  defaultValue: "SELECT_QUERY"
+                  constraints:
+                    nullable: false
+              - column:
+                  name: verify_script
+                  type: TEXT
+        - sql:
+            sql: >
+              ALTER TABLE exam_questions ADD CONSTRAINT chk_question_type
+              CHECK (question_type IN ('CREATE_TABLE', 'INSERT_DATA', 'SELECT_QUERY', 'TRIGGER', 'FUNCTION', 'STORED_PROCEDURE'))
+
+  - changeSet:
+      id: 0203260018
+      author: manhuynh
+      comment: "Update question types, verify scripts, correct queries, and content for strict 100% grading"
+      changes:
+        # Câu 1: CREATE_TABLE Xe — verify structure via INFORMATION_SCHEMA
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "CREATE_TABLE"
+              - column:
+                  name: content
+                  value: "Tạo bảng Xe gồm đúng các cột sau:\n- MaXe (INT, khóa chính)\n- BienSo (NVARCHAR(20))\n- HangXe (NVARCHAR(50))\n- GiaThueNgay (DECIMAL(10,2))"
+              - column:
+                  name: correct_query
+                  value: "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Xe' ORDER BY ORDINAL_POSITION"
+              - column:
+                  name: verify_script
+                  value: "SELECT 'MaXe' AS COLUMN_NAME, 'int' AS DATA_TYPE UNION ALL SELECT 'BienSo', 'nvarchar' UNION ALL SELECT 'HangXe', 'nvarchar' UNION ALL SELECT 'GiaThueNgay', 'decimal'"
+            where: id = 1
+
+        # Câu 2: INSERT_DATA Xe — verify exact data
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "INSERT_DATA"
+              - column:
+                  name: content
+                  value: "Thêm đúng 3 dòng dữ liệu sau vào bảng Xe:\n- (1, N'30A-12345', N'Toyota Vios', 500000.00)\n- (2, N'51B-67890', N'Honda City', 450000.00)\n- (3, N'43C-11111', N'Ford Ranger', 700000.00)"
+              - column:
+                  name: correct_query
+                  value: "SELECT MaXe, BienSo, HangXe, GiaThueNgay FROM Xe ORDER BY MaXe"
+              - column:
+                  name: verify_script
+                  value: "SELECT 1 AS MaXe, N'30A-12345' AS BienSo, N'Toyota Vios' AS HangXe, CAST(500000.00 AS DECIMAL(10,2)) AS GiaThueNgay UNION ALL SELECT 2, N'51B-67890', N'Honda City', CAST(450000.00 AS DECIMAL(10,2)) UNION ALL SELECT 3, N'43C-11111', N'Ford Ranger', CAST(700000.00 AS DECIMAL(10,2))"
+            where: id = 2
+
+        # Câu 3: CREATE_TABLE KhachHang — verify structure
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "CREATE_TABLE"
+              - column:
+                  name: content
+                  value: "Tạo bảng KhachHang gồm đúng các cột sau:\n- MaKH (INT, khóa chính)\n- HoTen (NVARCHAR(100))\n- DienThoai (NVARCHAR(15))"
+              - column:
+                  name: correct_query
+                  value: "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhachHang' ORDER BY ORDINAL_POSITION"
+              - column:
+                  name: verify_script
+                  value: "SELECT 'MaKH' AS COLUMN_NAME, 'int' AS DATA_TYPE UNION ALL SELECT 'HoTen', 'nvarchar' UNION ALL SELECT 'DienThoai', 'nvarchar'"
+            where: id = 3
+
+        # Câu 4: INSERT_DATA KhachHang — verify exact data
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "INSERT_DATA"
+              - column:
+                  name: content
+                  value: "Thêm đúng 3 dòng dữ liệu sau vào bảng KhachHang:\n- (1, N'Nguyen Van A', '0901234567')\n- (2, N'Tran Thi B', '0912345678')\n- (3, N'Le Van C', '0923456789')"
+              - column:
+                  name: correct_query
+                  value: "SELECT MaKH, HoTen, DienThoai FROM KhachHang ORDER BY MaKH"
+              - column:
+                  name: verify_script
+                  value: "SELECT 1 AS MaKH, N'Nguyen Van A' AS HoTen, N'0901234567' AS DienThoai UNION ALL SELECT 2, N'Tran Thi B', N'0912345678' UNION ALL SELECT 3, N'Le Van C', N'0923456789'"
+            where: id = 4
+
+        # Câu 5: CREATE_TABLE HopDong with FK — verify structure
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "CREATE_TABLE"
+              - column:
+                  name: content
+                  value: "Tạo bảng HopDong gồm đúng các cột sau:\n- SoHD (INT, khóa chính)\n- MaXe (INT, khóa ngoại tham chiếu Xe(MaXe))\n- MaKH (INT, khóa ngoại tham chiếu KhachHang(MaKH))\n- NgayThue (DATE)\n- NgayTra (DATE)"
+              - column:
+                  name: correct_query
+                  value: "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'HopDong' ORDER BY ORDINAL_POSITION"
+              - column:
+                  name: verify_script
+                  value: "SELECT 'SoHD' AS COLUMN_NAME, 'int' AS DATA_TYPE UNION ALL SELECT 'MaXe', 'int' UNION ALL SELECT 'MaKH', 'int' UNION ALL SELECT 'NgayThue', 'date' UNION ALL SELECT 'NgayTra', 'date'"
+            where: id = 5
+
+        # Câu 6: INSERT_DATA HopDong — verify exact data
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "INSERT_DATA"
+              - column:
+                  name: content
+                  value: "Thêm đúng 3 dòng dữ liệu sau vào bảng HopDong:\n- (1, 1, 1, '2025-01-01', '2025-01-05')\n- (2, 2, 2, '2025-02-10', '2025-02-15')\n- (3, 3, 3, '2025-03-01', '2025-03-07')"
+              - column:
+                  name: correct_query
+                  value: "SELECT SoHD, MaXe, MaKH, NgayThue, NgayTra FROM HopDong ORDER BY SoHD"
+              - column:
+                  name: verify_script
+                  value: "SELECT 1 AS SoHD, 1 AS MaXe, 1 AS MaKH, CAST('2025-01-01' AS DATE) AS NgayThue, CAST('2025-01-05' AS DATE) AS NgayTra UNION ALL SELECT 2, 2, 2, CAST('2025-02-10' AS DATE), CAST('2025-02-15' AS DATE) UNION ALL SELECT 3, 3, 3, CAST('2025-03-01' AS DATE), CAST('2025-03-07' AS DATE)"
+            where: id = 6
+
+        # Câu 7: SELECT_QUERY — verify exact JOIN result
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "SELECT_QUERY"
+              - column:
+                  name: correct_query
+                  value: "SELECT hd.SoHD, kh.HoTen, x.BienSo, hd.NgayThue, hd.NgayTra FROM HopDong hd JOIN KhachHang kh ON hd.MaKH = kh.MaKH JOIN Xe x ON hd.MaXe = x.MaXe ORDER BY hd.SoHD"
+              - column:
+                  name: verify_script
+                  value: "SELECT 1 AS SoHD, N'Nguyen Van A' AS HoTen, N'30A-12345' AS BienSo, CAST('2025-01-01' AS DATE) AS NgayThue, CAST('2025-01-05' AS DATE) AS NgayTra UNION ALL SELECT 2, N'Tran Thi B', N'51B-67890', CAST('2025-02-10' AS DATE), CAST('2025-02-15' AS DATE) UNION ALL SELECT 3, N'Le Van C', N'43C-11111', CAST('2025-03-01' AS DATE), CAST('2025-03-07' AS DATE)"
+            where: id = 7
+
+        # Câu 8: TRIGGER — behavioral test
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "TRIGGER"
+              - column:
+                  name: verify_script
+                  value: "BEGIN TRY INSERT INTO HopDong (SoHD, MaXe, MaKH, NgayThue, NgayTra) VALUES (999, 1, 1, '2025-12-31', '2025-01-01'); DELETE FROM HopDong WHERE SoHD = 999; SELECT 'FAIL' AS result; END TRY BEGIN CATCH SELECT 'PASS' AS result; END CATCH"
+              - column:
+                  name: correct_query
+                  value: "SELECT 'PASS' AS result"
+            where: id = 8
+
+        # Câu 9: FUNCTION — call and verify
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "FUNCTION"
+              - column:
+                  name: verify_script
+                  value: "SELECT dbo.fn_TinhSoNgayThue(1) AS result"
+              - column:
+                  name: correct_query
+                  value: "SELECT 4 AS result"
+            where: id = 9
+
+        # Câu 10: STORED_PROCEDURE — exec and verify
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: question_type
+                  value: "STORED_PROCEDURE"
+              - column:
+                  name: verify_script
+                  value: "EXEC sp_ThemHopDong 998, 1, 1, '2025-06-01', '2025-06-05'; SELECT SoHD, MaXe, MaKH FROM HopDong WHERE SoHD = 998; DELETE FROM HopDong WHERE SoHD = 998"
+              - column:
+                  name: correct_query
+                  value: "SELECT 998 AS SoHD, 1 AS MaXe, 1 AS MaKH"
+            where: id = 10
+
+  # ==================== Fix verify_script for FUNCTION (remove dbo. prefix) ====================
+  - changeSet:
+      id: 0203260019
+      author: manhuynh
+      comment: "Fix verify_script for Q9: remove dbo. prefix — function is in student's default schema, not dbo"
+      changes:
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: verify_script
+                  value: "SELECT fn_TinhSoNgayThue(1) AS result"
+            where: id = 9
+
+  # ==================== Fix Q9 verify_script: use {SCHEMA} placeholder for scalar function ====================
+  - changeSet:
+      id: 0203260020
+      author: manhuynh
+      comment: "Fix Q9: MSSQL scalar functions require schema-qualified name. Use {SCHEMA} placeholder replaced at runtime."
+      changes:
+        - update:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: verify_script
+                  value: "SELECT {SCHEMA}.fn_TinhSoNgayThue(1) AS result"
+            where: id = 9
+
+  # ==================== Create exam_results table — stores total score per student per exam ====================
+  - changeSet:
+      id: 0203260021
+      author: manhuynh
+      comment: "Create exam_results table to store aggregated exam scores for each student"
+      changes:
+        - createTable:
+            tableName: exam_results
+            columns:
+              - column:
+                  name: id
+                  type: int
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: exam_id
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: int
+                  constraints:
+                    nullable: false
+              - column:
+                  name: total_score
+                  type: decimal(5,2)
+              - column:
+                  name: max_score
+                  type: decimal(5,2)
+              - column:
+                  name: total_questions
+                  type: int
+              - column:
+                  name: correct_count
+                  type: int
+              - column:
+                  name: submitted_at
+                  type: timestamp
+                  defaultValueComputed: now()
+
+        - addForeignKeyConstraint:
+            baseTableName: exam_results
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_result_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - addForeignKeyConstraint:
+            baseTableName: exam_results
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_result_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - addUniqueConstraint:
+            tableName: exam_results
+            columnNames: exam_id, student_id
+            constraintName: uq_exam_student_result
+
+  # ==================== Add unique constraint on exam_submissions ====================
+  - changeSet:
+      id: 0203260022
+      author: manhuynh
+      comment: "Remove duplicate submissions (keep latest), then add unique constraint"
+      changes:
+        # First: delete older duplicate rows, keeping only the one with the highest id
+        - sql:
+            sql: >-
+              DELETE FROM exam_submissions
+              WHERE id NOT IN (
+                SELECT MAX(id) FROM exam_submissions
+                GROUP BY exam_id, question_id, student_id
+              )
+        # Then: add the unique constraint
+        - addUniqueConstraint:
+            tableName: exam_submissions
+            columnNames: exam_id, question_id, student_id
+            constraintName: uq_exam_question_student

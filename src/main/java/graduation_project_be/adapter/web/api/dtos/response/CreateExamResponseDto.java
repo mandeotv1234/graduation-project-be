@@ -8,21 +8,23 @@ public record CreateExamResponseDto(
         Long templateId,
         Long classId,
         Long creatorId,
-        String examMatrix,
+        String title,
         Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,
-        Boolean isPublished) {
+        Boolean isPublished,
+        LocalDateTime createdAt) {
     public static CreateExamResponseDto fromResponse(CreateExamResponse response) {
         return new CreateExamResponseDto(
                 response.id(),
                 response.templateId(),
                 response.classId(),
                 response.creatorId(),
-                response.examMatrix(),
+                response.title(),
                 response.durationMinutes(),
                 response.startTime(),
                 response.endTime(),
-                response.isPublished());
+                response.isPublished(),
+                response.createdAt());
     }
 }

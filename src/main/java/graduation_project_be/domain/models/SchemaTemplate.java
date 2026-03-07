@@ -8,18 +8,14 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class Exam {
+public class SchemaTemplate {
     private Long id;
-    private Long templateId;
-    private Long classId;
-    private Long creatorId;
-    private String title;
-    private Integer durationMinutes;
-    private LocalDateTime startTime;
-    private LocalDateTime endTime;
-    private Boolean isPublished;
+    private String name;
+    private String ddlScript;
+    private String defaultDataScript;
+    private Long createdBy;
     private LocalDateTime createdAt;
 }

@@ -44,6 +44,7 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'me.paulschwarz:spring-dotenv:3.0.0'
+    implementation 'com.microsoft.sqlserver:mssql-jdbc'
 }
 
 tasks.named('test') {

@@ -27,12 +27,26 @@
     {
       "name": "Users",
       "description": "User management endpoints"
+    },
+    {
+      "name": "Classes",
+      "description": "Class management endpoints (requires TEACHER role)"
+    },
+    {
+      "name": "Exams",
+      "description": "Exam management endpoints"
+    },
+    {
+      "name": "Schema Templates",
+      "description": "Database schema template management (requires TEACHER role)"
     }
   ],
   "paths": {
     "/api/auth/login": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "User login",
         "description": "Authenticate user with email and password. Returns JWT access token upon successful authentication.",
         "operationId": "login",
@@ -172,7 +186,9 @@
     },
     "/api/auth/refresh": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "Refresh access token",
         "description": "Generate a new access token using the refresh token stored in HttpOnly cookie",
         "operationId": "refresh",
@@ -266,7 +282,9 @@
     },
     "/api/auth/logout": {
       "post": {
-        "tags": ["Authentication"],
+        "tags": [
+          "Authentication"
+        ],
         "summary": "User logout",
         "description": "Logout user and invalidate refresh token",
         "operationId": "logout",
@@ -334,13 +352,1054 @@
           }
         }
       }
+    },
+    "/api/classes": {
+      "post": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Create a new class",
+        "description": "Create a new class with students. Requires TEACHER role.",
+        "operationId": "createClass",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClassRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Class created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get list of classes",
+        "description": "Get paginated list of classes for the authenticated teacher. Requires TEACHER role.",
+        "operationId": "getClasses",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "CREATED_AT"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "DESC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classes retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}": {
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get class detail",
+        "description": "Get detail of a specific class. Requires TEACHER role.",
+        "operationId": "getClassDetail",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Class detail retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          },
+          "404": {
+            "description": "Class not found"
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}/students": {
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get students in a class",
+        "description": "Get paginated list of students enrolled in a specific class. Requires TEACHER role.",
+        "operationId": "getStudentsInClass",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 10
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "FULL_NAME"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "ASC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Students retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/exams": {
+      "post": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Create a new exam",
+        "description": "Create a new exam for a class. Requires TEACHER role.",
+        "operationId": "createExam",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExamRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exam created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/exams/{examId}": {
+      "get": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Get exam detail",
+        "description": "Get detail of a specific published exam. Requires STUDENT role and enrollment in the exam's class.",
+        "operationId": "getExamDetail",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exam retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires STUDENT role"
+          },
+          "404": {
+            "description": "Exam not found"
+          }
+        }
+      }
+    },
+    "/api/exams/enrolled": {
+      "get": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Get student's enrolled exams",
+        "description": "Get list of published exams for classes the authenticated student is enrolled in. Requires STUDENT role.",
+        "operationId": "getStudentExams",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student exams retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": [
+                        {
+                          "examId": 1,
+                          "title": "Bài thi CSDL",
+                          "classId": 1,
+                          "className": "CSDL-2025",
+                          "startTime": "2026-01-01T00:00:00",
+                          "endTime": "2027-12-31T23:59:59",
+                          "isPublished": true
+                        }
+                      ],
+                      "meta": {
+                        "timestamp": "2026-03-03T20:00:00"
+                      },
+                      "code": "OK",
+                      "message": "Student exams retrieved successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires STUDENT role"
+          }
+        }
+      }
+    },
+    "/api/exams/{examId}/questions": {
+      "post": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Create exam question",
+        "description": "Add a question to an exam. Requires TEACHER role and must be the exam creator.",
+        "operationId": "createExamQuestion",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExamQuestionRequestDto"
+              },
+              "examples": {
+                "createTable": {
+                  "summary": "CREATE_TABLE question",
+                  "value": {
+                    "content": "Tạo bảng Xe gồm: MaXe (INT, PK), BienSo (NVARCHAR(20)), HangXe (NVARCHAR(50)), GiaThueNgay (DECIMAL(10,2))",
+                    "correctQuery": "SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Xe' ORDER BY ORDINAL_POSITION",
+                    "points": 1.0,
+                    "orderIndex": 1,
+                    "questionType": "CREATE_TABLE",
+                    "verifyScript": "SELECT 'MaXe' AS COLUMN_NAME, 'int' AS DATA_TYPE UNION ALL SELECT 'BienSo', 'nvarchar' UNION ALL SELECT 'HangXe', 'nvarchar' UNION ALL SELECT 'GiaThueNgay', 'decimal'"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Question created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Get exam questions",
+        "description": "Get list of questions for an exam. Requires TEACHER or STUDENT role.",
+        "operationId": "getExamQuestions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Questions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": [
+                        {
+                          "id": 1,
+                          "examId": 1,
+                          "content": "Tạo bảng Xe ...",
+                          "points": 1.0,
+                          "orderIndex": 1,
+                          "questionType": "CREATE_TABLE"
+                        }
+                      ],
+                      "meta": {
+                        "timestamp": "2026-03-03T20:00:00"
+                      },
+                      "code": "OK",
+                      "message": "Questions retrieved successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/exams/{examId}/execute-sql": {
+      "post": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Execute SQL on student's schema",
+        "description": "Execute arbitrary SQL on the student's isolated MSSQL schema during the exam. Requires STUDENT role and enrollment.",
+        "operationId": "executeSql",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteSqlRequestDto"
+              },
+              "examples": {
+                "select": {
+                  "summary": "SELECT query",
+                  "value": {
+                    "sql": "SELECT * FROM Xe ORDER BY MaXe"
+                  }
+                },
+                "ddl": {
+                  "summary": "DDL statement",
+                  "value": {
+                    "sql": "CREATE TABLE Test (id INT PRIMARY KEY)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SQL executed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                },
+                "examples": {
+                  "selectResult": {
+                    "value": {
+                      "data": {
+                        "resultSet": [
+                          {
+                            "MaXe": 1,
+                            "BienSo": "30A-12345"
+                          }
+                        ],
+                        "rowCount": 1,
+                        "executionTimeMs": 15,
+                        "errorMessage": null
+                      },
+                      "meta": {
+                        "timestamp": "2026-03-03T20:00:00"
+                      },
+                      "code": "OK",
+                      "message": "SQL executed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires STUDENT role and enrollment"
+          }
+        }
+      }
+    },
+    "/api/exams/{examId}/submit": {
+      "post": {
+        "tags": [
+          "Exams"
+        ],
+        "summary": "Submit entire exam",
+        "description": "Submit all answers for an exam in one request. The server resets the student's schema, executes each answer sequentially, grades each question by type (CREATE_TABLE, INSERT_DATA, SELECT_QUERY, TRIGGER, FUNCTION, STORED_PROCEDURE), saves all submissions to DB, and returns the total score with per-question breakdown. Requires STUDENT role and enrollment.",
+        "operationId": "submitExam",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "examId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitExamRequestDto"
+              },
+              "examples": {
+                "fullExam": {
+                  "summary": "Submit 10 answers",
+                  "value": {
+                    "answers": [
+                      {
+                        "questionId": 1,
+                        "studentQuery": "CREATE TABLE Xe (MaXe INT PRIMARY KEY, BienSo NVARCHAR(20), HangXe NVARCHAR(50), GiaThueNgay DECIMAL(10,2));"
+                      },
+                      {
+                        "questionId": 2,
+                        "studentQuery": "INSERT INTO Xe VALUES (1, N'30A-12345', N'Toyota Vios', 500000.00), (2, N'51B-67890', N'Honda City', 450000.00), (3, N'43C-11111', N'Ford Ranger', 700000.00);"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exam submitted and graded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitExamSuccessResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "examId": 1,
+                        "studentId": 1,
+                        "totalScore": 10.0,
+                        "maxScore": 10.0,
+                        "totalQuestions": 10,
+                        "correctCount": 10,
+                        "submittedAt": "2026-03-03T20:30:00",
+                        "questionResults": [
+                          {
+                            "submissionId": 1,
+                            "questionId": 1,
+                            "orderIndex": 1,
+                            "isCorrect": true,
+                            "scoreEarned": 1.0,
+                            "maxPoints": 1.0,
+                            "errorMessage": null,
+                            "executionTimeMs": 25
+                          },
+                          {
+                            "submissionId": 2,
+                            "questionId": 2,
+                            "orderIndex": 2,
+                            "isCorrect": true,
+                            "scoreEarned": 1.0,
+                            "maxPoints": 1.0,
+                            "errorMessage": null,
+                            "executionTimeMs": 15
+                          }
+                        ]
+                      },
+                      "meta": {
+                        "timestamp": "2026-03-03T20:30:00"
+                      },
+                      "code": "CREATED",
+                      "message": "Exam submitted and graded successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires STUDENT role and enrollment"
+          }
+        }
+      }
+    },
+    "/api/classes/{classId}/exams": {
+      "get": {
+        "tags": [
+          "Classes"
+        ],
+        "summary": "Get exams for a class",
+        "description": "Get list of exams for a specific class. Requires TEACHER role.",
+        "operationId": "getExamsByClass",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "classId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exams retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
+    },
+    "/api/schema-templates": {
+      "post": {
+        "tags": [
+          "Schema Templates"
+        ],
+        "summary": "Create schema template",
+        "description": "Create a database schema template with DDL and default data scripts. Requires TEACHER role.",
+        "operationId": "createSchemaTemplate",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSchemaTemplateRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Template created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Schema Templates"
+        ],
+        "summary": "Get all schema templates",
+        "description": "Get list of all schema templates. Requires TEACHER role.",
+        "operationId": "getSchemaTemplates",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden - requires TEACHER role"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "CreateExamQuestionRequestDto": {
+        "type": "object",
+        "required": [
+          "content",
+          "correctQuery",
+          "points",
+          "questionType"
+        ],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Question content/description"
+          },
+          "correctQuery": {
+            "type": "string",
+            "description": "SQL query to verify the answer"
+          },
+          "difficultyLevel": {
+            "type": "integer",
+            "description": "Difficulty level (1-5)"
+          },
+          "points": {
+            "type": "number",
+            "format": "decimal",
+            "description": "Points for this question"
+          },
+          "orderIndex": {
+            "type": "integer",
+            "description": "Display order of the question"
+          },
+          "questionType": {
+            "$ref": "#/components/schemas/QuestionType"
+          },
+          "verifyScript": {
+            "type": "string",
+            "nullable": true,
+            "description": "SQL script to verify TRIGGER/FUNCTION/SP behavior, or hardcoded expected result for CREATE_TABLE/INSERT_DATA/SELECT_QUERY"
+          }
+        }
+      },
+      "QuestionType": {
+        "type": "string",
+        "enum": [
+          "CREATE_TABLE",
+          "INSERT_DATA",
+          "SELECT_QUERY",
+          "TRIGGER",
+          "FUNCTION",
+          "STORED_PROCEDURE"
+        ],
+        "description": "Type of exam question determining the grading strategy"
+      },
+      "ExecuteSqlRequestDto": {
+        "type": "object",
+        "required": [
+          "sql"
+        ],
+        "properties": {
+          "sql": {
+            "type": "string",
+            "description": "SQL statement to execute on student's schema"
+          }
+        }
+      },
+      "SubmitExamRequestDto": {
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "properties": {
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerItemDto"
+            },
+            "description": "List of all question answers"
+          }
+        }
+      },
+      "AnswerItemDto": {
+        "type": "object",
+        "required": [
+          "questionId",
+          "studentQuery"
+        ],
+        "properties": {
+          "questionId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "ID of the question being answered"
+          },
+          "studentQuery": {
+            "type": "string",
+            "description": "Student's SQL answer"
+          }
+        }
+      },
+      "SubmitExamSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SubmitExamResponseDto"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "code": {
+            "type": "string",
+            "example": "CREATED"
+          },
+          "message": {
+            "type": "string",
+            "example": "Exam submitted and graded successfully"
+          }
+        }
+      },
+      "SubmitExamResponseDto": {
+        "type": "object",
+        "properties": {
+          "examId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "studentId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalScore": {
+            "type": "number",
+            "format": "decimal",
+            "description": "Total score earned"
+          },
+          "maxScore": {
+            "type": "number",
+            "format": "decimal",
+            "description": "Maximum possible score"
+          },
+          "totalQuestions": {
+            "type": "integer"
+          },
+          "correctCount": {
+            "type": "integer"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "questionResults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionResultDto"
+            }
+          }
+        }
+      },
+      "QuestionResultDto": {
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "questionId": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "orderIndex": {
+            "type": "integer"
+          },
+          "studentQuery": {
+            "type": "string"
+          },
+          "isCorrect": {
+            "type": "boolean"
+          },
+          "scoreEarned": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "maxPoints": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "executionTimeMs": {
+            "type": "integer"
+          }
+        }
+      },
+      "CreateSchemaTemplateRequestDto": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name"
+          },
+          "ddlScript": {
+            "type": "string",
+            "nullable": true,
+            "description": "DDL script to create tables"
+          },
+          "defaultDataScript": {
+            "type": "string",
+            "nullable": true,
+            "description": "DML script for default data"
+          }
+        }
+      },
       "LoginRequestDto": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -362,7 +1421,10 @@
       },
       "LoginResponseDto": {
         "type": "object",
-        "required": ["accessToken", "expiresAt"],
+        "required": [
+          "accessToken",
+          "expiresAt"
+        ],
         "properties": {
           "accessToken": {
             "type": "string",
@@ -380,7 +1442,12 @@
       },
       "LoginSuccessResponse": {
         "type": "object",
-        "required": ["data", "meta", "code", "message"],
+        "required": [
+          "data",
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/LoginResponseDto"
@@ -403,7 +1470,10 @@
       },
       "RefreshTokenResponseDto": {
         "type": "object",
-        "required": ["accessToken", "expiresAt"],
+        "required": [
+          "accessToken",
+          "expiresAt"
+        ],
         "properties": {
           "accessToken": {
             "type": "string",
@@ -421,7 +1491,12 @@
       },
       "RefreshSuccessResponse": {
         "type": "object",
-        "required": ["data", "meta", "code", "message"],
+        "required": [
+          "data",
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/RefreshTokenResponseDto"
@@ -444,7 +1519,11 @@
       },
       "MessageResponse": {
         "type": "object",
-        "required": ["meta", "code", "message"],
+        "required": [
+          "meta",
+          "code",
+          "message"
+        ],
         "properties": {
           "meta": {
             "$ref": "#/components/schemas/Meta"
@@ -464,7 +1543,9 @@
       },
       "Meta": {
         "type": "object",
-        "required": ["timestamp"],
+        "required": [
+          "timestamp"
+        ],
         "properties": {
           "timestamp": {
             "type": "string",
@@ -477,7 +1558,10 @@
       },
       "ErrorResponse": {
         "type": "object",
-        "required": ["message", "code"],
+        "required": [
+          "message",
+          "code"
+        ],
         "properties": {
           "message": {
             "type": "string",
@@ -518,7 +1602,10 @@
       },
       "FieldErrorDetail": {
         "type": "object",
-        "required": ["field", "message"],
+        "required": [
+          "field",
+          "message"
+        ],
         "properties": {
           "field": {
             "type": "string",
@@ -545,4 +1632,3 @@
   },
   "security": []
 }
-

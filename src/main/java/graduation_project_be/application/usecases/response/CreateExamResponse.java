@@ -8,21 +8,23 @@ public record CreateExamResponse(
         Long templateId,
         Long classId,
         Long creatorId,
-        String examMatrix,
+        String title,
         Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,
-        Boolean isPublished) {
+        Boolean isPublished,
+        LocalDateTime createdAt) {
     public static CreateExamResponse fromModel(Exam exam) {
         return new CreateExamResponse(
                 exam.getId(),
                 exam.getTemplateId(),
                 exam.getClassId(),
                 exam.getCreatorId(),
-                exam.getExamMatrix(),
+                exam.getTitle(),
                 exam.getDurationMinutes(),
                 exam.getStartTime(),
                 exam.getEndTime(),
-                exam.getIsPublished());
+                exam.getIsPublished(),
+                exam.getCreatedAt());
     }
 }

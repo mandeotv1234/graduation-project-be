@@ -7,9 +7,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
 import java.time.LocalDateTime;
 
 @Table(name = "exams")
@@ -33,9 +30,8 @@ public class ExamEntity {
     @Column(name = "creator_id")
     private Long creatorId;
 
-    @Column(name = "exam_matrix", columnDefinition = "json")
-    @JdbcTypeCode(SqlTypes.JSON)
-    private String examMatrix;
+    @Column(name = "title", nullable = false)
+    private String title;
 
     @Column(name = "duration_minutes", nullable = false)
     private Integer durationMinutes;
@@ -49,17 +45,21 @@ public class ExamEntity {
     @Column(name = "is_published")
     private Boolean isPublished;
 
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
+
     public Exam toModel() {
         return Exam.builder()
                 .id(id)
                 .templateId(templateId)
                 .classId(classId)
                 .creatorId(creatorId)
-                .examMatrix(examMatrix)
+                .title(title)
                 .durationMinutes(durationMinutes)
                 .startTime(startTime)
                 .endTime(endTime)
                 .isPublished(isPublished)
+                .createdAt(createdAt)
                 .build();
     }
 
@@ -69,11 +69,12 @@ public class ExamEntity {
                 .templateId(exam.getTemplateId())
                 .classId(exam.getClassId())
                 .creatorId(exam.getCreatorId())
-                .examMatrix(exam.getExamMatrix())
+                .title(exam.getTitle())
                 .durationMinutes(exam.getDurationMinutes())
                 .startTime(exam.getStartTime())
                 .endTime(exam.getEndTime())
                 .isPublished(exam.getIsPublished())
+                .createdAt(exam.getCreatedAt())
                 .build();
     }
 }

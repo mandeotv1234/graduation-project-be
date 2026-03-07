@@ -38,7 +38,7 @@ public class SecurityConfiguration {
     private String secretKey;
 
     @Bean
-    JwtService jwtService(){
+    JwtService jwtService() {
         return new JwtServiceImpl(jwtTokenValidity, jwtRefreshTokenValidity, secretKey);
     }
 
@@ -56,13 +56,10 @@ public class SecurityConfiguration {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(
                         auth -> auth.requestMatchers(
-                                        "/api/auth/**")
+                                "/api/auth/**")
                                 .permitAll()
                                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                                .requestMatchers("/api/teachers/**").hasRole("TEACHER")
-                                .requestMatchers("/api/students/**").hasRole("STUDENT")
-                                .anyRequest().authenticated()
-                )
+                                .anyRequest().authenticated())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -74,7 +71,7 @@ public class SecurityConfiguration {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of(frontendUrl));
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS","PATCH"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -83,7 +80,7 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    PasswordEncoder passwordEncoder(){
+    PasswordEncoder passwordEncoder() {
         return new PasswordEncoderImpl(new BCryptPasswordEncoder());
     }
 }

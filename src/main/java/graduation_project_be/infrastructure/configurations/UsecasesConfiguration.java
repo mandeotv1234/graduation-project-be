@@ -1,17 +1,8 @@
 package graduation_project_be.infrastructure.configurations;
 
-import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
-import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.UserRepository;
-import graduation_project_be.application.port.repositories.RefreshTokenRepository;
-import graduation_project_be.application.port.repositories.ExamRepository;
-import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.JwtService;
-import graduation_project_be.application.port.services.PasswordEncoder;
-import graduation_project_be.application.port.services.RefreshTokenHasher;
+import graduation_project_be.application.port.repositories.*;
+import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
-
-import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -79,7 +70,8 @@ public class UsecasesConfiguration {
                 classRepository,
                 userRepository,
                 currentUserService);
-            }
+    }
+
     @Bean
     GetStudentExamUsecase getStudentExamUsecase(
             ExamRepository examRepository,
@@ -92,17 +84,93 @@ public class UsecasesConfiguration {
     CreateExamUsecase createExamUsecase(
             ExamRepository examRepository,
             ClassRepository classRepository,
-            CurrentUserService currentUserService) {
-        return new graduation_project_be.application.usecases.CreateExamUsecase(examRepository, classRepository,
-                currentUserService);
+            CurrentUserService currentUserService,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ExamSchemaService examSchemaService) {
+        return new CreateExamUsecase(
+                examRepository,
+                classRepository,
+                currentUserService,
+                classEnrollmentRepository,
+                examSchemaService);
     }
 
     @Bean
     GetClassDetailUsecase getClassDetailUsecase(
             ClassRepository classRepository,
             CurrentUserService currentUserService) {
-        return new graduation_project_be.application.usecases.GetClassDetailUsecase(classRepository,
-                currentUserService);
+        return new GetClassDetailUsecase(classRepository, currentUserService);
     }
 
+    // ===== NEW USECASES =====
+
+    @Bean
+    CreateExamQuestionUsecase createExamQuestionUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new CreateExamQuestionUsecase(examQuestionRepository, examRepository, currentUserService);
+    }
+
+    @Bean
+    GetExamQuestionsUsecase getExamQuestionsUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamQuestionsUsecase(examQuestionRepository, examRepository,
+                classRepository, classEnrollmentRepository, currentUserService);
+    }
+
+    @Bean
+    GetStudentExamsUsecase getStudentExamsUsecase(
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new GetStudentExamsUsecase(examRepository, currentUserService);
+    }
+
+    @Bean
+    ExecuteSqlUsecase executeSqlUsecase(
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new ExecuteSqlUsecase(examRepository, classEnrollmentRepository, currentUserService, examSchemaService);
+    }
+
+    @Bean
+    SubmitExamUsecase submitExamUsecase(
+            ExamRepository examRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamResultRepository examResultRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new SubmitExamUsecase(
+                examRepository, examQuestionRepository, examSubmissionRepository,
+                examResultRepository, classEnrollmentRepository, currentUserService, examSchemaService);
+    }
+
+    @Bean
+    GetExamsByClassUsecase getExamsByClassUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamsByClassUsecase(examRepository, classRepository, currentUserService);
+    }
+
+    @Bean
+    CreateSchemaTemplateUsecase createSchemaTemplateUsecase(
+            SchemaTemplateRepository schemaTemplateRepository,
+            CurrentUserService currentUserService) {
+        return new CreateSchemaTemplateUsecase(schemaTemplateRepository, currentUserService);
+    }
+
+    @Bean
+    GetSchemaTemplatesUsecase getSchemaTemplatesUsecase(
+            SchemaTemplateRepository schemaTemplateRepository) {
+        return new GetSchemaTemplatesUsecase(schemaTemplateRepository);
+    }
 }

@@ -12,8 +12,13 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import graduation_project_be.application.port.repositories.RefreshTokenRepository;
+import graduation_project_be.application.port.repositories.TeacherNotificationRepository;
+import graduation_project_be.application.port.services.ExamSessionService;
+import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.infrastructure.persistence.repositories.redis.RedisRefreshTokenRepository;
+import graduation_project_be.infrastructure.services.RedisExamSessionService;
+import graduation_project_be.infrastructure.services.RedisNotificationBufferService;
 import graduation_project_be.infrastructure.services.Sha256RefreshTokenHasher;
 
 @Configuration
@@ -40,6 +45,9 @@ public class RedisConfiguration {
     @Value("${security.application.security.refresh-token.pepper:}")
     private String refreshTokenPepper;
 
+    @Value("${notification.buffer.flush-threshold:10}")
+    private int notificationFlushThreshold;
+
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
         RedisStandaloneConfiguration redisConfig = new RedisStandaloneConfiguration(redisHost, redisPort);
@@ -52,7 +60,8 @@ public class RedisConfiguration {
             redisConfig.setPassword(RedisPassword.of(redisPassword));
         }
 
-        LettuceClientConfiguration.LettuceClientConfigurationBuilder clientConfigBuilder = LettuceClientConfiguration.builder();
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder clientConfigBuilder = LettuceClientConfiguration
+                .builder();
 
         if (sslEnabled) {
             clientConfigBuilder.useSsl();
@@ -83,5 +92,18 @@ public class RedisConfiguration {
     @Bean
     public RefreshTokenHasher refreshTokenHasher() {
         return new Sha256RefreshTokenHasher(refreshTokenPepper);
+    }
+
+    @Bean
+    public ExamSessionService examSessionService(RedisTemplate<String, String> redisTemplate) {
+        return new RedisExamSessionService(redisTemplate);
+    }
+
+    @Bean
+    public NotificationBufferService notificationBufferService(
+            RedisTemplate<String, String> redisTemplate,
+            TeacherNotificationRepository teacherNotificationRepository) {
+        return new RedisNotificationBufferService(redisTemplate, teacherNotificationRepository,
+                notificationFlushThreshold);
     }
 }

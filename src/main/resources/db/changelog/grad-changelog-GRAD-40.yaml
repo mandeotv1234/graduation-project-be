@@ -1,0 +1,335 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0903260901
+      author: manhuynh
+      changes:
+        - createTable:
+            tableName: exam_violations
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: violation_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: ip_address
+                  type: VARCHAR(45)
+              - column:
+                  name: user_agent
+                  type: VARCHAR(500)
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: exam_violations
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_violation_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_violations
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_violation_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - sql:
+            sql: >
+              ALTER TABLE exam_violations ADD CONSTRAINT chk_violation_type
+              CHECK (violation_type IN (
+                'TAB_SWITCHED',
+                'WINDOW_LOST_FOCUS',
+                'ILLEGAL_PASTE',
+                'ILLEGAL_COPY',
+                'FULLSCREEN_EXIT',
+                'DEVTOOLS_OPENED',
+                'RIGHT_CLICK',
+                'SUSPICIOUS_ACTIVITY'
+              ))
+        - createIndex:
+            tableName: exam_violations
+            indexName: idx_violation_exam_student
+            columns:
+              - column:
+                  name: exam_id
+              - column:
+                  name: student_id
+
+  - changeSet:
+      id: 0903260902
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 16:45"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 60
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T16:45:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-09T17:45:00"
+            where: id = 1
+  - changeSet:
+      id: 0903260904
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:00"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 60
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T22:00:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-09T23:00:00"
+            where: id = 1
+  - changeSet:
+      id: 0903260905
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:10"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 60
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T22:10:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-09T23:10:00"
+            where: id = 1
+  - changeSet:
+      id: 0903260906
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:10"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 60
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T23:12:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-10T00:12:00"
+            where: id = 1
+
+  - changeSet:
+      id: 0903260907
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:10"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 29
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T23:30:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-09T23:59:00"
+            where: id = 1
+  - changeSet:
+      id: 0903260908
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:10"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 29
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-09T23:30:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-09T23:59:00"
+            where: id = 1
+
+  - changeSet:
+      id: 0903260909
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 22:10"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 29
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-10T00:04:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-11T23:59:00"
+            where: id = 1
+  - changeSet:
+      id: 1003100901
+      author: manhuynh
+      comment: "Create teacher_notifications table for fraud notification persistence"
+      changes:
+        - createTable:
+            tableName: teacher_notifications
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: teacher_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_name
+                  type: VARCHAR(255)
+              - column:
+                  name: violation_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: violation_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+              - column:
+                  name: auto_submitted
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: is_read
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: teacher_notifications
+            baseColumnNames: teacher_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_notification_teacher
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: teacher_notifications
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_notification_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: teacher_notifications
+            baseColumnNames: student_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_notification_student
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: teacher_notifications
+            indexName: idx_notification_teacher_created
+            columns:
+              - column:
+                  name: teacher_id
+              - column:
+                  name: created_at
+                  descending: true
+        - createIndex:
+            tableName: teacher_notifications
+            indexName: idx_notification_teacher_read
+            columns:
+              - column:
+                  name: teacher_id
+              - column:
+                  name: is_read
+
+  - changeSet:
+      id: 1003260001
+      author: manhuynh
+      comment: "Make template_id nullable in exams table — templateId is now optional"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exams
+            constraintName: fk_exam_template
+        - modifyDataType:
+            tableName: exams
+            columnName: template_id
+            newDataType: BIGINT
+        - sql:
+            sql: ALTER TABLE exams ALTER COLUMN template_id DROP NOT NULL
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: template_id
+            referencedTableName: schema_templates
+            referencedColumnNames: id
+            constraintName: fk_exam_template
+            onDelete: SET NULL
+            onUpdate: CASCADE

@@ -1,9 +1,11 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
+import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import graduation_project_be.domain.models.Exam;
@@ -15,16 +17,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
 public class SubmitExamUsecase {
+
+    /** Grace period (seconds) to account for network latency */
+    private static final long SUBMIT_GRACE_SECONDS = 30;
 
     private final ExamRepository examRepository;
     private final ExamQuestionRepository examQuestionRepository;
@@ -33,6 +40,7 @@ public class SubmitExamUsecase {
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
+    private final ExamSessionService examSessionService;
 
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -49,6 +57,9 @@ public class SubmitExamUsecase {
         if (!isEnrolled) {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
+
+        // 2b. Backend time validation — prevent DevTools time manipulation
+        validateExamTime(examId, studentId, exam, submittedAt);
 
         // 3. Load all questions for this exam (indexed by ID)
         List<ExamQuestion> allQuestions = examQuestionRepository.findByExamId(examId);
@@ -170,6 +181,13 @@ public class SubmitExamUsecase {
             examSchemaService.dropSchema(schemaName);
         } catch (Exception e) {
             log.warn("Failed to drop schema [{}] after grading: {}", schemaName, e.getMessage());
+        }
+
+        // 8. End session — release Redis session lock
+        try {
+            examSessionService.endSession(examId, studentId);
+        } catch (Exception e) {
+            log.warn("Failed to end session for exam={}, student={}: {}", examId, studentId, e.getMessage());
         }
 
         return new SubmitExamResponse(
@@ -326,5 +344,42 @@ public class SubmitExamUsecase {
             str = str.replaceAll("0+$", "").replaceAll("\\.$", "");
         }
         return str;
+    }
+
+    // ========== Backend time validation ==========
+
+    /**
+     * Validates that the student's exam has not expired based on
+     * the backend-managed start time stored in Redis.
+     * This prevents DevTools time manipulation attacks.
+     */
+    private void validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt) {
+        Optional<LocalDateTime> startTimeOpt = examSessionService.getExamStartTime(examId, studentId);
+
+        if (startTimeOpt.isPresent()) {
+            LocalDateTime examStartedAt = startTimeOpt.get();
+            LocalDateTime examDeadline = examStartedAt.plusMinutes(exam.getDurationMinutes());
+
+            // If exam has a hard end time, use the earlier of the two
+            if (exam.getEndTime() != null && exam.getEndTime().isBefore(examDeadline)) {
+                examDeadline = exam.getEndTime();
+            }
+
+            long secondsOverdue = Duration.between(examDeadline, submittedAt).getSeconds();
+            if (secondsOverdue > SUBMIT_GRACE_SECONDS) {
+                log.warn("Late submission rejected: exam={}, student={}, overdue={}s (grace={}s)",
+                        examId, studentId, secondsOverdue, SUBMIT_GRACE_SECONDS);
+                throw new BadRequestException(
+                        "Exam time has expired. Submission was " + secondsOverdue + " seconds late.");
+            }
+
+            if (secondsOverdue > 0) {
+                log.info("Late submission accepted within grace period: exam={}, student={}, overdue={}s",
+                        examId, studentId, secondsOverdue);
+            }
+        } else {
+            log.warn("No backend start time found for exam={}, student={}. Allowing submission.",
+                    examId, studentId);
+        }
     }
 }

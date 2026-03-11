@@ -4,11 +4,14 @@ import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionRequ
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.StartExamSessionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SubmitExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.response.*;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +36,10 @@ public class ExamController {
         private final GetStudentExamsUsecase getStudentExamsUsecase;
         private final ExecuteSqlUsecase executeSqlUsecase;
         private final SubmitExamUsecase submitExamUsecase;
+        private final ReportViolationUsecase reportViolationUsecase;
+        private final GetViolationsUsecase getViolationsUsecase;
+        private final StartExamSessionUsecase startExamSessionUsecase;
+        private final GetExamTimeUsecase getExamTimeUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -143,5 +150,77 @@ public class ExamController {
                                                 SubmitExamResponseDto.fromResponse(response),
                                                 "CREATED",
                                                 "Exam submitted and graded successfully"));
+        }
+
+        // ===== ANTI-CHEATING ENDPOINTS =====
+
+        @PostMapping("/{examId}/start-session")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> startExamSession(
+                        @PathVariable @Positive Long examId,
+                        HttpServletRequest httpRequest) {
+                String ipAddress = getClientIp(httpRequest);
+                String userAgent = httpRequest.getHeader("User-Agent");
+                StartExamSessionRequestDto requestDto = new StartExamSessionRequestDto();
+                StartExamSessionResponse response = startExamSessionUsecase
+                                .execute(requestDto.toRequest(examId, ipAddress, userAgent));
+                return ResponseEntity.ok(
+                                ResponseDto.of(StartExamSessionResponseDto.fromResponse(response), "OK",
+                                                "Exam session started successfully"));
+        }
+
+        @PostMapping("/{examId}/violations")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> reportViolation(
+                        @PathVariable @Positive Long examId,
+                        @RequestBody @Valid ReportViolationRequestDto requestDto,
+                        HttpServletRequest httpRequest) {
+                String ipAddress = getClientIp(httpRequest);
+                String userAgent = httpRequest.getHeader("User-Agent");
+                ReportViolationResponse response = reportViolationUsecase
+                                .execute(requestDto.toRequest(examId, ipAddress, userAgent));
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                ReportViolationResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                response.message()));
+        }
+
+        @GetMapping("/{examId}/violations")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getViolations(
+                        @PathVariable @Positive Long examId,
+                        @RequestParam(required = false) Long studentId) {
+                List<ExamViolationResponse> responses = getViolationsUsecase.execute(examId, studentId);
+                List<ExamViolationResponseDto> dtos = responses.stream()
+                                .map(ExamViolationResponseDto::fromResponse)
+                                .toList();
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Violations retrieved successfully"));
+        }
+
+        /**
+         * Get server-authoritative exam time.
+         * Client polls this endpoint to sync countdown timer.
+         * Prevents DevTools time manipulation.
+         */
+        @GetMapping("/{examId}/time")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> getExamTime(
+                        @PathVariable @Positive Long examId) {
+                ExamTimeResponse response = getExamTimeUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(ExamTimeResponseDto.fromResponse(response), "OK",
+                                                "Exam time retrieved successfully"));
+        }
+
+        // ===== HELPER =====
+
+        private String getClientIp(HttpServletRequest request) {
+                String xForwardedFor = request.getHeader("X-Forwarded-For");
+                if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+                        return xForwardedFor.split(",")[0].trim();
+                }
+                return request.getRemoteAddr();
         }
 }

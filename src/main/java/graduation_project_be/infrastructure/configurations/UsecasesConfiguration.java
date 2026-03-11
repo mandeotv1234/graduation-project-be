@@ -135,8 +135,10 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSchemaService examSchemaService) {
-        return new ExecuteSqlUsecase(examRepository, classEnrollmentRepository, currentUserService, examSchemaService);
+            ExamSchemaService examSchemaService,
+            ExamSessionService examSessionService) {
+        return new ExecuteSqlUsecase(examRepository, classEnrollmentRepository,
+                currentUserService, examSchemaService, examSessionService);
     }
 
     @Bean
@@ -147,10 +149,12 @@ public class UsecasesConfiguration {
             ExamResultRepository examResultRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSchemaService examSchemaService) {
+            ExamSchemaService examSchemaService,
+            ExamSessionService examSessionService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, classEnrollmentRepository, currentUserService, examSchemaService);
+                examResultRepository, classEnrollmentRepository, currentUserService,
+                examSchemaService, examSessionService);
     }
 
     @Bean
@@ -172,5 +176,84 @@ public class UsecasesConfiguration {
     GetSchemaTemplatesUsecase getSchemaTemplatesUsecase(
             SchemaTemplateRepository schemaTemplateRepository) {
         return new GetSchemaTemplatesUsecase(schemaTemplateRepository);
+    }
+
+    // ===== ANTI-CHEATING USECASES =====
+
+    @Bean
+    ReportViolationUsecase reportViolationUsecase(
+            ExamViolationRepository examViolationRepository,
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ViolationNotificationService violationNotificationService,
+            SubmitExamUsecase submitExamUsecase,
+            ExamSessionService examSessionService) {
+        return new ReportViolationUsecase(
+                examViolationRepository, examRepository,
+                classEnrollmentRepository, currentUserService,
+                violationNotificationService, submitExamUsecase,
+                examSessionService);
+    }
+
+    @Bean
+    GetViolationsUsecase getViolationsUsecase(
+            ExamViolationRepository examViolationRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new GetViolationsUsecase(
+                examViolationRepository, examRepository, currentUserService);
+    }
+
+    @Bean
+    StartExamSessionUsecase startExamSessionUsecase(
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSessionService examSessionService) {
+        return new StartExamSessionUsecase(
+                examRepository, classEnrollmentRepository,
+                currentUserService, examSessionService);
+    }
+
+    @Bean
+    GetExamTimeUsecase getExamTimeUsecase(
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSessionService examSessionService) {
+        return new GetExamTimeUsecase(
+                examRepository, classEnrollmentRepository,
+                currentUserService, examSessionService);
+    }
+
+    // ===== NOTIFICATION USECASES =====
+
+    @Bean
+    GetTeacherNotificationsUsecase getTeacherNotificationsUsecase(
+            TeacherNotificationRepository teacherNotificationRepository,
+            CurrentUserService currentUserService) {
+        return new GetTeacherNotificationsUsecase(teacherNotificationRepository, currentUserService);
+    }
+
+    @Bean
+    MarkNotificationReadUsecase markNotificationReadUsecase(
+            TeacherNotificationRepository teacherNotificationRepository,
+            CurrentUserService currentUserService) {
+        return new MarkNotificationReadUsecase(teacherNotificationRepository, currentUserService);
+    }
+
+    @Bean
+    GetUnreadNotificationCountUsecase getUnreadNotificationCountUsecase(
+            TeacherNotificationRepository teacherNotificationRepository,
+            CurrentUserService currentUserService) {
+        return new GetUnreadNotificationCountUsecase(teacherNotificationRepository, currentUserService);
+    }
+
+    @Bean
+    DeleteNotificationUsecase deleteNotificationUsecase(
+            TeacherNotificationRepository teacherNotificationRepository,
+            CurrentUserService currentUserService) {
+        return new DeleteNotificationUsecase(teacherNotificationRepository, currentUserService);
     }
 }

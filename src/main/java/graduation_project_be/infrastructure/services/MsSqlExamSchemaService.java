@@ -15,6 +15,12 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Maximum time (in seconds) a student SQL query is allowed to run.
+     * Prevents infinite loops, Cartesian products, and other long-running queries.
+     */
+    private static final int QUERY_TIMEOUT_SECONDS = 5;
+
     public MsSqlExamSchemaService(@Qualifier("examJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -250,6 +256,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 try {
                     try (Statement stmt = conn.createStatement()) {
+                        stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
                         boolean isResultSet = stmt.execute(sql);
 
                         // Walk through ALL results using correct JDBC pattern

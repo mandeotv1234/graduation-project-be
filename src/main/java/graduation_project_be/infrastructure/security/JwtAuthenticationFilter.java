@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.security;
 
 import graduation_project_be.application.port.services.JwtService;
+import graduation_project_be.infrastructure.errors.exceptions.JwtInvalidException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String jwt = authHeader.substring(7);
 
+        try {
             if (jwtService.validateToken(jwt)) {
                 String email = jwtService.extractEmail(jwt);
                 String role = jwtService.extractRole(jwt);
@@ -46,6 +48,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
+        } catch (JwtInvalidException e) {
+            // expired/invalid token — proceed as anonymous request
+        }
 
         filterChain.doFilter(request, response);
     }

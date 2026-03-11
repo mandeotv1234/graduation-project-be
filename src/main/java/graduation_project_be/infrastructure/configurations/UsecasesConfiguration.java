@@ -40,8 +40,9 @@ public class UsecasesConfiguration {
     RefreshUsecase refreshUsecase(
             RefreshTokenRepository refreshTokenRepository,
             JwtService jwtService,
-            RefreshTokenHasher refreshTokenHasher) {
-        return new RefreshUsecase(refreshTokenRepository, jwtService, refreshTokenHasher);
+            RefreshTokenHasher refreshTokenHasher,
+            UserRepository userRepository) {
+        return new RefreshUsecase(refreshTokenRepository, jwtService, refreshTokenHasher, userRepository);
     }
 
     @Bean

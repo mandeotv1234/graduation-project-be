@@ -150,11 +150,12 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
-            ExamSessionService examSessionService) {
+            ExamSessionService examSessionService,
+            TemplateDatasetRepository templateDatasetRepository) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, classEnrollmentRepository, currentUserService,
-                examSchemaService, examSessionService);
+                examSchemaService, examSessionService, templateDatasetRepository);
     }
 
     @Bean
@@ -170,6 +171,14 @@ public class UsecasesConfiguration {
             SchemaTemplateRepository schemaTemplateRepository,
             CurrentUserService currentUserService) {
         return new CreateSchemaTemplateUsecase(schemaTemplateRepository, currentUserService);
+    }
+
+    @Bean
+    AddTemplateDatasetUsecase addTemplateDatasetUsecase(
+            SchemaTemplateRepository schemaTemplateRepository,
+            TemplateDatasetRepository templateDatasetRepository,
+            ExamSchemaService examSchemaService) {
+        return new AddTemplateDatasetUsecase(schemaTemplateRepository, templateDatasetRepository, examSchemaService);
     }
 
     @Bean

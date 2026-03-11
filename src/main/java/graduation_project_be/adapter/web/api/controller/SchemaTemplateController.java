@@ -1,8 +1,10 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import graduation_project_be.adapter.web.api.dtos.request.AddTemplateDatasetRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateSchemaTemplateRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SchemaTemplateResponseDto;
+import graduation_project_be.application.usecases.AddTemplateDatasetUsecase;
 import graduation_project_be.application.usecases.CreateSchemaTemplateUsecase;
 import graduation_project_be.application.usecases.GetSchemaTemplatesUsecase;
 import graduation_project_be.application.usecases.response.SchemaTemplateResponse;
@@ -22,6 +24,7 @@ public class SchemaTemplateController {
 
     private final CreateSchemaTemplateUsecase createSchemaTemplateUsecase;
     private final GetSchemaTemplatesUsecase getSchemaTemplatesUsecase;
+    private final AddTemplateDatasetUsecase addTemplateDatasetUsecase;
 
     @PostMapping
     @PreAuthorize("hasRole('TEACHER')")
@@ -44,5 +47,15 @@ public class SchemaTemplateController {
                 .toList();
         return ResponseEntity.ok(
                 ResponseDto.of(dtos, "OK", "Schema templates retrieved successfully"));
+    }
+
+    @PostMapping("/{templateId}/datasets")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> addDataset(
+            @PathVariable Long templateId,
+            @RequestBody @Valid AddTemplateDatasetRequestDto requestDto) {
+        var dataset = addTemplateDatasetUsecase.execute(requestDto.toRequest(templateId));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ResponseDto.of(dataset, "CREATED", "Dataset added and reference schema created successfully"));
     }
 }

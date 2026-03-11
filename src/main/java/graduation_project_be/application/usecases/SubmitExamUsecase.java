@@ -12,6 +12,7 @@ import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSubmission;
+import graduation_project_be.domain.models.TemplateDataset;
 import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class SubmitExamUsecase {
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
+    private final TemplateDatasetRepository templateDatasetRepository;
 
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -60,6 +62,12 @@ public class SubmitExamUsecase {
 
         // 2b. Backend time validation — prevent DevTools time manipulation
         validateExamTime(examId, studentId, exam, submittedAt);
+
+        // 2c. Load reference datasets for multi-dataset grading (SELECT_QUERY only)
+        List<TemplateDataset> refDatasets = List.of();
+        if (exam.getTemplateId() != null) {
+            refDatasets = templateDatasetRepository.findByTemplateId(exam.getTemplateId());
+        }
 
         // 3. Load all questions for this exam (indexed by ID)
         List<ExamQuestion> allQuestions = examQuestionRepository.findByExamId(examId);
@@ -115,12 +123,17 @@ public class SubmitExamUsecase {
             } else {
                 long startTime = System.currentTimeMillis();
                 try {
-                    // Execute student's SQL
-                    examSchemaService.executeSql(schemaName, studentQuery);
-                    executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-
-                    // Grade based on question type
-                    isCorrect = gradeAnswer(schemaName, question);
+                    // SELECT_QUERY with multi-dataset: grade directly on reference schemas
+                    if (question.getQuestionType() == QuestionType.SELECT_QUERY
+                            && refDatasets != null && !refDatasets.isEmpty()) {
+                        isCorrect = gradeSelectQueryOnRefSchemas(question, studentQuery, refDatasets);
+                        executionTimeMs = (int) (System.currentTimeMillis() - startTime);
+                    } else {
+                        // Execute student's SQL on student schema
+                        examSchemaService.executeSql(schemaName, studentQuery);
+                        executionTimeMs = (int) (System.currentTimeMillis() - startTime);
+                        isCorrect = gradeAnswer(schemaName, question);
+                    }
                 } catch (Exception e) {
                     executionTimeMs = (int) (System.currentTimeMillis() - startTime);
                     errorMessage = e.getMessage();
@@ -248,6 +261,36 @@ public class SubmitExamUsecase {
                 log.warn("Unknown question type: {}", type);
                 return false;
         }
+    }
+
+    /**
+     * Multi-dataset grading for SELECT_QUERY.
+     * Runs studentQuery and correctQuery on each reference schema.
+     * All datasets must match for the answer to be correct.
+     */
+    private boolean gradeSelectQueryOnRefSchemas(ExamQuestion question, String studentQuery,
+            List<TemplateDataset> datasets) {
+        for (TemplateDataset ds : datasets) {
+            try {
+                List<Map<String, Object>> actual = examSchemaService.executeSql(
+                        ds.getSchemaName(), studentQuery);
+                List<Map<String, Object>> expected = examSchemaService.executeSql(
+                        ds.getSchemaName(), question.getCorrectQuery());
+
+                if (!compareResultSetsStrict(actual, expected)) {
+                    log.info("SELECT_QUERY Q{} failed on dataset schema [{}]",
+                            question.getId(), ds.getSchemaName());
+                    return false;
+                }
+            } catch (Exception e) {
+                log.warn("SELECT_QUERY Q{} error on dataset schema [{}]: {}",
+                        question.getId(), ds.getSchemaName(), e.getMessage());
+                return false;
+            }
+        }
+        log.info("SELECT_QUERY Q{} passed all {} dataset(s)",
+                question.getId(), datasets.size());
+        return true;
     }
 
     /**

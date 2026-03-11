@@ -1,0 +1,134 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1203260001
+      author: manhuynh
+      comment: "Create template_datasets table for N sample datasets per template"
+      changes:
+        - createTable:
+            tableName: template_datasets
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: template_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: schema_name
+                  type: VARCHAR(255)
+              - column:
+                  name: order_index
+                  type: INT
+                  defaultValueNumeric: 0
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: template_datasets
+            baseColumnNames: template_id
+            referencedTableName: schema_templates
+            referencedColumnNames: id
+            constraintName: fk_dataset_template
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: template_datasets
+            indexName: idx_dataset_template_id
+            columns:
+              - column:
+                  name: template_id
+
+  - changeSet:
+      id: 1203260002
+      author: manhuynh
+      comment: "Update schema_template id=1 with actual DDL for reference schemas"
+      changes:
+        - update:
+            tableName: schema_templates
+            columns:
+              - column:
+                  name: ddl_script
+                  value: >-
+                    CREATE TABLE Xe (MaXe INT PRIMARY KEY, BienSo NVARCHAR(20), HangXe NVARCHAR(50), GiaThueNgay DECIMAL(10,2));
+                    CREATE TABLE KhachHang (MaKH INT PRIMARY KEY, HoTen NVARCHAR(100), DienThoai NVARCHAR(15));
+                    CREATE TABLE HopDong (SoHD INT PRIMARY KEY, MaXe INT FOREIGN KEY REFERENCES Xe(MaXe), MaKH INT FOREIGN KEY REFERENCES KhachHang(MaKH), NgayThue DATE, NgayTra DATE);
+            where: id = 1
+
+  - changeSet:
+      id: 1203260003
+      author: manhuynh
+      comment: "Seed dataset 1 for template_id=1 — original exam data"
+      changes:
+        - insert:
+            tableName: template_datasets
+            columns:
+              - column:
+                  name: template_id
+                  valueNumeric: 1
+              - column:
+                  name: data_script
+                  value: >-
+                    INSERT INTO Xe (MaXe, BienSo, HangXe, GiaThueNgay) VALUES
+                    (1, N'30A-12345', N'Toyota Vios', 500000.00),
+                    (2, N'51B-67890', N'Honda City', 450000.00),
+                    (3, N'43C-11111', N'Ford Ranger', 700000.00);
+                    INSERT INTO KhachHang (MaKH, HoTen, DienThoai) VALUES
+                    (1, N'Nguyen Van A', '0901234567'),
+                    (2, N'Tran Thi B', '0912345678'),
+                    (3, N'Le Van C', '0923456789');
+                    INSERT INTO HopDong (SoHD, MaXe, MaKH, NgayThue, NgayTra) VALUES
+                    (1, 1, 1, '2025-01-01', '2025-01-05'),
+                    (2, 2, 2, '2025-02-10', '2025-02-15'),
+                    (3, 3, 3, '2025-03-01', '2025-03-07');
+              - column:
+                  name: schema_name
+                  value: "tpl_1_ds_1"
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+
+  - changeSet:
+      id: 1203260004
+      author: manhuynh
+      comment: "Seed dataset 2 for template_id=1 — different data to catch hardcoded queries"
+      changes:
+        - insert:
+            tableName: template_datasets
+            columns:
+              - column:
+                  name: template_id
+                  valueNumeric: 1
+              - column:
+                  name: data_script
+                  value: >-
+                    INSERT INTO Xe (MaXe, BienSo, HangXe, GiaThueNgay) VALUES
+                    (10, N'92A-55555', N'Mazda CX-5', 800000.00),
+                    (11, N'29B-77777', N'Kia Seltos', 600000.00),
+                    (12, N'36C-99999', N'Hyundai Accent', 400000.00),
+                    (13, N'43D-22222', N'Toyota Camry', 900000.00);
+                    INSERT INTO KhachHang (MaKH, HoTen, DienThoai) VALUES
+                    (10, N'Pham Van D', '0934567890'),
+                    (11, N'Hoang Thi E', '0945678901'),
+                    (12, N'Vo Van F', '0956789012');
+                    INSERT INTO HopDong (SoHD, MaXe, MaKH, NgayThue, NgayTra) VALUES
+                    (10, 10, 10, '2025-04-01', '2025-04-10'),
+                    (11, 11, 11, '2025-05-15', '2025-05-20'),
+                    (12, 12, 12, '2025-06-01', '2025-06-03'),
+                    (13, 13, 10, '2025-07-01', '2025-07-14');
+              - column:
+                  name: schema_name
+                  value: "tpl_1_ds_2"
+              - column:
+                  name: order_index
+                  valueNumeric: 2

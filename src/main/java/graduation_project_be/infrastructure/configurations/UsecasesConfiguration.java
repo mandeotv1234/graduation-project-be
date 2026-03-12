@@ -257,4 +257,37 @@ public class UsecasesConfiguration {
             CurrentUserService currentUserService) {
         return new DeleteNotificationUsecase(teacherNotificationRepository, currentUserService);
     }
+
+    // ===== SPECIFICATION USECASES =====
+
+    @Bean
+    SaveExamSpecificationUsecase saveExamSpecificationUsecase(
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new SaveExamSpecificationUsecase(examSpecificationRepository, examRepository, currentUserService);
+    }
+
+    @Bean
+    GetExamSpecificationUsecase getExamSpecificationUsecase(
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamSpecificationUsecase(examSpecificationRepository, examRepository,
+                classEnrollmentRepository, currentUserService);
+    }
+
+    // ===== AI USECASES =====
+
+    @Bean
+    CreateExamQuestionsUsecase createExamQuestionsUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            CurrentUserService currentUserService,
+            GeminiService geminiService) {
+        return new CreateExamQuestionsUsecase(examQuestionRepository, examRepository,
+                examSpecificationRepository, currentUserService, geminiService);
+    }
 }

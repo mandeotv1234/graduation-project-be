@@ -1,0 +1,720 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1203260001
+      author: manhuynh
+      comment: "GRAD-46: Create exam_specifications table (1-1 with exams)"
+      changes:
+        - createTable:
+            tableName: exam_specifications
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: exam_specifications
+            baseColumnNames: exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_spec_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+  - changeSet:
+      id: 1203260002
+      author: manhuynh
+      comment: "GRAD-46: Create spec_entities table (e.g. PHIM, GIAITHUONG)"
+      changes:
+        - createTable:
+            tableName: spec_entities
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: specification_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: entity_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: VARCHAR(100)
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: order_index
+                  type: INT
+                  defaultValueNumeric: 0
+        - addForeignKeyConstraint:
+            baseTableName: spec_entities
+            baseColumnNames: specification_id
+            referencedTableName: exam_specifications
+            referencedColumnNames: id
+            constraintName: fk_spec_entity_spec
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+  - changeSet:
+      id: 1203260003
+      author: manhuynh
+      comment: "GRAD-46: Create spec_attributes table (columns of each entity)"
+      changes:
+        - createTable:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: entity_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attribute_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: VARCHAR(255)
+              - column:
+                  name: is_primary_key
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+              - column:
+                  name: is_nullable
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: order_index
+                  type: INT
+                  defaultValueNumeric: 0
+        - addForeignKeyConstraint:
+            baseTableName: spec_attributes
+            baseColumnNames: entity_id
+            referencedTableName: spec_entities
+            referencedColumnNames: id
+            constraintName: fk_spec_attr_entity
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: spec_attributes
+            indexName: idx_spec_attr_entity
+            columns:
+              - column:
+                  name: entity_id
+
+  # ===== SEED DATA: Đặc tả bài thi 1 — Quản lý xe =====
+
+  - changeSet:
+      id: 1203260004
+      author: manhuynh
+      comment: "GRAD-46: Insert exam_specification for exam 1 (Quản lý xe)"
+      changes:
+        - insert:
+            tableName: exam_specifications
+            columns:
+              - column:
+                  name: exam_id
+                  valueNumeric: 1
+              - column:
+                  name: title
+                  value: "Cơ sở dữ liệu Quản lý Xe"
+              - column:
+                  name: description
+                  value: "Đặc tả schema cơ sở dữ liệu dùng trong bài thi quản lý xe. Sinh viên cần viết các câu truy vấn SQL để thao tác trên các bảng XE, LOAIXE, KHACHHANG và PHIEUTHUE."
+
+  - changeSet:
+      id: 1203260005
+      author: manhuynh
+      comment: "GRAD-46: Insert spec_entities for exam 1 (4 entities: XE, LOAIXE, KHACHHANG, PHIEUTHUE)"
+      changes:
+        - insert:
+            tableName: spec_entities
+            columns:
+              - column:
+                  name: specification_id
+                  valueNumeric: 1
+              - column:
+                  name: entity_name
+                  value: "Xe"
+              - column:
+                  name: display_name
+                  value: "XE"
+              - column:
+                  name: description
+                  value: "Mỗi xe có một mã xe duy nhất, thuộc một loại xe, có biển số và giá thuê theo ngày. Một xe có thể được thuê nhiều lần bởi các khách hàng khác nhau."
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+        - insert:
+            tableName: spec_entities
+            columns:
+              - column:
+                  name: specification_id
+                  valueNumeric: 1
+              - column:
+                  name: entity_name
+                  value: "LoaiXe"
+              - column:
+                  name: display_name
+                  value: "LOAIXE"
+              - column:
+                  name: description
+                  value: "Phân loại xe theo nhóm (sedan, SUV, tải, ...). Mỗi loại xe có mã loại duy nhất và tên loại duy nhất."
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+        - insert:
+            tableName: spec_entities
+            columns:
+              - column:
+                  name: specification_id
+                  valueNumeric: 1
+              - column:
+                  name: entity_name
+                  value: "KhachHang"
+              - column:
+                  name: display_name
+                  value: "KHACHHANG"
+              - column:
+                  name: description
+                  value: "Khách hàng đăng ký thuê xe. Mỗi khách hàng có mã khách duy nhất, họ tên, số điện thoại và địa chỉ. Số điện thoại là duy nhất trong hệ thống."
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+        - insert:
+            tableName: spec_entities
+            columns:
+              - column:
+                  name: specification_id
+                  valueNumeric: 1
+              - column:
+                  name: entity_name
+                  value: "PhieuThue"
+              - column:
+                  name: display_name
+                  value: "PHIEUTHUE"
+              - column:
+                  name: description
+                  value: "Ghi nhận mỗi lượt thuê xe của khách hàng. Một phiếu thuê gắn với một xe và một khách hàng, có ngày thuê, ngày trả và tổng tiền. Ngày trả có thể chưa có nếu xe chưa được hoàn trả."
+              - column:
+                  name: order_index
+                  valueNumeric: 4
+
+  - changeSet:
+      id: 1203260006
+      author: manhuynh
+      comment: "GRAD-46: Insert spec_attributes for entity XE (id=1)"
+      changes:
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 1
+              - column:
+                  name: attribute_name
+                  value: "MaXe"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(10)"
+              - column:
+                  name: description
+                  value: "Mã xe (khóa chính)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: true
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 1
+              - column:
+                  name: attribute_name
+                  value: "MaLoai"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(5)"
+              - column:
+                  name: description
+                  value: "Mã loại xe (khóa ngoại → LOAIXE)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 1
+              - column:
+                  name: attribute_name
+                  value: "BienSo"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(15)"
+              - column:
+                  name: description
+                  value: "Biển số xe (duy nhất)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 1
+              - column:
+                  name: attribute_name
+                  value: "TenXe"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(100)"
+              - column:
+                  name: description
+                  value: "Tên / dòng xe"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 4
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 1
+              - column:
+                  name: attribute_name
+                  value: "GiaThueNgay"
+              - column:
+                  name: data_type
+                  value: "Số thực"
+              - column:
+                  name: description
+                  value: "Giá thuê theo ngày (VND)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 5
+
+  - changeSet:
+      id: 1203260007
+      author: manhuynh
+      comment: "GRAD-46: Insert spec_attributes for entity LOAIXE (id=2)"
+      changes:
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 2
+              - column:
+                  name: attribute_name
+                  value: "MaLoai"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(5)"
+              - column:
+                  name: description
+                  value: "Mã loại xe (khóa chính)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: true
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 2
+              - column:
+                  name: attribute_name
+                  value: "TenLoai"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(50)"
+              - column:
+                  name: description
+                  value: "Tên loại xe (duy nhất)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 2
+              - column:
+                  name: attribute_name
+                  value: "MoTa"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(255)"
+              - column:
+                  name: description
+                  value: "Mô tả chi tiết loại xe"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: true
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+
+  - changeSet:
+      id: 1203260008
+      author: manhuynh
+      comment: "GRAD-46: Insert spec_attributes for entity KHACHHANG (id=3)"
+      changes:
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 3
+              - column:
+                  name: attribute_name
+                  value: "MaKH"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(10)"
+              - column:
+                  name: description
+                  value: "Mã khách hàng (khóa chính)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: true
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 3
+              - column:
+                  name: attribute_name
+                  value: "HoTen"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(100)"
+              - column:
+                  name: description
+                  value: "Họ và tên khách hàng"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 3
+              - column:
+                  name: attribute_name
+                  value: "SoDienThoai"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(15)"
+              - column:
+                  name: description
+                  value: "Số điện thoại (duy nhất)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 3
+              - column:
+                  name: attribute_name
+                  value: "DiaChi"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(200)"
+              - column:
+                  name: description
+                  value: "Địa chỉ khách hàng"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: true
+              - column:
+                  name: order_index
+                  valueNumeric: 4
+
+  - changeSet:
+      id: 1203260009
+      author: manhuynh
+      comment: "GRAD-46: Insert spec_attributes for entity PHIEUTHUE (id=4)"
+      changes:
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "MaPhieu"
+              - column:
+                  name: data_type
+                  value: "Số nguyên"
+              - column:
+                  name: description
+                  value: "Mã phiếu thuê (khóa chính, tự tăng)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: true
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 1
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "MaXe"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(10)"
+              - column:
+                  name: description
+                  value: "Mã xe được thuê (khóa ngoại → XE)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 2
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "MaKH"
+              - column:
+                  name: data_type
+                  value: "Chuỗi(10)"
+              - column:
+                  name: description
+                  value: "Mã khách hàng thuê (khóa ngoại → KHACHHANG)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 3
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "NgayThue"
+              - column:
+                  name: data_type
+                  value: "Ngày"
+              - column:
+                  name: description
+                  value: "Ngày bắt đầu thuê xe"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: false
+              - column:
+                  name: order_index
+                  valueNumeric: 4
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "NgayTra"
+              - column:
+                  name: data_type
+                  value: "Ngày"
+              - column:
+                  name: description
+                  value: "Ngày trả xe (NULL nếu chưa trả)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: true
+              - column:
+                  name: order_index
+                  valueNumeric: 5
+        - insert:
+            tableName: spec_attributes
+            columns:
+              - column:
+                  name: entity_id
+                  valueNumeric: 4
+              - column:
+                  name: attribute_name
+                  value: "TongTien"
+              - column:
+                  name: data_type
+                  value: "Số thực"
+              - column:
+                  name: description
+                  value: "Tổng tiền thuê = số ngày × GiaThueNgay (NULL nếu chưa trả)"
+              - column:
+                  name: is_primary_key
+                  valueBoolean: false
+              - column:
+                  name: is_nullable
+                  valueBoolean: true
+              - column:
+                  name: order_index
+                  valueNumeric: 6
+  - changeSet:
+      id: 1203260010
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "Update exam time for car rental exam to today 09:00"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: duration_minutes
+                  valueNumeric: 29
+              - column:
+                  name: start_time
+                  valueDate: "2026-03-12T09:00:00"
+              - column:
+                  name: end_time
+                  valueDate: "2026-03-30T23:59:00"
+            where: id = 1

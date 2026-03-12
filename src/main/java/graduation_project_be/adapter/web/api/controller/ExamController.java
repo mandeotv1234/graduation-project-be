@@ -1,16 +1,20 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionsRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.SaveExamSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.StartExamSessionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SubmitExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.response.*;
+import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
+import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -32,6 +36,7 @@ public class ExamController {
         private final CreateExamUsecase createExamUsecase;
         private final GetStudentExamUsecase getStudentExamUsecase;
         private final CreateExamQuestionUsecase createExamQuestionUsecase;
+        private final CreateExamQuestionsUsecase createExamQuestionsUsecase;
         private final GetExamQuestionsUsecase getExamQuestionsUsecase;
         private final GetStudentExamsUsecase getStudentExamsUsecase;
         private final ExecuteSqlUsecase executeSqlUsecase;
@@ -40,6 +45,8 @@ public class ExamController {
         private final GetViolationsUsecase getViolationsUsecase;
         private final StartExamSessionUsecase startExamSessionUsecase;
         private final GetExamTimeUsecase getExamTimeUsecase;
+        private final SaveExamSpecificationUsecase saveExamSpecificationUsecase;
+        private final GetExamSpecificationUsecase getExamSpecificationUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -58,15 +65,40 @@ public class ExamController {
 
         @PostMapping("/{examId}/questions")
         @PreAuthorize("hasRole('TEACHER')")
-        public ResponseEntity<ResponseDto> createExamQuestion(
+        public ResponseEntity<ResponseDto> createExamQuestions(
                         @PathVariable @Positive Long examId,
-                        @RequestBody @Valid CreateExamQuestionRequestDto requestDto) {
-                ExamQuestionResponse response = createExamQuestionUsecase.execute(requestDto.toRequest(examId));
+                        @RequestBody @Valid CreateExamQuestionsRequestDto requestDto) {
+                CreateExamQuestionsResponse response = createExamQuestionsUsecase.execute(requestDto.toRequest(examId));
                 return ResponseEntity.status(HttpStatus.CREATED)
                                 .body(ResponseDto.of(
-                                                ExamQuestionResponseDto.fromResponse(response),
+                                                CreateExamQuestionsResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                "Question created successfully"));
+                                                response.totalCreated() + " question(s) created successfully"));
+        }
+
+        @PostMapping("/{examId}/specification")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> saveSpecification(
+                        @PathVariable @Positive Long examId,
+                        @RequestBody @Valid SaveExamSpecificationRequestDto requestDto) {
+                ExamSpecificationResponse response = saveExamSpecificationUsecase.execute(requestDto.toRequest(examId));
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                ExamSpecificationResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                "Exam specification saved successfully"));
+        }
+
+        @GetMapping("/{examId}/specification")
+        @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
+        public ResponseEntity<ResponseDto> getSpecification(
+                        @PathVariable @Positive Long examId) {
+                ExamSpecificationResponse response = getExamSpecificationUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                ExamSpecificationResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam specification retrieved successfully"));
         }
 
         @GetMapping("/{examId}/questions")

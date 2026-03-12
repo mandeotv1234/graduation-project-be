@@ -23,6 +23,16 @@ public class ExamQuestionRepositoryImpl implements ExamQuestionRepository {
     }
 
     @Override
+    public List<ExamQuestion> saveAll(List<ExamQuestion> examQuestions) {
+        List<ExamQuestionEntity> entities = examQuestions.stream()
+                .map(ExamQuestionEntity::fromModel)
+                .toList();
+        return jpaRepository.saveAll(entities).stream()
+                .map(ExamQuestionEntity::toModel)
+                .toList();
+    }
+
+    @Override
     public List<ExamQuestion> findByExamId(Long examId) {
         return jpaRepository.findByExamIdOrderByOrderIndexAsc(examId).stream()
                 .map(ExamQuestionEntity::toModel)

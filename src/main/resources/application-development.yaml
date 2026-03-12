@@ -22,6 +22,8 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
   application:
+    gemini:
+      api-key: ${GEMINI_API_KEY}
     security:
       jwt:
         secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY}

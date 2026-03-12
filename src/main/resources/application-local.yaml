@@ -28,6 +28,8 @@ spring:
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
   application:
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
     security:
       jwt:
         secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY:}

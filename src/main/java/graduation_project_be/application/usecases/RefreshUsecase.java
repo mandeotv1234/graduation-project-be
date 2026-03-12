@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.RefreshTokenRepository;
+import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.application.usecases.request.RefreshTokenRequest;
@@ -17,6 +18,7 @@ public class RefreshUsecase {
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
     private final RefreshTokenHasher refreshTokenHasher;
+    private final UserRepository userRepository;
 
     public RefreshTokenResponse execute(RefreshTokenRequest refreshTokenRequest) {
         String refreshToken = refreshTokenRequest.refreshToken();
@@ -42,8 +44,9 @@ public class RefreshUsecase {
             throw new UnauthorizedException("Refresh token reuse detected");
         }
 
-        String email = jwtService.extractEmail(refreshToken);
-        User user = User.builder().id(Long.valueOf(userId)).email(email).build();
+        User user = userRepository.findById(Long.valueOf(userId))
+            .orElseThrow(() -> new UnauthorizedException("User no longer exists"));
+
         String newAccess = jwtService.generateToken(user);
 
         refreshTokenRepository.save(userId, tokenId, storedHash, jwtService.getJwtRefreshTokenValiditySeconds());

@@ -4,6 +4,8 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SpecEntity;
+import graduation_project_be.domain.models.SpecAttribute;
+import graduation_project_be.domain.models.SpecEntity;
 import graduation_project_be.infrastructure.persistence.entities.ExamSpecificationEntity;
 import graduation_project_be.infrastructure.persistence.entities.SpecAttributeEntity;
 import graduation_project_be.infrastructure.persistence.entities.SpecEntityEntity;
@@ -50,9 +52,9 @@ public class ExamSpecificationRepositoryImpl implements ExamSpecificationReposit
 
     @Override
     @Transactional(readOnly = true)
-    public Optional<ExamSpecification> findByExamId(Long examId) {
+    public Optional<ExamSpecification> findByTemplateId(Long templateId) {
         // Pass 1: fetch spec + entities (single bag)
-        Optional<ExamSpecificationEntity> specOpt = jpaRepository.findByExamIdWithEntities(examId);
+        Optional<ExamSpecificationEntity> specOpt = jpaRepository.findByTemplateIdWithEntities(templateId);
         if (specOpt.isEmpty()) {
             return Optional.empty();
         }
@@ -70,14 +72,14 @@ public class ExamSpecificationRepositoryImpl implements ExamSpecificationReposit
     }
 
     @Override
-    public boolean existsByExamId(Long examId) {
-        return jpaRepository.existsByExamId(examId);
+    public boolean existsByTemplateId(Long templateId) {
+        return jpaRepository.existsByTemplateId(templateId);
     }
 
     @Override
     @Transactional
-    public void deleteByExamId(Long examId) {
-        jpaRepository.findByExamId(examId)
+    public void deleteByTemplateId(Long templateId) {
+        jpaRepository.findByTemplateId(templateId)
                 .ifPresent(jpaRepository::delete);
     }
 }

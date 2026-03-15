@@ -169,8 +169,10 @@ public class UsecasesConfiguration {
     @Bean
     CreateSchemaTemplateUsecase createSchemaTemplateUsecase(
             SchemaTemplateRepository schemaTemplateRepository,
-            CurrentUserService currentUserService) {
-        return new CreateSchemaTemplateUsecase(schemaTemplateRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new CreateSchemaTemplateUsecase(schemaTemplateRepository, currentUserService, examSchemaService, examSpecificationRepository);
     }
 
     @Bean
@@ -179,6 +181,11 @@ public class UsecasesConfiguration {
         return new GetSchemaTemplatesUsecase(schemaTemplateRepository);
     }
 
+    @Bean
+    GetSpecificationByTemplateIdUsecase getSpecificationByTemplateIdUsecase(
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new GetSpecificationByTemplateIdUsecase(examSpecificationRepository);
+    }
     // ===== ANTI-CHEATING USECASES =====
 
     @Bean

@@ -1,16 +1,21 @@
 package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateSchemaTemplateRequestDto;
+import graduation_project_be.adapter.web.api.dtos.response.ExamSpecificationResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SchemaTemplateResponseDto;
 import graduation_project_be.application.usecases.CreateSchemaTemplateUsecase;
 import graduation_project_be.application.usecases.GetSchemaTemplatesUsecase;
+import graduation_project_be.application.usecases.GetSpecificationByTemplateIdUsecase;
+import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
 import graduation_project_be.application.usecases.response.SchemaTemplateResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,10 +23,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/schema-templates")
 @RequiredArgsConstructor
+@Validated
 public class SchemaTemplateController {
 
     private final CreateSchemaTemplateUsecase createSchemaTemplateUsecase;
     private final GetSchemaTemplatesUsecase getSchemaTemplatesUsecase;
+    private final GetSpecificationByTemplateIdUsecase getSpecificationByTemplateIdUsecase;
 
     @PostMapping
     @PreAuthorize("hasRole('TEACHER')")
@@ -44,5 +51,17 @@ public class SchemaTemplateController {
                 .toList();
         return ResponseEntity.ok(
                 ResponseDto.of(dtos, "OK", "Schema templates retrieved successfully"));
+    }
+
+    @GetMapping("/{templateId}/specification")
+    @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
+    public ResponseEntity<ResponseDto> getSpecificationByTemplateId(
+            @PathVariable @Positive Long templateId) {
+        ExamSpecificationResponse response = getSpecificationByTemplateIdUsecase.execute(templateId);
+        return ResponseEntity.ok(
+                ResponseDto.of(
+                        ExamSpecificationResponseDto.fromResponse(response),
+                        "OK",
+                        "Exam specification retrieved successfully"));
     }
 }

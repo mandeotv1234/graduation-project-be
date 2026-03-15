@@ -9,7 +9,7 @@ import java.util.List;
 
 public record ExamSpecificationResponse(
         Long id,
-        Long examId,
+        Long templateId,
         String title,
         String description,
         List<SpecEntityResponse> entities,
@@ -40,7 +40,7 @@ public record ExamSpecificationResponse(
                 : model.getEntities().stream().map(ExamSpecificationResponse::toEntityResponse).toList();
         return new ExamSpecificationResponse(
                 model.getId(),
-                model.getExamId(),
+                model.getTemplateId(),
                 model.getTitle(),
                 model.getDescription(),
                 entityResponses,

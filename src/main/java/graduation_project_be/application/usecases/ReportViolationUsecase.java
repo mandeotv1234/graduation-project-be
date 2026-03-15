@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ReportViolationUsecase {
 
-    private static final int MAX_VIOLATIONS = 3;
+    private static final int MAX_VIOLATIONS = 100;
 
     private final ExamViolationRepository examViolationRepository;
     private final ExamRepository examRepository;

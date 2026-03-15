@@ -718,3 +718,41 @@ databaseChangeLog:
                   name: end_time
                   valueDate: "2026-03-30T23:59:00"
             where: id = 1
+  - changeSet:
+      id: 1203260020
+      author: manhuynh
+      comment: "Link exam_specifications to schema_templates instead of exams"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exam_specifications
+            constraintName: fk_spec_exam
+        # Xóa toàn bộ dữ liệu cũ: spec được auto-gen từ DDL nên không cần giữ
+        - sql:
+            sql: "DELETE FROM spec_attributes;"
+        - sql:
+            sql: "DELETE FROM spec_entities;"
+        - sql:
+            sql: "DELETE FROM exam_specifications;"
+        - dropColumn:
+            tableName: exam_specifications
+            columnName: exam_id
+        - addColumn:
+            tableName: exam_specifications
+            columns:
+              - column:
+                  name: template_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: exam_specifications
+            columnNames: template_id
+            constraintName: uq_spec_template
+        - addForeignKeyConstraint:
+            baseTableName: exam_specifications
+            baseColumnNames: template_id
+            referencedTableName: schema_templates
+            referencedColumnNames: id
+            constraintName: fk_spec_template
+            onDelete: CASCADE
+            onUpdate: CASCADE

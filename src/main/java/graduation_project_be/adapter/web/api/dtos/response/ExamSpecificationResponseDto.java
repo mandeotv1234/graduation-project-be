@@ -7,7 +7,7 @@ import java.util.List;
 
 public record ExamSpecificationResponseDto(
         Long id,
-        Long examId,
+        Long templateId,
         String title,
         String description,
         List<SpecEntityResponseDto> entities,
@@ -45,7 +45,7 @@ public record ExamSpecificationResponseDto(
                             e.description(), e.orderIndex(), attrs);
                 }).toList();
         return new ExamSpecificationResponseDto(
-                r.id(), r.examId(), r.title(), r.description(),
+                r.id(), r.templateId(), r.title(), r.description(),
                 entities, r.createdAt(), r.updatedAt());
     }
 }

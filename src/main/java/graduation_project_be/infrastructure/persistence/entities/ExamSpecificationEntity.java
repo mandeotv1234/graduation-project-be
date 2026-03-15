@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import graduation_project_be.infrastructure.persistence.entities.SpecEntityEntity;
 
 @Table(name = "exam_specifications")
 @Entity
@@ -22,8 +23,8 @@ public class ExamSpecificationEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "exam_id", nullable = false, unique = true)
-    private Long examId;
+    @Column(name = "template_id", nullable = false, unique = true)
+    private Long templateId;
 
     @Column(name = "title", nullable = false)
     private String title;
@@ -46,7 +47,7 @@ public class ExamSpecificationEntity {
                 : entities.stream().map(SpecEntityEntity::toModel).toList();
         return ExamSpecification.builder()
                 .id(id)
-                .examId(examId)
+                .templateId(templateId)
                 .title(title)
                 .description(description)
                 .entities(entityModels)
@@ -58,7 +59,7 @@ public class ExamSpecificationEntity {
     public static ExamSpecificationEntity fromModel(ExamSpecification model) {
         return ExamSpecificationEntity.builder()
                 .id(model.getId())
-                .examId(model.getExamId())
+                .templateId(model.getTemplateId())
                 .title(model.getTitle())
                 .description(model.getDescription())
                 .createdAt(model.getCreatedAt())

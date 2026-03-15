@@ -57,7 +57,7 @@ public class SaveExamSpecificationUsecase {
 
         LocalDateTime now = LocalDateTime.now();
         ExamSpecification specification = ExamSpecification.builder()
-                .examId(request.examId())
+                .templateId(exam.getTemplateId())
                 .title(request.title())
                 .description(request.description())
                 .entities(entities)
@@ -66,8 +66,8 @@ public class SaveExamSpecificationUsecase {
                 .build();
 
         // Upsert: xoá cũ nếu đã tồn tại
-        if (examSpecificationRepository.existsByExamId(request.examId())) {
-            examSpecificationRepository.deleteByExamId(request.examId());
+        if (examSpecificationRepository.existsByTemplateId(exam.getTemplateId())) {
+            examSpecificationRepository.deleteByTemplateId(exam.getTemplateId());
         }
 
         ExamSpecification saved = examSpecificationRepository.save(specification);

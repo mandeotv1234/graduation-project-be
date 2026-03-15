@@ -6,7 +6,7 @@ import java.util.Optional;
 
 public interface ExamSpecificationRepository {
     ExamSpecification save(ExamSpecification specification);
-    Optional<ExamSpecification> findByExamId(Long examId);
-    boolean existsByExamId(Long examId);
-    void deleteByExamId(Long examId);
+    Optional<ExamSpecification> findByTemplateId(Long templateId);
+    boolean existsByTemplateId(Long templateId);
+    void deleteByTemplateId(Long templateId);
 }

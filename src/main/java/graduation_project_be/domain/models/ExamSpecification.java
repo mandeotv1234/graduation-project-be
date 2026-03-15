@@ -14,7 +14,7 @@ import java.util.List;
 @Builder
 public class ExamSpecification {
     private Long id;
-    private Long examId;
+    private Long templateId;
     private String title;
     private String description;
     private List<SpecEntity> entities;

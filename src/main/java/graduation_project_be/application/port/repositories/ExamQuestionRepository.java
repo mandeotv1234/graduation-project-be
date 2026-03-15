@@ -7,6 +7,8 @@ import java.util.Optional;
 public interface ExamQuestionRepository {
     ExamQuestion save(ExamQuestion examQuestion);
 
+    List<ExamQuestion> saveAll(List<ExamQuestion> examQuestions);
+
     List<ExamQuestion> findByExamId(Long examId);
 
     Optional<ExamQuestion> findById(Long id);

@@ -236,6 +236,90 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
+    public List<graduation_project_be.domain.models.TableMetadata> extractMetadata(String schemaName) {
+        String sql = "SELECT t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, " +
+                "c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, " +
+                "CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey " +
+                "FROM INFORMATION_SCHEMA.TABLES t " +
+                "JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA " +
+                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
+                "    ON tc.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc.TABLE_NAME = t.TABLE_NAME AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY' " +
+                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
+                "    ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND kcu.COLUMN_NAME = c.COLUMN_NAME " +
+                "WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE' " +
+                "ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
+
+        return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
+            Map<String, graduation_project_be.domain.models.TableMetadata> tableMap = new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String tableName = rs.getString("TABLE_NAME");
+                String columnName = rs.getString("COLUMN_NAME");
+                String dataType = rs.getString("DATA_TYPE");
+                int maxLength = rs.getInt("CHARACTER_MAXIMUM_LENGTH");
+                boolean isNullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE"));
+                boolean isPrimaryKey = rs.getBoolean("IsPrimaryKey");
+
+                // Format data type for UI readability
+                String formattedDataType = formatDataType(dataType, maxLength);
+
+                graduation_project_be.domain.models.TableMetadata table = tableMap.computeIfAbsent(tableName,
+                        k -> graduation_project_be.domain.models.TableMetadata.builder()
+                                .tableName(tableName)
+                                .columns(new ArrayList<>())
+                                .build());
+
+                graduation_project_be.domain.models.TableMetadata.ColumnMetadata column = graduation_project_be.domain.models.TableMetadata.ColumnMetadata.builder()
+                        .columnName(columnName)
+                        .dataType(formattedDataType)
+                        .isPrimaryKey(isPrimaryKey)
+                        .isNullable(isNullable)
+                        .build();
+
+                table.getColumns().add(column);
+            }
+
+            return new ArrayList<>(tableMap.values());
+        });
+    }
+
+    private String formatDataType(String dataType, int maxLength) {
+        if (dataType == null) return "Unknown";
+        String lower = dataType.toLowerCase();
+        
+        switch (lower) {
+            case "int":
+            case "bigint":
+            case "smallint":
+            case "tinyint":
+                return "Số nguyên (" + lower + ")";
+            case "decimal":
+            case "numeric":
+            case "float":
+            case "real":
+                return "Số thực (" + lower + ")";
+            case "varchar":
+            case "nvarchar":
+            case "char":
+            case "nchar":
+                return maxLength > 0 ? "Chuỗi (" + maxLength + ")" : "Chuỗi (Max)";
+            case "date":
+                return "Ngày";
+            case "datetime":
+            case "datetime2":
+                return "Ngày giờ";
+            case "bit":
+            case "boolean":
+                return "Logic (Boolean)";
+            case "text":
+            case "ntext":
+                return "Văn bản (Text)";
+            default:
+                return dataType;
+        }
+    }
+
+    @Override
     public List<Map<String, Object>> executeSql(String schemaName, String sql) {
         String userName = schemaName + "_user";
         // Ensure schema + user exist (handles seed-data exams where

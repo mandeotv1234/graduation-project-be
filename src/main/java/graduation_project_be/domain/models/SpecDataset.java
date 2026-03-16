@@ -8,14 +8,16 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Data
-@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class SchemaTemplate {
+@Builder
+public class SpecDataset {
     private Long id;
+    private Long specificationId;
     private String name;
-    private String ddlScript;
-    private String defaultDataScript;
-    private Long createdBy;
+    private String dataScript;
+    private int orderIndex;
+    private boolean isActive;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

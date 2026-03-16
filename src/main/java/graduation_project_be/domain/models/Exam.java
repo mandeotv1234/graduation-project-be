@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 @Builder
 public class Exam {
     private Long id;
-    private Long templateId;
+    private Long specificationId;
     private Long classId;
     private Long creatorId;
     private String title;

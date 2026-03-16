@@ -42,8 +42,12 @@ public class GetExamSpecificationUsecase {
             }
         }
 
-        ExamSpecification specification = examSpecificationRepository.findByTemplateId(exam.getTemplateId())
-                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "templateId", exam.getTemplateId()));
+        if (exam.getSpecificationId() == null) {
+            throw new ResourceNotFoundException("Exam", "specificationId", "null");
+        }
+
+        ExamSpecification specification = examSpecificationRepository.findById(exam.getSpecificationId())
+                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", exam.getSpecificationId()));
 
         return ExamSpecificationResponse.fromModel(specification);
     }

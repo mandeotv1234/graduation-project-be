@@ -14,10 +14,12 @@ import java.util.List;
 @Builder
 public class ExamSpecification {
     private Long id;
-    private Long templateId;
-    private String title;
+    private String name;
+    private String ddlScript;
     private String description;
     private List<SpecEntity> entities;
+    private List<SpecDataset> datasets;
+    private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

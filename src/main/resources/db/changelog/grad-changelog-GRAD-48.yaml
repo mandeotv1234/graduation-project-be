@@ -1,0 +1,213 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1203265001
+      author: codex
+      comment: "GRAD-48: Create specifications table (merged from schema_templates + exam_specifications)"
+      changes:
+        - createTable:
+            tableName: specifications
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ddl_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_by
+                  type: BIGINT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: specifications
+            baseColumnNames: created_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_specification_creator
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  - changeSet:
+      id: 1203265002
+      author: codex
+      comment: "GRAD-48: Create spec_datasets table (1 specification - many datasets)"
+      changes:
+        - createTable:
+            tableName: spec_datasets
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: specification_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_index
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: spec_datasets
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_spec_dataset_specification
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: spec_datasets
+            indexName: idx_spec_dataset_specification
+            columns:
+              - column:
+                  name: specification_id
+        - createIndex:
+            tableName: spec_datasets
+            indexName: idx_spec_dataset_order
+            columns:
+              - column:
+                  name: specification_id
+              - column:
+                  name: order_index
+
+  - changeSet:
+      id: 1203265003
+      author: codex
+      comment: "GRAD-48: Migrate schema_templates + exam_specifications data to specifications"
+      changes:
+        - sql:
+            sql: |
+              SET IDENTITY_INSERT specifications ON;
+              INSERT INTO specifications (id, name, ddl_script, description, created_by, created_at, updated_at)
+              SELECT
+                st.id,
+                COALESCE(es.title, st.name) AS name,
+                st.ddl_script,
+                COALESCE(es.description, '') AS description,
+                st.created_by,
+                st.created_at,
+                COALESCE(es.updated_at, st.created_at) AS updated_at
+              FROM schema_templates st
+              LEFT JOIN exam_specifications es ON es.template_id = st.id;
+              SET IDENTITY_INSERT specifications OFF;
+
+        - sql:
+            sql: |
+              UPDATE se
+              SET se.specification_id = es.template_id
+              FROM spec_entities se
+              INNER JOIN exam_specifications es ON se.specification_id = es.id;
+
+        - dropForeignKeyConstraint:
+            baseTableName: spec_entities
+            constraintName: fk_spec_entity_spec
+        - addForeignKeyConstraint:
+            baseTableName: spec_entities
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_spec_entity_specification
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - sql:
+            sql: |
+              INSERT INTO spec_datasets (specification_id, name, data_script, order_index, is_active, created_at, updated_at)
+              SELECT
+                st.id,
+                'Default Dataset',
+                st.default_data_script,
+                1,
+                1,
+                st.created_at,
+                st.created_at
+              FROM schema_templates st
+              WHERE st.default_data_script IS NOT NULL AND LTRIM(RTRIM(st.default_data_script)) <> '';
+
+  - changeSet:
+      id: 1203265004
+      author: codex
+      comment: "GRAD-48: Move exams to specification_id"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exams
+            constraintName: fk_exam_template
+        - addColumn:
+            tableName: exams
+            columns:
+              - column:
+                  name: specification_id
+                  type: BIGINT
+        - sql:
+            sql: |
+              UPDATE exams
+              SET specification_id = template_id
+              WHERE specification_id IS NULL;
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_exam_specification
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - dropColumn:
+            tableName: exams
+            columnName: template_id
+
+  - changeSet:
+      id: 1203265005
+      author: codex
+      comment: "GRAD-48: Drop legacy tables after migration"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exam_specifications
+            constraintName: fk_spec_template
+        - dropTable:
+            tableName: exam_specifications
+        - dropTable:
+            tableName: schema_templates

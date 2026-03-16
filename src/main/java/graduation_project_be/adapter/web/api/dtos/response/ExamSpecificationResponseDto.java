@@ -7,10 +7,12 @@ import java.util.List;
 
 public record ExamSpecificationResponseDto(
         Long id,
-        Long templateId,
-        String title,
+        String name,
+        String ddlScript,
         String description,
         List<SpecEntityResponseDto> entities,
+        List<SpecDatasetResponseDto> datasets,
+        Long createdBy,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
@@ -33,6 +35,14 @@ public record ExamSpecificationResponseDto(
             int orderIndex) {
     }
 
+    public record SpecDatasetResponseDto(
+            Long id,
+            String name,
+            String dataScript,
+            int orderIndex,
+            boolean isActive) {
+    }
+
     public static ExamSpecificationResponseDto fromResponse(ExamSpecificationResponse r) {
         List<SpecEntityResponseDto> entities = r.entities() == null ? List.of()
                 : r.entities().stream().map(e -> {
@@ -44,8 +54,20 @@ public record ExamSpecificationResponseDto(
                             e.id(), e.entityName(), e.displayName(),
                             e.description(), e.orderIndex(), attrs);
                 }).toList();
+
+        List<SpecDatasetResponseDto> datasets = r.datasets() == null ? List.of()
+                : r.datasets().stream().map(d -> new SpecDatasetResponseDto(
+                        d.id(), d.name(), d.dataScript(), d.orderIndex(), d.isActive())).toList();
+
         return new ExamSpecificationResponseDto(
-                r.id(), r.templateId(), r.title(), r.description(),
-                entities, r.createdAt(), r.updatedAt());
+                r.id(),
+                r.name(),
+                r.ddlScript(),
+                r.description(),
+                entities,
+                datasets,
+                r.createdBy(),
+                r.createdAt(),
+                r.updatedAt());
     }
 }

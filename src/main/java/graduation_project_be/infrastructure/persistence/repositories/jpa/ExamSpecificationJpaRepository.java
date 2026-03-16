@@ -9,15 +9,12 @@ import java.util.Optional;
 
 public interface ExamSpecificationJpaRepository extends JpaRepository<ExamSpecificationEntity, Long> {
 
-    // Fetch spec + entities (1 bag at a time)
-    @Query("SELECT s FROM ExamSpecificationEntity s LEFT JOIN FETCH s.entities WHERE s.templateId = :templateId")
-    Optional<ExamSpecificationEntity> findByTemplateIdWithEntities(@Param("templateId") Long templateId);
+    @Query("SELECT s FROM ExamSpecificationEntity s LEFT JOIN FETCH s.entities WHERE s.id = :id")
+    Optional<ExamSpecificationEntity> findByIdWithEntities(@Param("id") Long id);
 
-    // Fetch spec + entities + attributes (second pass — Hibernate N+1 avoided via batch)
-    @Query("SELECT DISTINCT s FROM ExamSpecificationEntity s LEFT JOIN FETCH s.entities e LEFT JOIN FETCH e.attributes WHERE s.templateId = :templateId")
-    Optional<ExamSpecificationEntity> findByTemplateIdWithDetails(@Param("templateId") Long templateId);
+    @Query("SELECT s FROM ExamSpecificationEntity s LEFT JOIN FETCH s.datasets WHERE s.id = :id")
+    Optional<ExamSpecificationEntity> findByIdWithDatasets(@Param("id") Long id);
 
-    Optional<ExamSpecificationEntity> findByTemplateId(Long templateId);
-
-    boolean existsByTemplateId(Long templateId);
+    @Query("SELECT DISTINCT s FROM ExamSpecificationEntity s LEFT JOIN FETCH s.entities e LEFT JOIN FETCH e.attributes WHERE s.id = :id")
+    Optional<ExamSpecificationEntity> findByIdWithDetails(@Param("id") Long id);
 }

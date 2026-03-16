@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 
 public record CreateExamResponseDto(
         Long id,
-        Long templateId,
+        Long specificationId,
         Long classId,
         Long creatorId,
         String title,
@@ -17,7 +17,7 @@ public record CreateExamResponseDto(
     public static CreateExamResponseDto fromResponse(CreateExamResponse response) {
         return new CreateExamResponseDto(
                 response.id(),
-                response.templateId(),
+                response.specificationId(),
                 response.classId(),
                 response.creatorId(),
                 response.title(),

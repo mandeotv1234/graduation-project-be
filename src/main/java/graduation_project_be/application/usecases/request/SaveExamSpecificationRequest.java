@@ -4,9 +4,11 @@ import java.util.List;
 
 public record SaveExamSpecificationRequest(
         Long examId,
-        String title,
+        String name,
+        String ddlScript,
         String description,
-        List<SpecEntityRequest> entities) {
+        List<SpecEntityRequest> entities,
+        List<SpecDatasetRequest> datasets) {
 
     public record SpecEntityRequest(
             String entityName,
@@ -23,5 +25,12 @@ public record SaveExamSpecificationRequest(
             boolean isPrimaryKey,
             boolean isNullable,
             int orderIndex) {
+    }
+
+    public record SpecDatasetRequest(
+            String name,
+            String dataScript,
+            int orderIndex,
+            boolean isActive) {
     }
 }

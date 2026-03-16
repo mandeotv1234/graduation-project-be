@@ -85,10 +85,10 @@ public class CreateExamQuestionsUsecase {
     private String buildSchemaContext(Long examId) {
         try {
             return examRepository.findById(examId)
-                    .flatMap(exam -> examSpecificationRepository.findByTemplateId(exam.getTemplateId()))
+                    .flatMap(exam -> examSpecificationRepository.findById(exam.getSpecificationId()))
                     .map(spec -> {
                         StringBuilder sb = new StringBuilder();
-                        sb.append("Database: ").append(spec.getTitle()).append("\n");
+                        sb.append("Database: ").append(spec.getName()).append("\n");
                         if (spec.getDescription() != null) {
                             sb.append(spec.getDescription()).append("\n\n");
                         }

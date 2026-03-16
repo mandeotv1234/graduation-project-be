@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 
 public record CreateExamResponse(
         Long id,
-        Long templateId,
+        Long specificationId,
         Long classId,
         Long creatorId,
         String title,
@@ -17,7 +17,7 @@ public record CreateExamResponse(
     public static CreateExamResponse fromModel(Exam exam) {
         return new CreateExamResponse(
                 exam.getId(),
-                exam.getTemplateId(),
+                exam.getSpecificationId(),
                 exam.getClassId(),
                 exam.getCreatorId(),
                 exam.getTitle(),

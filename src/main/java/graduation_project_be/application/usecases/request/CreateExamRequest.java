@@ -3,7 +3,7 @@ package graduation_project_be.application.usecases.request;
 import java.time.LocalDateTime;
 
 public record CreateExamRequest(
-                Long templateId,
+                Long specificationId,
                 Long classId,
                 String title,
                 Integer durationMinutes,

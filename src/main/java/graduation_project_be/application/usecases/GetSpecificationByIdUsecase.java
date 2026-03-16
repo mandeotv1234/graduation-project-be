@@ -7,13 +7,13 @@ import graduation_project_be.domain.models.ExamSpecification;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
-public class GetSpecificationByTemplateIdUsecase {
+public class GetSpecificationByIdUsecase {
 
     private final ExamSpecificationRepository examSpecificationRepository;
 
-    public ExamSpecificationResponse execute(Long templateId) {
-        ExamSpecification specification = examSpecificationRepository.findByTemplateId(templateId)
-                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "templateId", templateId));
+    public ExamSpecificationResponse execute(Long specificationId) {
+        ExamSpecification specification = examSpecificationRepository.findById(specificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
         return ExamSpecificationResponse.fromModel(specification);
     }

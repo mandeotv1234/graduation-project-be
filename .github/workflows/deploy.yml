@@ -3,7 +3,7 @@ name: CI/CD - Backend Deploy
 on:
   push:
     branches:
-      - develop
+      - feature/GRAD-48-Implement-schema_templates-schema-modification
 
 env:
   REGISTRY: registry.digitalocean.com/graduation
@@ -15,7 +15,6 @@ jobs:
     timeout-minutes: 30
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -65,7 +64,7 @@ jobs:
           username: root
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /root
+            cd /root/app
             docker login registry.digitalocean.com -u ${{ secrets.DO_REGISTRY_TOKEN }} -p ${{ secrets.DO_REGISTRY_TOKEN }}
             docker-compose pull backend
             docker-compose up -d backend

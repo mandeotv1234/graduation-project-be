@@ -239,13 +239,27 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     public List<graduation_project_be.domain.models.TableMetadata> extractMetadata(String schemaName) {
         String sql = "SELECT t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, " +
                 "c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, " +
-                "CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey " +
+                "CASE WHEN kcu_pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey, " +
+                "fk.REFERENCED_TABLE_NAME AS ReferencedTable, " +
+                "fk.REFERENCED_COLUMN_NAME AS ReferencedColumn " +
                 "FROM INFORMATION_SCHEMA.TABLES t " +
                 "JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA " +
-                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
-                "    ON tc.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc.TABLE_NAME = t.TABLE_NAME AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY' " +
-                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
-                "    ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME AND kcu.COLUMN_NAME = c.COLUMN_NAME " +
+                // Primary key
+                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_pk " +
+                "    ON tc_pk.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_pk.TABLE_NAME = t.TABLE_NAME AND tc_pk.CONSTRAINT_TYPE = 'PRIMARY KEY' " +
+                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_pk " +
+                "    ON kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
+                // Foreign key (resolve referenced table/column)
+                "LEFT JOIN ( " +
+                "    SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME, " +
+                "           kcu_ref.TABLE_NAME AS REFERENCED_TABLE_NAME, " +
+                "           kcu_ref.COLUMN_NAME AS REFERENCED_COLUMN_NAME " +
+                "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
+                "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME " +
+                "    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' " +
+                ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME " +
                 "WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE' " +
                 "ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
 
@@ -259,6 +273,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 int maxLength = rs.getInt("CHARACTER_MAXIMUM_LENGTH");
                 boolean isNullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE"));
                 boolean isPrimaryKey = rs.getBoolean("IsPrimaryKey");
+                String referencedTable = rs.getString("ReferencedTable");
+                String referencedColumn = rs.getString("ReferencedColumn");
+                boolean isForeignKey = referencedTable != null && !referencedTable.isBlank();
 
                 // Format data type for UI readability
                 String formattedDataType = formatDataType(dataType, maxLength);
@@ -273,6 +290,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         .columnName(columnName)
                         .dataType(formattedDataType)
                         .isPrimaryKey(isPrimaryKey)
+                        .isForeignKey(isForeignKey)
+                        .referencesTable(referencedTable)
+                        .referencesColumn(referencedColumn)
                         .isNullable(isNullable)
                         .build();
 

@@ -3,7 +3,7 @@ name: CD - Backend Deploy
 on:
   push:
     branches:
-      - feature/GRAD-48-Implement-schema_templates-schema-modification
+      - develop
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

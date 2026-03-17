@@ -121,7 +121,6 @@ databaseChangeLog:
       changes:
         - sql:
             sql: |
-              SET IDENTITY_INSERT specifications ON;
               INSERT INTO specifications (id, name, ddl_script, description, created_by, created_at, updated_at)
               SELECT
                 st.id,
@@ -133,14 +132,18 @@ databaseChangeLog:
                 COALESCE(es.updated_at, st.created_at) AS updated_at
               FROM schema_templates st
               LEFT JOIN exam_specifications es ON es.template_id = st.id;
-              SET IDENTITY_INSERT specifications OFF;
+              SELECT setval(
+                pg_get_serial_sequence('specifications', 'id'),
+                COALESCE((SELECT MAX(id) FROM specifications), 1),
+                true
+              );
 
         - sql:
             sql: |
-              UPDATE se
-              SET se.specification_id = es.template_id
-              FROM spec_entities se
-              INNER JOIN exam_specifications es ON se.specification_id = es.id;
+              UPDATE spec_entities se
+              SET specification_id = es.template_id
+              FROM exam_specifications es
+              WHERE se.specification_id = es.id;
 
         - dropForeignKeyConstraint:
             baseTableName: spec_entities
@@ -162,11 +165,11 @@ databaseChangeLog:
                 'Default Dataset',
                 st.default_data_script,
                 1,
-                1,
+                TRUE,
                 st.created_at,
                 st.created_at
               FROM schema_templates st
-              WHERE st.default_data_script IS NOT NULL AND LTRIM(RTRIM(st.default_data_script)) <> '';
+              WHERE st.default_data_script IS NOT NULL AND BTRIM(st.default_data_script) <> '';
 
   - changeSet:
       id: 1203265004

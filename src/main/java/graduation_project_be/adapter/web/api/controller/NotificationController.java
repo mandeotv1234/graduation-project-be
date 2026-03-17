@@ -32,8 +32,8 @@ public class NotificationController {
     @GetMapping
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<PaginationResponseDto<TeacherNotificationResponseDto>> getNotifications(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(name = "page", defaultValue = "1") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
 
         GetTeacherNotificationsRequest request = new GetTeacherNotificationsRequest(page, size);
         PaginationResponse<TeacherNotificationResponse> response = getTeacherNotificationsUsecase.execute(request);
@@ -56,7 +56,7 @@ public class NotificationController {
     @PatchMapping("/{notificationId}/read")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> markAsRead(
-            @PathVariable @Positive Long notificationId) {
+            @PathVariable("notificationId") @Positive Long notificationId) {
         boolean success = markNotificationReadUsecase.execute(notificationId);
         if (!success) {
             return ResponseEntity.notFound().build();
@@ -77,7 +77,7 @@ public class NotificationController {
     @DeleteMapping("/{notificationId}")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> deleteNotification(
-            @PathVariable @Positive Long notificationId) {
+            @PathVariable("notificationId") @Positive Long notificationId) {
         DeleteNotificationResponse response = deleteNotificationUsecase.execute(
                 new DeleteNotificationRequest(notificationId, false));
         return ResponseEntity.ok(

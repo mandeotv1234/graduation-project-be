@@ -47,10 +47,10 @@ public class ClassController {
     @GetMapping
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<PaginationResponseDto<GetClassesResponseDto>> getClasses(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "CREATED_AT") String sortBy,
-            @RequestParam(defaultValue = "DESC") String sortOrder) {
+            @RequestParam(name = "page", defaultValue = "1") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @RequestParam(name = "sortBy", defaultValue = "CREATED_AT") String sortBy,
+            @RequestParam(name = "sortOrder", defaultValue = "DESC") String sortOrder) {
         GetClassesRequestDto requestDto = GetClassesRequestDto.builder()
                 .page(page)
                 .size(size)
@@ -69,7 +69,7 @@ public class ClassController {
     @GetMapping("/{classId}")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> getClassDetail(
-            @PathVariable Long classId) {
+            @PathVariable("classId") Long classId) {
         GetClassDetailRequestDto requestDto = GetClassDetailRequestDto.builder()
                 .classId(classId)
                 .build();
@@ -83,11 +83,11 @@ public class ClassController {
     @GetMapping("/{classId}/students")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<PaginationResponseDto<GetStudentsInClassResponseDto>> getStudentsInClass(
-            @PathVariable Long classId,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "FULL_NAME") String sortBy,
-            @RequestParam(defaultValue = "ASC") String sortOrder) {
+            @PathVariable("classId") Long classId,
+            @RequestParam(name = "page", defaultValue = "1") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @RequestParam(name = "sortBy", defaultValue = "FULL_NAME") String sortBy,
+            @RequestParam(name = "sortOrder", defaultValue = "ASC") String sortOrder) {
         GetStudentsInClassRequestDto requestDto = GetStudentsInClassRequestDto.builder()
                 .classId(classId)
                 .page(page)
@@ -109,7 +109,7 @@ public class ClassController {
     @GetMapping("/{classId}/exams")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> getExamsByClass(
-            @PathVariable Long classId) {
+            @PathVariable("classId") Long classId) {
         List<CreateExamResponse> responses = getExamsByClassUsecase.execute(classId);
         List<CreateExamResponseDto> dtos = responses.stream()
                 .map(CreateExamResponseDto::fromResponse)

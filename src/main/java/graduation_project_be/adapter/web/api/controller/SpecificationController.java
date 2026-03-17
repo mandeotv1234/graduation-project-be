@@ -56,7 +56,7 @@ public class SpecificationController {
     @GetMapping("/{specificationId}")
     @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
     public ResponseEntity<ResponseDto> getSpecificationById(
-            @PathVariable @Positive Long specificationId) {
+            @PathVariable("specificationId") @Positive Long specificationId) {
         ExamSpecificationResponse response = getSpecificationByIdUsecase.execute(specificationId);
         return ResponseEntity.ok(
                 ResponseDto.of(

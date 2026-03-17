@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: 1203265001
-      author: codex
+      author: manhuynh
       comment: "GRAD-48: Create specifications table (merged from schema_templates + exam_specifications)"
       changes:
         - createTable:
@@ -48,7 +48,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 1203265002
-      author: codex
+      author: manhuynh
       comment: "GRAD-48: Create spec_datasets table (1 specification - many datasets)"
       changes:
         - createTable:
@@ -116,7 +116,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 1203265003
-      author: codex
+      author: manhuynh
       comment: "GRAD-48: Migrate schema_templates + exam_specifications data to specifications"
       changes:
         - sql:
@@ -173,7 +173,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 1203265004
-      author: codex
+      author: manhuynh
       comment: "GRAD-48: Move exams to specification_id"
       changes:
         - dropForeignKeyConstraint:
@@ -204,7 +204,7 @@ databaseChangeLog:
 
   - changeSet:
       id: 1203265005
-      author: codex
+      author: manhuynh
       comment: "GRAD-48: Drop legacy tables after migration"
       changes:
         - dropForeignKeyConstraint:

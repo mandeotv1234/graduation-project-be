@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import graduation_project_be.infrastructure.persistence.entities.SpecEntityEntity;
 
-@Table(name = "exam_specifications")
+@Table(name = "specifications")
 @Entity
 @Data
 @Builder
@@ -23,14 +23,17 @@ public class ExamSpecificationEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "template_id", nullable = false, unique = true)
-    private Long templateId;
+    @Column(name = "name", nullable = false)
+    private String name;
 
-    @Column(name = "title", nullable = false)
-    private String title;
+    @Column(name = "ddl_script", nullable = false, columnDefinition = "TEXT")
+    private String ddlScript;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "created_by")
+    private Long createdBy;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -42,15 +45,21 @@ public class ExamSpecificationEntity {
     @OrderBy("orderIndex ASC")
     private List<SpecEntityEntity> entities;
 
+    @OneToMany(mappedBy = "specification", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("orderIndex ASC")
+    private List<SpecDatasetEntity> datasets;
+
     public ExamSpecification toModel() {
         List<graduation_project_be.domain.models.SpecEntity> entityModels = entities == null ? List.of()
                 : entities.stream().map(SpecEntityEntity::toModel).toList();
         return ExamSpecification.builder()
                 .id(id)
-                .templateId(templateId)
-                .title(title)
+                .name(name)
+                .ddlScript(ddlScript)
                 .description(description)
                 .entities(entityModels)
+                .datasets(datasets == null ? List.of() : datasets.stream().map(SpecDatasetEntity::toModel).toList())
+                .createdBy(createdBy)
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -59,9 +68,10 @@ public class ExamSpecificationEntity {
     public static ExamSpecificationEntity fromModel(ExamSpecification model) {
         return ExamSpecificationEntity.builder()
                 .id(model.getId())
-                .templateId(model.getTemplateId())
-                .title(model.getTitle())
+                .name(model.getName())
+                .ddlScript(model.getDdlScript())
                 .description(model.getDescription())
+                .createdBy(model.getCreatedBy())
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();

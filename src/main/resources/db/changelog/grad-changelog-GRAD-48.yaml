@@ -1,0 +1,692 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1203265001
+      author: manhuynh
+      comment: "GRAD-48: Create specifications table (merged from schema_templates + exam_specifications)"
+      changes:
+        - createTable:
+            tableName: specifications
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ddl_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: created_by
+                  type: BIGINT
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: specifications
+            baseColumnNames: created_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_specification_creator
+            onDelete: SET NULL
+            onUpdate: CASCADE
+
+  - changeSet:
+      id: 1203265002
+      author: manhuynh
+      comment: "GRAD-48: Create spec_datasets table (1 specification - many datasets)"
+      changes:
+        - createTable:
+            tableName: spec_datasets
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: specification_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data_script
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_index
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: spec_datasets
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_spec_dataset_specification
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: spec_datasets
+            indexName: idx_spec_dataset_specification
+            columns:
+              - column:
+                  name: specification_id
+        - createIndex:
+            tableName: spec_datasets
+            indexName: idx_spec_dataset_order
+            columns:
+              - column:
+                  name: specification_id
+              - column:
+                  name: order_index
+
+  - changeSet:
+      id: 1203265003
+      author: manhuynh
+      comment: "GRAD-48: Migrate schema_templates + exam_specifications data to specifications"
+      changes:
+        - sql:
+            sql: |
+              INSERT INTO specifications (id, name, ddl_script, description, created_by, created_at, updated_at)
+              SELECT
+                st.id,
+                COALESCE(es.title, st.name) AS name,
+                st.ddl_script,
+                COALESCE(es.description, '') AS description,
+                st.created_by,
+                st.created_at,
+                COALESCE(es.updated_at, st.created_at) AS updated_at
+              FROM schema_templates st
+              LEFT JOIN exam_specifications es ON es.template_id = st.id;
+              SELECT setval(
+                pg_get_serial_sequence('specifications', 'id'),
+                COALESCE((SELECT MAX(id) FROM specifications), 1),
+                true
+              );
+
+        - sql:
+            sql: |
+              UPDATE spec_entities se
+              SET specification_id = es.template_id
+              FROM exam_specifications es
+              WHERE se.specification_id = es.id;
+
+        - dropForeignKeyConstraint:
+            baseTableName: spec_entities
+            constraintName: fk_spec_entity_spec
+        - addForeignKeyConstraint:
+            baseTableName: spec_entities
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_spec_entity_specification
+            onDelete: CASCADE
+            onUpdate: CASCADE
+
+        - sql:
+            sql: |
+              INSERT INTO spec_datasets (specification_id, name, data_script, order_index, is_active, created_at, updated_at)
+              SELECT
+                st.id,
+                'Default Dataset',
+                st.default_data_script,
+                1,
+                TRUE,
+                st.created_at,
+                st.created_at
+              FROM schema_templates st
+              WHERE st.default_data_script IS NOT NULL AND BTRIM(st.default_data_script) <> '';
+
+  - changeSet:
+      id: 1203265004
+      author: manhuynh
+      comment: "GRAD-48: Move exams to specification_id"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exams
+            constraintName: fk_exam_template
+        - addColumn:
+            tableName: exams
+            columns:
+              - column:
+                  name: specification_id
+                  type: BIGINT
+        - sql:
+            sql: |
+              UPDATE exams
+              SET specification_id = template_id
+              WHERE specification_id IS NULL;
+        - addForeignKeyConstraint:
+            baseTableName: exams
+            baseColumnNames: specification_id
+            referencedTableName: specifications
+            referencedColumnNames: id
+            constraintName: fk_exam_specification
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - dropColumn:
+            tableName: exams
+            columnName: template_id
+
+  - changeSet:
+      id: 1203265005
+      author: manhuynh
+      comment: "GRAD-48: Drop legacy tables after migration"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: exam_specifications
+            constraintName: fk_spec_template
+        - dropTable:
+            tableName: exam_specifications
+        - dropTable:
+            tableName: schema_templates
+
+  - changeSet:
+      id: 1203265010
+      author: manhuynh
+      comment: "GRAD-48: Seed exam 1010 full specification, datasets, and grading questions"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+                v_exam_id BIGINT;
+                v_creator_id BIGINT;
+                v_class_id BIGINT;
+                v_entity_congty_id BIGINT;
+                v_entity_congtrinh_id BIGINT;
+                v_entity_hangmuc_id BIGINT;
+                v_ddl_script TEXT;
+                v_dataset_a TEXT;
+                v_dataset_b TEXT;
+                v_dataset_c TEXT;
+                v_q1_correct TEXT;
+                v_q1_verify TEXT;
+                v_q2_correct TEXT;
+                v_q2_verify TEXT;
+                v_q3_correct TEXT;
+                v_q4_correct TEXT;
+                v_q5_correct TEXT;
+              BEGIN
+                v_ddl_script := $SQL$
+                CREATE TABLE CONGTY (
+                  MaCT NVARCHAR(5) NOT NULL PRIMARY KEY,
+                  TenCT NVARCHAR(50) NOT NULL,
+                  QuocGia NVARCHAR(50) NOT NULL,
+                  TruSo NVARCHAR(50) NOT NULL,
+                  CongTrinhTB NVARCHAR(5) NOT NULL
+                );
+
+                CREATE TABLE CONGTRINH (
+                  MaCongTrinh NVARCHAR(5) NOT NULL,
+                  MaCongTy NVARCHAR(5) NOT NULL,
+                  TenCongTrinh NVARCHAR(100) NOT NULL,
+                  Nam INT NOT NULL DEFAULT YEAR(GETDATE()),
+                  DiaDiem NVARCHAR(100) NOT NULL,
+                  CONSTRAINT PK_CONGTRINH PRIMARY KEY (MaCongTrinh, MaCongTy),
+                  CONSTRAINT FK_CONGTRINH_CONGTY FOREIGN KEY (MaCongTy) REFERENCES CONGTY(MaCT),
+                  CONSTRAINT CHK_CONGTRINH_NAM CHECK (Nam <= YEAR(GETDATE()))
+                );
+
+                CREATE TABLE HANGMUC (
+                  STT INT NOT NULL,
+                  MaCongTrinh NVARCHAR(5) NOT NULL,
+                  MaCongTy NVARCHAR(5) NOT NULL,
+                  TenHangMuc NVARCHAR(100) NOT NULL,
+                  ChiPhi DECIMAL(12,2) NOT NULL,
+                  NhanCong INT NOT NULL,
+                  CONSTRAINT PK_HANGMUC PRIMARY KEY (STT, MaCongTrinh, MaCongTy),
+                  CONSTRAINT FK_HANGMUC_CONGTRINH FOREIGN KEY (MaCongTrinh, MaCongTy)
+                    REFERENCES CONGTRINH(MaCongTrinh, MaCongTy),
+                  CONSTRAINT CHK_HANGMUC_CHIPHI CHECK (ChiPhi >= 0),
+                  CONSTRAINT CHK_HANGMUC_NHANCONG CHECK (NhanCong >= 0)
+                );
+                $SQL$;
+
+                v_dataset_a := $SQL$
+                INSERT INTO CONGTY (MaCT, TenCT, QuocGia, TruSo, CongTrinhTB) VALUES
+                  (N'CTY01', N'Vinaconex', N'Việt Nam', N'Hà Nội', N'001'),
+                  (N'CTY02', N'Coteccons', N'Việt Nam', N'TP.HCM', N'002'),
+                  (N'CTY03', N'Lotte E&C', N'Hàn Quốc', N'Seoul', N'001');
+
+                INSERT INTO CONGTRINH (MaCongTrinh, MaCongTy, TenCongTrinh, DiaDiem, Nam) VALUES
+                  (N'001', N'CTY01', N'Toà nhà văn phòng ABC Buildings', N'Hà Nội, Việt Nam', 2023),
+                  (N'002', N'CTY02', N'Trung tâm thương mại CoCo', N'TP.HCM, Việt Nam', 2022),
+                  (N'001', N'CTY03', N'Chung cư cao cấp Star', N'Đà Nẵng, Việt Nam', 2024),
+                  (N'001', N'CTY02', N'Khách sạn 5 sao Seoul', N'Seoul, Hàn Quốc', 2021);
+
+                INSERT INTO HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES
+                  (1, N'001', N'CTY01', N'Móng nền', 500, 100),
+                  (2, N'001', N'CTY01', N'Kết cấu', 700, 80),
+                  (1, N'002', N'CTY02', N'Nội thất', 300, 50),
+                  (2, N'002', N'CTY02', N'Hệ thống điện', 200, 90),
+                  (1, N'001', N'CTY03', N'Sàn bê tông', 400, 100);
+                $SQL$;
+
+                v_dataset_b := $SQL$
+                INSERT INTO CONGTY (MaCT, TenCT, QuocGia, TruSo, CongTrinhTB) VALUES
+                  (N'CTY01', N'Vinaconex', N'Việt Nam', N'Hà Nội', N'001'),
+                  (N'CTY02', N'Coteccons', N'Việt Nam', N'TP.HCM', N'002'),
+                  (N'CTY03', N'Lotte E&C', N'Hàn Quốc', N'Seoul', N'001'),
+                  (N'CTY04', N'Anpha Build', N'Việt Nam', N'Cần Thơ', N'003');
+
+                INSERT INTO CONGTRINH (MaCongTrinh, MaCongTy, TenCongTrinh, DiaDiem, Nam) VALUES
+                  (N'001', N'CTY01', N'Toà nhà văn phòng ABC Buildings', N'Hà Nội, Việt Nam', 2020),
+                  (N'002', N'CTY02', N'Trung tâm thương mại CoCo', N'TP.HCM, Việt Nam', 2021),
+                  (N'001', N'CTY03', N'Chung cư cao cấp Star', N'Đà Nẵng, Việt Nam', 2024),
+                  (N'001', N'CTY02', N'Khách sạn 5 sao Seoul', N'Seoul, Hàn Quốc', 2023),
+                  (N'003', N'CTY04', N'Riverside ABC Buildings', N'Cần Thơ, Việt Nam', 2019);
+
+                INSERT INTO HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES
+                  (1, N'001', N'CTY01', N'Móng nền', 450, 95),
+                  (2, N'001', N'CTY01', N'Kết cấu', 650, 85),
+                  (1, N'002', N'CTY02', N'Nội thất', 380, 60),
+                  (2, N'002', N'CTY02', N'Hệ thống điện', 260, 110),
+                  (3, N'002', N'CTY02', N'PCCC', 140, 40),
+                  (1, N'003', N'CTY04', N'Móng cọc', 320, 70),
+                  (2, N'003', N'CTY04', N'Hoàn thiện', 280, 65);
+                $SQL$;
+
+                v_dataset_c := $SQL$
+                INSERT INTO CONGTY (MaCT, TenCT, QuocGia, TruSo, CongTrinhTB) VALUES
+                  (N'CTY01', N'Vinaconex', N'Việt Nam', N'Hà Nội', N'001'),
+                  (N'CTY02', N'Coteccons', N'Việt Nam', N'TP.HCM', N'002'),
+                  (N'CTY05', N'Beta Construct', N'Việt Nam', N'Hải Phòng', N'004');
+
+                INSERT INTO CONGTRINH (MaCongTrinh, MaCongTy, TenCongTrinh, DiaDiem, Nam) VALUES
+                  (N'001', N'CTY01', N'Landmark ABC Buildings', N'Hà Nội, Việt Nam', 2018),
+                  (N'002', N'CTY02', N'Trung tâm thương mại CoCo', N'TP.HCM, Việt Nam', 2022),
+                  (N'003', N'CTY02', N'Kho vận Miền Đông', N'Bình Dương, Việt Nam', YEAR(GETDATE())),
+                  (N'004', N'CTY05', N'Harbor ABC Buildings', N'Hải Phòng, Việt Nam', 2017);
+
+                INSERT INTO HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES
+                  (1, N'001', N'CTY01', N'Móng nền', 600, 120),
+                  (2, N'001', N'CTY01', N'Khung thép', 900, 150),
+                  (1, N'002', N'CTY02', N'Nội thất', 410, 55),
+                  (2, N'002', N'CTY02', N'Hệ thống điện', 190, 95),
+                  (1, N'004', N'CTY05', N'Kết cấu chính', 700, 130),
+                  (2, N'004', N'CTY05', N'Cảnh quan', 0, 10);
+                $SQL$;
+
+                v_q1_correct := $SQL$
+                SELECT
+                  c.TABLE_NAME,
+                  c.COLUMN_NAME,
+                  c.DATA_TYPE,
+                  c.CHARACTER_MAXIMUM_LENGTH AS MAX_LEN,
+                  c.IS_NULLABLE,
+                  CASE WHEN kcu.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IS_PK
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                  ON tc.TABLE_SCHEMA = c.TABLE_SCHEMA
+                 AND tc.TABLE_NAME = c.TABLE_NAME
+                 AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                  ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                 AND kcu.TABLE_SCHEMA = c.TABLE_SCHEMA
+                 AND kcu.TABLE_NAME = c.TABLE_NAME
+                 AND kcu.COLUMN_NAME = c.COLUMN_NAME
+                WHERE c.TABLE_SCHEMA = SCHEMA_NAME()
+                  AND c.TABLE_NAME IN (N'CONGTY', N'CONGTRINH', N'HANGMUC')
+                ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION;
+                $SQL$;
+
+                v_q1_verify := $SQL$
+                SELECT N'CONGTY' AS TABLE_NAME, N'MaCT' AS COLUMN_NAME, N'nvarchar' AS DATA_TYPE, 5 AS MAX_LEN, N'NO' AS IS_NULLABLE, 1 AS IS_PK
+                UNION ALL SELECT N'CONGTY',N'TenCT',N'nvarchar',50,N'NO',0
+                UNION ALL SELECT N'CONGTY',N'QuocGia',N'nvarchar',50,N'NO',0
+                UNION ALL SELECT N'CONGTY',N'TruSo',N'nvarchar',50,N'NO',0
+                UNION ALL SELECT N'CONGTY',N'CongTrinhTB',N'nvarchar',5,N'NO',0
+                UNION ALL SELECT N'CONGTRINH',N'MaCongTrinh',N'nvarchar',5,N'NO',1
+                UNION ALL SELECT N'CONGTRINH',N'MaCongTy',N'nvarchar',5,N'NO',1
+                UNION ALL SELECT N'CONGTRINH',N'TenCongTrinh',N'nvarchar',100,N'NO',0
+                UNION ALL SELECT N'CONGTRINH',N'Nam',N'int',NULL,N'NO',0
+                UNION ALL SELECT N'CONGTRINH',N'DiaDiem',N'nvarchar',100,N'NO',0
+                UNION ALL SELECT N'HANGMUC',N'STT',N'int',NULL,N'NO',1
+                UNION ALL SELECT N'HANGMUC',N'MaCongTrinh',N'nvarchar',5,N'NO',1
+                UNION ALL SELECT N'HANGMUC',N'MaCongTy',N'nvarchar',5,N'NO',1
+                UNION ALL SELECT N'HANGMUC',N'TenHangMuc',N'nvarchar',100,N'NO',0
+                UNION ALL SELECT N'HANGMUC',N'ChiPhi',N'decimal',NULL,N'NO',0
+                UNION ALL SELECT N'HANGMUC',N'NhanCong',N'int',NULL,N'NO',0
+                ORDER BY TABLE_NAME, COLUMN_NAME;
+                $SQL$;
+
+                v_q2_correct := $SQL$
+                SELECT N'CONGTY' AS BANG, MaCT AS KHOA, TenCT AS C1, QuocGia AS C2, TruSo AS C3, CongTrinhTB AS C4
+                FROM CONGTY
+                UNION ALL
+                SELECT N'CONGTRINH', MaCongTy + N'-' + MaCongTrinh, TenCongTrinh, DiaDiem, CAST(Nam AS NVARCHAR(10)), NULL
+                FROM CONGTRINH
+                UNION ALL
+                SELECT N'HANGMUC', MaCongTy + N'-' + MaCongTrinh + N'-' + CAST(STT AS NVARCHAR(10)),
+                       TenHangMuc, CAST(ChiPhi AS NVARCHAR(30)), CAST(NhanCong AS NVARCHAR(30)), NULL
+                FROM HANGMUC
+                ORDER BY BANG, KHOA;
+                $SQL$;
+
+                v_q2_verify := $SQL$
+                SELECT N'CONGTY' AS BANG, N'CTY01' AS KHOA, N'Vinaconex' AS C1, N'Việt Nam' AS C2, N'Hà Nội' AS C3, N'001' AS C4
+                UNION ALL SELECT N'CONGTY',N'CTY02',N'Coteccons',N'Việt Nam',N'TP.HCM',N'002'
+                UNION ALL SELECT N'CONGTY',N'CTY03',N'Lotte E&C',N'Hàn Quốc',N'Seoul',N'001'
+                UNION ALL SELECT N'CONGTRINH',N'CTY01-001',N'Toà nhà văn phòng ABC Buildings',N'Hà Nội, Việt Nam',N'2023',NULL
+                UNION ALL SELECT N'CONGTRINH',N'CTY02-001',N'Khách sạn 5 sao Seoul',N'Seoul, Hàn Quốc',N'2021',NULL
+                UNION ALL SELECT N'CONGTRINH',N'CTY02-002',N'Trung tâm thương mại CoCo',N'TP.HCM, Việt Nam',N'2022',NULL
+                UNION ALL SELECT N'CONGTRINH',N'CTY03-001',N'Chung cư cao cấp Star',N'Đà Nẵng, Việt Nam',N'2024',NULL
+                UNION ALL SELECT N'HANGMUC',N'CTY01-001-1',N'Móng nền',N'500.00',N'100',NULL
+                UNION ALL SELECT N'HANGMUC',N'CTY01-001-2',N'Kết cấu',N'700.00',N'80',NULL
+                UNION ALL SELECT N'HANGMUC',N'CTY02-002-1',N'Nội thất',N'300.00',N'50',NULL
+                UNION ALL SELECT N'HANGMUC',N'CTY02-002-2',N'Hệ thống điện',N'200.00',N'90',NULL
+                UNION ALL SELECT N'HANGMUC',N'CTY03-001-1',N'Sàn bê tông',N'400.00',N'100',NULL
+                ORDER BY BANG, KHOA;
+                $SQL$;
+
+                v_q3_correct := $SQL$
+                SELECT
+                  SUM(hm.ChiPhi) AS TongChiPhi,
+                  SUM(hm.NhanCong) AS TongNhanCong
+                FROM CONGTRINH ct
+                JOIN HANGMUC hm
+                  ON hm.MaCongTy = ct.MaCongTy
+                 AND hm.MaCongTrinh = ct.MaCongTrinh
+                WHERE ct.TenCongTrinh = N'Trung tâm thương mại CoCo';
+                $SQL$;
+
+                v_q4_correct := $SQL$
+                SELECT
+                  c.TenCT,
+                  c.TruSo,
+                  ct.TenCongTrinh AS CongTrinhTieuBieu
+                FROM CONGTY c
+                JOIN CONGTRINH ct
+                  ON ct.MaCongTy = c.MaCT
+                 AND ct.MaCongTrinh = c.CongTrinhTB
+                WHERE c.QuocGia = N'Việt Nam'
+                ORDER BY c.TenCT;
+                $SQL$;
+
+                v_q5_correct := $SQL$
+                SELECT
+                  ct.TenCongTrinh,
+                  SUM(hm.ChiPhi) AS TongChiPhi
+                FROM CONGTRINH ct
+                JOIN HANGMUC hm
+                  ON hm.MaCongTy = ct.MaCongTy
+                 AND hm.MaCongTrinh = ct.MaCongTrinh
+                JOIN CONGTY c
+                  ON c.MaCT = ct.MaCongTy
+                JOIN CONGTRINH ctb
+                  ON ctb.MaCongTy = c.MaCT
+                 AND ctb.MaCongTrinh = c.CongTrinhTB
+                WHERE ct.Nam < YEAR(GETDATE())
+                  AND ctb.TenCongTrinh LIKE N'%ABC Buildings'
+                GROUP BY ct.TenCongTrinh
+                ORDER BY ct.TenCongTrinh;
+                $SQL$;
+
+                SELECT id INTO v_spec_id
+                FROM specifications
+                WHERE name = 'De 1010 - Mon Co so du lieu'
+                ORDER BY id
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  SELECT id INTO v_creator_id
+                  FROM users
+                  WHERE role = 'TEACHER'
+                  ORDER BY id
+                  LIMIT 1;
+
+                  IF v_creator_id IS NULL THEN
+                    SELECT id INTO v_creator_id
+                    FROM users
+                    ORDER BY id
+                    LIMIT 1;
+                  END IF;
+
+                  INSERT INTO specifications (name, ddl_script, description, created_by, created_at, updated_at)
+                  VALUES (
+                    'Quản Lý Công Ty Xây Dựng',
+                    v_ddl_script,
+                    'Cơ sở dữ liệu quản lý công ty xây dựng, các công trình do công ty thi công và các hạng mục thuộc từng công trình.',
+                    v_creator_id,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                  )
+                  RETURNING id INTO v_spec_id;
+                END IF;
+
+                SELECT id INTO v_entity_congty_id
+                FROM spec_entities
+                WHERE specification_id = v_spec_id AND entity_name = 'CONGTY'
+                LIMIT 1;
+
+                IF v_entity_congty_id IS NULL THEN
+                  INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                  VALUES (v_spec_id, 'CONGTY', 'CONGTY', 'Thong tin cong ty', 1)
+                  RETURNING id INTO v_entity_congty_id;
+                END IF;
+
+                SELECT id INTO v_entity_congtrinh_id
+                FROM spec_entities
+                WHERE specification_id = v_spec_id AND entity_name = 'CONGTRINH'
+                LIMIT 1;
+
+                IF v_entity_congtrinh_id IS NULL THEN
+                  INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                  VALUES (v_spec_id, 'CONGTRINH', 'CONGTRINH', 'Thong tin cong trinh', 2)
+                  RETURNING id INTO v_entity_congtrinh_id;
+                END IF;
+
+                SELECT id INTO v_entity_hangmuc_id
+                FROM spec_entities
+                WHERE specification_id = v_spec_id AND entity_name = 'HANGMUC'
+                LIMIT 1;
+
+                IF v_entity_hangmuc_id IS NULL THEN
+                  INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                  VALUES (v_spec_id, 'HANGMUC', 'HANGMUC', 'Thong tin hang muc cong trinh', 3)
+                  RETURNING id INTO v_entity_hangmuc_id;
+                END IF;
+
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                SELECT v_entity_congty_id, x.attribute_name, x.data_type, x.description, x.is_pk, x.is_nullable, x.order_index
+                FROM (VALUES
+                  ('MaCT','nvarchar(5)','Ma cong ty',TRUE,FALSE,1),
+                  ('TenCT','nvarchar(50)','Ten cong ty',FALSE,FALSE,2),
+                  ('QuocGia','nvarchar(50)','Quoc gia',FALSE,FALSE,3),
+                  ('TruSo','nvarchar(50)','Tru so',FALSE,FALSE,4),
+                  ('CongTrinhTB','nvarchar(5)','Ma cong trinh tieu bieu',FALSE,FALSE,5)
+                ) AS x(attribute_name, data_type, description, is_pk, is_nullable, order_index)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM spec_attributes sa
+                  WHERE sa.entity_id = v_entity_congty_id
+                    AND sa.attribute_name = x.attribute_name
+                );
+
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                SELECT v_entity_congtrinh_id, x.attribute_name, x.data_type, x.description, x.is_pk, x.is_nullable, x.order_index
+                FROM (VALUES
+                  ('MaCongTrinh','nvarchar(5)','Ma cong trinh',TRUE,FALSE,1),
+                  ('MaCongTy','nvarchar(5)','Ma cong ty',TRUE,FALSE,2),
+                  ('TenCongTrinh','nvarchar(100)','Ten cong trinh',FALSE,FALSE,3),
+                  ('Nam','int','Nam hoan cong',FALSE,FALSE,4),
+                  ('DiaDiem','nvarchar(100)','Dia diem',FALSE,FALSE,5)
+                ) AS x(attribute_name, data_type, description, is_pk, is_nullable, order_index)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM spec_attributes sa
+                  WHERE sa.entity_id = v_entity_congtrinh_id
+                    AND sa.attribute_name = x.attribute_name
+                );
+
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                SELECT v_entity_hangmuc_id, x.attribute_name, x.data_type, x.description, x.is_pk, x.is_nullable, x.order_index
+                FROM (VALUES
+                  ('STT','int','So thu tu',TRUE,FALSE,1),
+                  ('MaCongTrinh','nvarchar(5)','Ma cong trinh',TRUE,FALSE,2),
+                  ('MaCongTy','nvarchar(5)','Ma cong ty',TRUE,FALSE,3),
+                  ('TenHangMuc','nvarchar(100)','Ten hang muc',FALSE,FALSE,4),
+                  ('ChiPhi','decimal(12,2)','Chi phi trieu VND',FALSE,FALSE,5),
+                  ('NhanCong','int','So nhan cong',FALSE,FALSE,6)
+                ) AS x(attribute_name, data_type, description, is_pk, is_nullable, order_index)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM spec_attributes sa
+                  WHERE sa.entity_id = v_entity_hangmuc_id
+                    AND sa.attribute_name = x.attribute_name
+                );
+
+                INSERT INTO spec_datasets (specification_id, name, data_script, order_index, is_active, created_at, updated_at)
+                SELECT v_spec_id, x.name, x.data_script, x.order_index, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM (VALUES
+                  ('Dataset A - De bai goc', v_dataset_a, 1),
+                  ('Dataset B - Mo rong 1', v_dataset_b, 2),
+                  ('Dataset C - Mo rong 2', v_dataset_c, 3)
+                ) AS x(name, data_script, order_index)
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM spec_datasets sd
+                  WHERE sd.specification_id = v_spec_id
+                    AND sd.name = x.name
+                );
+
+                SELECT id INTO v_exam_id
+                FROM exams
+                WHERE title = 'De 1010 - Mon Co so du lieu'
+                ORDER BY id
+                LIMIT 1;
+
+                IF v_exam_id IS NULL THEN
+                  SELECT id INTO v_class_id
+                  FROM classes
+                  ORDER BY id
+                  LIMIT 1;
+
+                  SELECT id INTO v_creator_id
+                  FROM users
+                  WHERE role = 'TEACHER'
+                  ORDER BY id
+                  LIMIT 1;
+
+                  IF v_creator_id IS NULL THEN
+                    SELECT id INTO v_creator_id
+                    FROM users
+                    ORDER BY id
+                    LIMIT 1;
+                  END IF;
+
+                  IF v_class_id IS NOT NULL AND v_creator_id IS NOT NULL THEN
+                    INSERT INTO exams (class_id, creator_id, title, duration_minutes, start_time, end_time, is_published, created_at, specification_id)
+                    VALUES (
+                      v_class_id,
+                      v_creator_id,
+                      'De 1010 - Mon Co so du lieu',
+                      60,
+                      TIMESTAMP '2026-03-17 14:37:00.000',
+                      TIMESTAMP '2026-04-04 14:37:00.000',
+                      FALSE,
+                      CURRENT_TIMESTAMP,
+                      v_spec_id
+                    )
+                    RETURNING id INTO v_exam_id;
+                  END IF;
+                END IF;
+
+                IF v_exam_id IS NOT NULL THEN
+                  UPDATE exams
+                  SET start_time = TIMESTAMP '2026-03-17 14:37:00.000',
+                      end_time = TIMESTAMP '2026-04-04 14:37:00.000',
+                      duration_minutes = 60,
+                      specification_id = v_spec_id
+                  WHERE id = v_exam_id;
+
+                  INSERT INTO exam_questions (exam_id, content, correct_query, difficulty_level, points, order_index, question_type, verify_script)
+                  SELECT v_exam_id, x.content, x.correct_query, x.difficulty_level, x.points, x.order_index, x.question_type, x.verify_script
+                  FROM (VALUES
+                    (
+                      'Cau 1 (2.50 diem): Tao bang va cac rang buoc can thiet cho CONGTY, CONGTRINH, HANGMUC.',
+                      v_q1_correct,
+                      2,
+                      2.50::numeric,
+                      1,
+                      'CREATE_TABLE',
+                      v_q1_verify
+                    ),
+                    (
+                      'Cau 2 (2.00 diem): Nhap du lieu theo de bai vao cac bang tuong ung.',
+                      v_q2_correct,
+                      2,
+                      2.00::numeric,
+                      2,
+                      'INSERT_DATA',
+                      v_q2_verify
+                    ),
+                    (
+                      'Cau 3 (1.50 diem): Tong chi phi va tong so nhan cong cua cong trinh Trung tam thuong mai CoCo.',
+                      v_q3_correct,
+                      2,
+                      1.50::numeric,
+                      3,
+                      'SELECT_QUERY',
+                      NULL
+                    ),
+                    (
+                      'Cau 4 (2.00 diem): Danh sach ten cong ty, tru so va ten cong trinh tieu bieu cua cac cong ty Viet Nam.',
+                      v_q4_correct,
+                      2,
+                      2.00::numeric,
+                      4,
+                      'SELECT_QUERY',
+                      NULL
+                    ),
+                    (
+                      'Cau 5 (2.00 diem): Moi cong trinh duoc xay truoc nam hien tai va thuoc cong ty co cong trinh tieu bieu ket thuc boi ABC Buildings, cho biet ten cong trinh va tong chi phi.',
+                      v_q5_correct,
+                      3,
+                      2.00::numeric,
+                      5,
+                      'SELECT_QUERY',
+                      NULL
+                    )
+                  ) AS x(content, correct_query, difficulty_level, points, order_index, question_type, verify_script)
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM exam_questions eq
+                    WHERE eq.exam_id = v_exam_id
+                      AND eq.order_index = x.order_index
+                  );
+                END IF;
+              END $$;

@@ -21,8 +21,8 @@ public class ExamEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "template_id")
-    private Long templateId;
+    @Column(name = "specification_id")
+    private Long specificationId;
 
     @Column(name = "class_id")
     private Long classId;
@@ -51,7 +51,7 @@ public class ExamEntity {
     public Exam toModel() {
         return Exam.builder()
                 .id(id)
-                .templateId(templateId)
+                .specificationId(specificationId)
                 .classId(classId)
                 .creatorId(creatorId)
                 .title(title)
@@ -66,7 +66,7 @@ public class ExamEntity {
     public static ExamEntity fromModel(Exam exam) {
         return ExamEntity.builder()
                 .id(exam.getId())
-                .templateId(exam.getTemplateId())
+                .specificationId(exam.getSpecificationId())
                 .classId(exam.getClassId())
                 .creatorId(exam.getCreatorId())
                 .title(exam.getTitle())

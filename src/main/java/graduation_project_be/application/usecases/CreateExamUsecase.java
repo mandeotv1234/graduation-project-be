@@ -32,7 +32,7 @@ public class CreateExamUsecase {
         }
 
         Exam exam = Exam.builder()
-                .templateId(request.templateId())
+                .specificationId(request.specificationId())
                 .classId(request.classId())
                 .creatorId(currentUserId)
                 .title(request.title())

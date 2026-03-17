@@ -21,19 +21,27 @@ public class GeminiServiceImpl implements GeminiService {
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
 
     private final String apiKey;
-    private final HttpClient httpClient;
+    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     public GeminiServiceImpl(@Value("${spring.application.gemini.api-key}") String apiKey) {
         this.apiKey = apiKey;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
-                .build();
+        this.httpClient = null;
         this.objectMapper = new ObjectMapper();
     }
 
     @Override
     public GeneratedQuestion generateSqlAnswer(String questionContent, String questionType, String schemaContext) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API key is missing. Skipping AI generation.");
+            return new GeneratedQuestion("-- AI generation unavailable: missing Gemini API key", null);
+        }
+
+        HttpClient client = getOrCreateHttpClient();
+        if (client == null) {
+            return new GeneratedQuestion("-- AI generation unavailable: HTTP client initialization failed", null);
+        }
+
         String prompt = buildPrompt(questionContent, questionType, schemaContext);
         String requestBody = buildRequestBody(prompt);
 
@@ -45,7 +53,7 @@ public class GeminiServiceImpl implements GeminiService {
                     .timeout(Duration.ofSeconds(30))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
                 log.error("Gemini API error {}: {}", response.statusCode(), response.body());
@@ -57,6 +65,27 @@ public class GeminiServiceImpl implements GeminiService {
         } catch (Exception e) {
             log.error("Failed to call Gemini API: {}", e.getMessage(), e);
             return new GeneratedQuestion("-- AI generation failed: " + e.getMessage(), null);
+        }
+    }
+
+    private HttpClient getOrCreateHttpClient() {
+        if (httpClient != null) {
+            return httpClient;
+        }
+
+        synchronized (this) {
+            if (httpClient != null) {
+                return httpClient;
+            }
+            try {
+                httpClient = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(15))
+                        .build();
+                return httpClient;
+            } catch (Exception e) {
+                log.error("Failed to initialize HTTP client for Gemini: {}", e.getMessage(), e);
+                return null;
+            }
         }
     }
 

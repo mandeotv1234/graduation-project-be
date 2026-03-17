@@ -10,6 +10,7 @@ import graduation_project_be.application.usecases.response.ExamSpecificationResp
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
+import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.SpecEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,14 @@ public class SaveExamSpecificationUsecase {
             throw new UnauthorizedException("You are not the creator of this exam");
         }
 
+        Long specificationId = exam.getSpecificationId();
+        if (specificationId == null) {
+            throw new ResourceNotFoundException("Exam", "specificationId", "null");
+        }
+
+        ExamSpecification current = examSpecificationRepository.findById(specificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
+
         List<SpecEntity> entities = request.entities() == null ? List.of()
                 : request.entities().stream().map(e -> {
                     List<SpecAttribute> attributes = e.attributes() == null ? List.of()
@@ -55,20 +64,26 @@ public class SaveExamSpecificationUsecase {
                             .build();
                 }).toList();
 
+        List<SpecDataset> datasets = request.datasets() == null ? List.of()
+                : request.datasets().stream().map(d -> SpecDataset.builder()
+                        .name(d.name())
+                        .dataScript(d.dataScript())
+                        .orderIndex(d.orderIndex())
+                        .isActive(d.isActive())
+                        .build()).toList();
+
         LocalDateTime now = LocalDateTime.now();
         ExamSpecification specification = ExamSpecification.builder()
-                .templateId(exam.getTemplateId())
-                .title(request.title())
+                .id(specificationId)
+                .name(request.name())
+                .ddlScript(request.ddlScript())
                 .description(request.description())
                 .entities(entities)
-                .createdAt(now)
+                .datasets(datasets)
+                .createdBy(current.getCreatedBy())
+                .createdAt(current.getCreatedAt())
                 .updatedAt(now)
                 .build();
-
-        // Upsert: xoá cũ nếu đã tồn tại
-        if (examSpecificationRepository.existsByTemplateId(exam.getTemplateId())) {
-            examSpecificationRepository.deleteByTemplateId(exam.getTemplateId());
-        }
 
         ExamSpecification saved = examSpecificationRepository.save(specification);
         return ExamSpecificationResponse.fromModel(saved);

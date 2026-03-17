@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.configurations;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -85,7 +86,8 @@ public class RedisConfiguration {
     }
 
     @Bean
-    public RefreshTokenRepository refreshTokenRepository(RedisTemplate<String, String> redisTemplate) {
+    public RefreshTokenRepository refreshTokenRepository(
+            @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
         return new RedisRefreshTokenRepository(redisTemplate);
     }
 
@@ -95,13 +97,14 @@ public class RedisConfiguration {
     }
 
     @Bean
-    public ExamSessionService examSessionService(RedisTemplate<String, String> redisTemplate) {
+    public ExamSessionService examSessionService(
+            @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
         return new RedisExamSessionService(redisTemplate);
     }
 
     @Bean
     public NotificationBufferService notificationBufferService(
-            RedisTemplate<String, String> redisTemplate,
+            @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate,
             TeacherNotificationRepository teacherNotificationRepository) {
         return new RedisNotificationBufferService(redisTemplate, teacherNotificationRepository,
                 notificationFlushThreshold);

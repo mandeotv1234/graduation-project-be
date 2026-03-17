@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Positive;
 import java.time.LocalDateTime;
 
 public record CreateExamRequestDto(
-        Long templateId,
+        Long specificationId,
 
         @NotNull(message = "Class ID is required") Long classId,
 
@@ -22,7 +22,7 @@ public record CreateExamRequestDto(
         Boolean isPublished) {
     public CreateExamRequest toRequest() {
         return new CreateExamRequest(
-                templateId,
+                specificationId,
                 classId,
                 title,
                 durationMinutes,

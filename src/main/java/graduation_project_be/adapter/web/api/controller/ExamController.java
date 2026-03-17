@@ -66,7 +66,7 @@ public class ExamController {
         @PostMapping("/{examId}/questions")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> createExamQuestions(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid CreateExamQuestionsRequestDto requestDto) {
                 CreateExamQuestionsResponse response = createExamQuestionsUsecase.execute(requestDto.toRequest(examId));
                 return ResponseEntity.status(HttpStatus.CREATED)
@@ -79,7 +79,7 @@ public class ExamController {
         @PostMapping("/{examId}/specification")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> saveSpecification(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid SaveExamSpecificationRequestDto requestDto) {
                 ExamSpecificationResponse response = saveExamSpecificationUsecase.execute(requestDto.toRequest(examId));
                 return ResponseEntity.status(HttpStatus.CREATED)
@@ -92,7 +92,7 @@ public class ExamController {
         @GetMapping("/{examId}/specification")
         @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> getSpecification(
-                        @PathVariable @Positive Long examId) {
+                        @PathVariable("examId") @Positive Long examId) {
                 ExamSpecificationResponse response = getExamSpecificationUsecase.execute(examId);
                 return ResponseEntity.ok(
                                 ResponseDto.of(
@@ -104,7 +104,7 @@ public class ExamController {
         @GetMapping("/{examId}/questions")
         @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> getExamQuestions(
-                        @PathVariable @Positive Long examId) {
+                        @PathVariable("examId") @Positive Long examId) {
                 List<ExamQuestionResponse> responses = getExamQuestionsUsecase.execute(examId);
 
                 // Return different DTO based on role
@@ -135,7 +135,7 @@ public class ExamController {
         @GetMapping("/{examId}")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> getExamDetail(
-                        @PathVariable @Positive Long examId) {
+                        @PathVariable("examId") @Positive Long examId) {
                 GetStudentExamDetailRequestDto requestDto = GetStudentExamDetailRequestDto.builder()
                                 .examId(examId)
                                 .build();
@@ -159,7 +159,7 @@ public class ExamController {
         @PostMapping("/{examId}/execute-sql")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> executeSql(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid ExecuteSqlRequestDto requestDto) {
                 ExecuteSqlResponse response = executeSqlUsecase.execute(requestDto.toRequest(examId));
                 return ResponseEntity.ok(
@@ -174,7 +174,7 @@ public class ExamController {
         @PostMapping("/{examId}/submit")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> submitExam(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid SubmitExamRequestDto requestDto) {
                 SubmitExamResponse response = submitExamUsecase.execute(requestDto.toRequest(examId));
                 return ResponseEntity.status(HttpStatus.CREATED)
@@ -189,7 +189,7 @@ public class ExamController {
         @PostMapping("/{examId}/start-session")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> startExamSession(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         HttpServletRequest httpRequest) {
                 String ipAddress = getClientIp(httpRequest);
                 String userAgent = httpRequest.getHeader("User-Agent");
@@ -204,7 +204,7 @@ public class ExamController {
         @PostMapping("/{examId}/violations")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> reportViolation(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid ReportViolationRequestDto requestDto,
                         HttpServletRequest httpRequest) {
                 String ipAddress = getClientIp(httpRequest);
@@ -221,8 +221,8 @@ public class ExamController {
         @GetMapping("/{examId}/violations")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> getViolations(
-                        @PathVariable @Positive Long examId,
-                        @RequestParam(required = false) Long studentId) {
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestParam(name = "studentId", required = false) Long studentId) {
                 List<ExamViolationResponse> responses = getViolationsUsecase.execute(examId, studentId);
                 List<ExamViolationResponseDto> dtos = responses.stream()
                                 .map(ExamViolationResponseDto::fromResponse)
@@ -239,7 +239,7 @@ public class ExamController {
         @GetMapping("/{examId}/time")
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> getExamTime(
-                        @PathVariable @Positive Long examId) {
+                        @PathVariable("examId") @Positive Long examId) {
                 ExamTimeResponse response = getExamTimeUsecase.execute(examId);
                 return ResponseEntity.ok(
                                 ResponseDto.of(ExamTimeResponseDto.fromResponse(response), "OK",

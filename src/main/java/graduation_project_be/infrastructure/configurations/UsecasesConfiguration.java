@@ -148,13 +148,14 @@ public class UsecasesConfiguration {
             ExamQuestionRepository examQuestionRepository,
             ExamSubmissionRepository examSubmissionRepository,
             ExamResultRepository examResultRepository,
+            ExamSpecificationRepository examSpecificationRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
             ExamSessionService examSessionService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, classEnrollmentRepository, currentUserService,
+                examResultRepository, examSpecificationRepository, classEnrollmentRepository, currentUserService,
                 examSchemaService, examSessionService);
     }
 
@@ -167,24 +168,23 @@ public class UsecasesConfiguration {
     }
 
     @Bean
-    CreateSchemaTemplateUsecase createSchemaTemplateUsecase(
-            SchemaTemplateRepository schemaTemplateRepository,
+    CreateSpecificationUsecase createSpecificationUsecase(
+            ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
-            ExamSchemaService examSchemaService,
-            ExamSpecificationRepository examSpecificationRepository) {
-        return new CreateSchemaTemplateUsecase(schemaTemplateRepository, currentUserService, examSchemaService, examSpecificationRepository);
+            ExamSchemaService examSchemaService) {
+        return new CreateSpecificationUsecase(examSpecificationRepository, currentUserService, examSchemaService);
     }
 
     @Bean
-    GetSchemaTemplatesUsecase getSchemaTemplatesUsecase(
-            SchemaTemplateRepository schemaTemplateRepository) {
-        return new GetSchemaTemplatesUsecase(schemaTemplateRepository);
+    GetSpecificationsUsecase getSpecificationsUsecase(
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new GetSpecificationsUsecase(examSpecificationRepository);
     }
 
     @Bean
-    GetSpecificationByTemplateIdUsecase getSpecificationByTemplateIdUsecase(
+    GetSpecificationByIdUsecase getSpecificationByIdUsecase(
             ExamSpecificationRepository examSpecificationRepository) {
-        return new GetSpecificationByTemplateIdUsecase(examSpecificationRepository);
+        return new GetSpecificationByIdUsecase(examSpecificationRepository);
     }
     // ===== ANTI-CHEATING USECASES =====
 

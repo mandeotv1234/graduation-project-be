@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases.response;
 
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
+import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.SpecEntity;
 
 import java.time.LocalDateTime;
@@ -9,10 +10,12 @@ import java.util.List;
 
 public record ExamSpecificationResponse(
         Long id,
-        Long templateId,
-        String title,
+        String name,
+        String ddlScript,
         String description,
         List<SpecEntityResponse> entities,
+        List<SpecDatasetResponse> datasets,
+        Long createdBy,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
 
@@ -35,15 +38,28 @@ public record ExamSpecificationResponse(
             int orderIndex) {
     }
 
+    public record SpecDatasetResponse(
+            Long id,
+            String name,
+            String dataScript,
+            int orderIndex,
+            boolean isActive) {
+    }
+
     public static ExamSpecificationResponse fromModel(ExamSpecification model) {
         List<SpecEntityResponse> entityResponses = model.getEntities() == null ? List.of()
                 : model.getEntities().stream().map(ExamSpecificationResponse::toEntityResponse).toList();
+        List<SpecDatasetResponse> datasetResponses = model.getDatasets() == null ? List.of()
+                : model.getDatasets().stream().map(ExamSpecificationResponse::toDatasetResponse).toList();
+
         return new ExamSpecificationResponse(
                 model.getId(),
-                model.getTemplateId(),
-                model.getTitle(),
+                model.getName(),
+                model.getDdlScript(),
                 model.getDescription(),
                 entityResponses,
+                datasetResponses,
+                model.getCreatedBy(),
                 model.getCreatedAt(),
                 model.getUpdatedAt());
     }
@@ -69,5 +85,14 @@ public record ExamSpecificationResponse(
                 attr.isPrimaryKey(),
                 attr.isNullable(),
                 attr.getOrderIndex());
+    }
+
+    private static SpecDatasetResponse toDatasetResponse(SpecDataset dataset) {
+        return new SpecDatasetResponse(
+                dataset.getId(),
+                dataset.getName(),
+                dataset.getDataScript(),
+                dataset.getOrderIndex(),
+                dataset.isActive());
     }
 }

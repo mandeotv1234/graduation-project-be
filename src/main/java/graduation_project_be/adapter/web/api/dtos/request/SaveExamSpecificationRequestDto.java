@@ -3,14 +3,15 @@ package graduation_project_be.adapter.web.api.dtos.request;
 import graduation_project_be.application.usecases.request.SaveExamSpecificationRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 import java.util.List;
 
 public record SaveExamSpecificationRequestDto(
-        @NotBlank(message = "Title is required") String title,
+        @NotBlank(message = "Name is required") String name,
+        @NotBlank(message = "DDL script is required") String ddlScript,
         String description,
-        @Valid List<SpecEntityRequestDto> entities) {
+        @Valid List<SpecEntityRequestDto> entities,
+        @Valid List<SpecDatasetRequestDto> datasets) {
 
     public record SpecEntityRequestDto(
             @NotBlank(message = "Entity name is required") String entityName,
@@ -29,6 +30,13 @@ public record SaveExamSpecificationRequestDto(
             int orderIndex) {
     }
 
+    public record SpecDatasetRequestDto(
+            @NotBlank(message = "Dataset name is required") String name,
+            @NotBlank(message = "Dataset script is required") String dataScript,
+            int orderIndex,
+            boolean isActive) {
+    }
+
     public SaveExamSpecificationRequest toRequest(Long examId) {
         List<SaveExamSpecificationRequest.SpecEntityRequest> entityRequests = entities == null ? List.of()
                 : entities.stream().map(e -> {
@@ -41,6 +49,17 @@ public record SaveExamSpecificationRequestDto(
                             e.entityName(), e.displayName(), e.description(),
                             e.orderIndex(), attrRequests);
                 }).toList();
-        return new SaveExamSpecificationRequest(examId, title, description, entityRequests);
+
+        List<SaveExamSpecificationRequest.SpecDatasetRequest> datasetRequests = datasets == null ? List.of()
+                : datasets.stream().map(d -> new SaveExamSpecificationRequest.SpecDatasetRequest(
+                        d.name(), d.dataScript(), d.orderIndex(), d.isActive())).toList();
+
+        return new SaveExamSpecificationRequest(
+                examId,
+                name,
+                ddlScript,
+                description,
+                entityRequests,
+                datasetRequests);
     }
 }

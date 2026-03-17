@@ -1,5 +1,5 @@
 server:
-  port: ${PORT}
+  port: ${PORT:8080}
 
 spring:
   datasource:
@@ -7,6 +7,7 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    
   redis:
     host: ${SPRING_REDIS_HOST}
     port: ${SPRING_REDIS_PORT}
@@ -14,12 +15,19 @@ spring:
     password: ${SPRING_REDIS_PASSWORD}
     database: ${SPRING_REDIS_DATABASE}
     ssl:
-      enabled: ${SPRING_DATA_REDIS_SSL_ENABLED}
+      enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:false} 
+      
   jpa:
     hibernate:
       ddl-auto: none
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  exam-datasource:
+    url: ${EXAM_DATASOURCE_URL}
+    username: ${EXAM_DATASOURCE_USERNAME}
+    password: ${EXAM_DATASOURCE_PASSWORD}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
   application:
     gemini:

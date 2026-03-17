@@ -1,6 +1,7 @@
 package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationV2RequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.ExamSpecificationResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SpecificationResponseDto;
@@ -40,6 +41,18 @@ public class SpecificationController {
                         SpecificationResponseDto.fromResponse(response),
                         "CREATED",
                         "Specification created successfully"));
+    }
+
+    @PostMapping("/v2")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> createSpecificationV2(
+            @RequestBody @Valid CreateSpecificationV2RequestDto requestDto) {
+        SpecificationResponse response = createSpecificationUsecase.execute(requestDto.toRequest());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ResponseDto.of(
+                        SpecificationResponseDto.fromResponse(response),
+                        "CREATED",
+                        "Specification created successfully (v2)"));
     }
 
     @GetMapping

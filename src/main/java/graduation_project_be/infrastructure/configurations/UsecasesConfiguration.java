@@ -148,13 +148,14 @@ public class UsecasesConfiguration {
             ExamQuestionRepository examQuestionRepository,
             ExamSubmissionRepository examSubmissionRepository,
             ExamResultRepository examResultRepository,
+            ExamSpecificationRepository examSpecificationRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
             ExamSessionService examSessionService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, classEnrollmentRepository, currentUserService,
+                examResultRepository, examSpecificationRepository, classEnrollmentRepository, currentUserService,
                 examSchemaService, examSessionService);
     }
 

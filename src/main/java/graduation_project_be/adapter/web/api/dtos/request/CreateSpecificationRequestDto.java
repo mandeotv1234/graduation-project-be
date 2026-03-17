@@ -27,6 +27,6 @@ public record CreateSpecificationRequestDto(
                         dataset.orderIndex(),
                         dataset.isActive())).toList();
 
-        return new CreateSpecificationRequest(name, ddlScript, description, datasetRequests);
+        return new CreateSpecificationRequest(name, ddlScript, description, datasetRequests, List.of());
     }
 }

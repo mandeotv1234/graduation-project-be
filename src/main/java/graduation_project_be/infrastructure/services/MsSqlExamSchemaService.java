@@ -77,6 +77,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String userName = schemaName + "_user";
 
         try {
+            // Multi-dataset grading may call reset before any executeSql call.
+            // Ensure schema + user exist before impersonating with EXECUTE AS USER.
+            ensureSchemaAndUser(schemaName);
+
             jdbcTemplate.execute((Connection conn) -> {
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("EXECUTE AS USER = '" + userName + "'");

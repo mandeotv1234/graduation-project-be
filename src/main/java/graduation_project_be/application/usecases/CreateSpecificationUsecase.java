@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
@@ -15,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -30,6 +32,12 @@ public class CreateSpecificationUsecase {
     public SpecificationResponse execute(CreateSpecificationRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
         LocalDateTime now = LocalDateTime.now();
+        boolean hasEntitiesFromRequest = request.entities() != null && !request.entities().isEmpty();
+        boolean hasDdlScript = request.ddlScript() != null && !request.ddlScript().isBlank();
+
+        if (!hasEntitiesFromRequest && !hasDdlScript) {
+            throw new BadRequestException("Either entities or ddlScript must be provided");
+        }
 
         List<SpecDataset> datasets = request.datasets() == null ? List.of() : request.datasets().stream()
                 .map(dataset -> SpecDataset.builder()
@@ -42,12 +50,14 @@ public class CreateSpecificationUsecase {
                         .build())
                 .toList();
 
+        List<SpecEntity> entities = buildEntitiesFromRequest(request.entities());
+
         ExamSpecification specification = ExamSpecification.builder()
                 .name(request.name())
                 .ddlScript(request.ddlScript())
                 .description(request.description())
                 .createdBy(currentUserId)
-                .entities(List.of())
+                .entities(entities)
                 .datasets(datasets)
                 .createdAt(now)
                 .updatedAt(now)
@@ -55,7 +65,7 @@ public class CreateSpecificationUsecase {
 
         ExamSpecification saved = examSpecificationRepository.save(specification);
 
-        if (request.ddlScript() != null && !request.ddlScript().isBlank()) {
+        if (!hasEntitiesFromRequest && hasDdlScript) {
             saved = generateEntitiesFromDdl(saved);
         }
 
@@ -112,5 +122,55 @@ public class CreateSpecificationUsecase {
                 log.error("Failed to drop temporary schema: {}", tempSchemaName, e);
             }
         }
+    }
+
+    private List<SpecEntity> buildEntitiesFromRequest(List<CreateSpecificationRequest.SpecEntityRequest> entityRequests) {
+        if (entityRequests == null || entityRequests.isEmpty()) {
+            return List.of();
+        }
+
+        List<SpecEntity> entities = new ArrayList<>();
+        for (int entityIndex = 0; entityIndex < entityRequests.size(); entityIndex++) {
+            CreateSpecificationRequest.SpecEntityRequest entityRequest = entityRequests.get(entityIndex);
+            if (entityRequest.entityName() == null || entityRequest.entityName().isBlank()) {
+                throw new BadRequestException("Entity name is required");
+            }
+
+            List<SpecAttribute> attributes = new ArrayList<>();
+            List<CreateSpecificationRequest.SpecAttributeRequest> attributeRequests = entityRequest.attributes();
+            if (attributeRequests != null) {
+                for (int attributeIndex = 0; attributeIndex < attributeRequests.size(); attributeIndex++) {
+                    CreateSpecificationRequest.SpecAttributeRequest attributeRequest = attributeRequests.get(attributeIndex);
+                    if (attributeRequest.attributeName() == null || attributeRequest.attributeName().isBlank()) {
+                        throw new BadRequestException("Attribute name is required");
+                    }
+                    if (attributeRequest.dataType() == null || attributeRequest.dataType().isBlank()) {
+                        throw new BadRequestException("Attribute dataType is required");
+                    }
+
+                    attributes.add(SpecAttribute.builder()
+                            .attributeName(attributeRequest.attributeName())
+                            .dataType(attributeRequest.dataType())
+                            .description(attributeRequest.description())
+                            .isPrimaryKey(attributeRequest.isPrimaryKey() != null && attributeRequest.isPrimaryKey())
+                            .isNullable(attributeRequest.isNullable() == null || attributeRequest.isNullable())
+                            .orderIndex(attributeRequest.orderIndex() == null ? attributeIndex + 1
+                                    : attributeRequest.orderIndex())
+                            .build());
+                }
+            }
+
+            entities.add(SpecEntity.builder()
+                    .entityName(entityRequest.entityName())
+                    .displayName(entityRequest.displayName() == null || entityRequest.displayName().isBlank()
+                            ? entityRequest.entityName()
+                            : entityRequest.displayName())
+                    .description(entityRequest.description())
+                    .orderIndex(entityRequest.orderIndex() == null ? entityIndex + 1 : entityRequest.orderIndex())
+                    .attributes(attributes)
+                    .build());
+        }
+
+        return entities;
     }
 }

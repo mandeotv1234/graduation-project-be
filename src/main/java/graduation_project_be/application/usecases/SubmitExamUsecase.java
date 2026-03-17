@@ -11,8 +11,10 @@ import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamResult;
+import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
+import graduation_project_be.domain.models.SpecDataset;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -20,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,6 +40,7 @@ public class SubmitExamUsecase {
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamResultRepository examResultRepository;
+    private final ExamSpecificationRepository examSpecificationRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
@@ -60,6 +64,14 @@ public class SubmitExamUsecase {
 
         // 2b. Backend time validation — prevent DevTools time manipulation
         validateExamTime(examId, studentId, exam, submittedAt);
+
+        ExamSpecification specification = null;
+        if (exam.getSpecificationId() != null) {
+            specification = examSpecificationRepository.findById(exam.getSpecificationId()).orElse(null);
+            if (specification == null) {
+                log.warn("Specification {} not found for exam {}", exam.getSpecificationId(), examId);
+            }
+        }
 
         // 3. Load all questions for this exam (indexed by ID)
         List<ExamQuestion> allQuestions = examQuestionRepository.findByExamId(examId);
@@ -115,12 +127,22 @@ public class SubmitExamUsecase {
             } else {
                 long startTime = System.currentTimeMillis();
                 try {
-                    // Execute student's SQL
-                    examSchemaService.executeSql(schemaName, studentQuery);
-                    executionTimeMs = (int) (System.currentTimeMillis() - startTime);
+                    if (question.getQuestionType() == QuestionType.SELECT_QUERY) {
+                        GradeDecision decision = gradeSelectAcrossDatasets(
+                                specification, schemaName, question, studentQuery);
+                        isCorrect = decision.isCorrect();
+                        errorMessage = decision.errorMessage();
+                    } else {
+                        // Execute student's SQL for non-SELECT question types
+                        examSchemaService.executeSql(schemaName, studentQuery);
 
-                    // Grade based on question type
-                    isCorrect = gradeAnswer(schemaName, question);
+                        // Grade based on question type
+                        isCorrect = gradeAnswer(schemaName, question);
+                        if (!isCorrect) {
+                            errorMessage = "Answer did not match expected result";
+                        }
+                    }
+                    executionTimeMs = (int) (System.currentTimeMillis() - startTime);
                 } catch (Exception e) {
                     executionTimeMs = (int) (System.currentTimeMillis() - startTime);
                     errorMessage = e.getMessage();
@@ -238,7 +260,6 @@ public class SubmitExamUsecase {
         switch (type) {
             case CREATE_TABLE:
             case INSERT_DATA:
-            case SELECT_QUERY:
                 return gradeByStrictComparison(schemaName, question);
             case TRIGGER:
             case FUNCTION:
@@ -247,6 +268,87 @@ public class SubmitExamUsecase {
             default:
                 log.warn("Unknown question type: {}", type);
                 return false;
+        }
+    }
+
+    private GradeDecision gradeSelectAcrossDatasets(
+            ExamSpecification specification,
+            String schemaName,
+            ExamQuestion question,
+            String studentQuery) {
+        if (question.getCorrectQuery() == null || question.getCorrectQuery().isBlank()) {
+            return GradeDecision.fail("Missing correctQuery for SELECT question");
+        }
+        if (specification == null) {
+            return GradeDecision.fail("Exam has no specification for multi-dataset grading");
+        }
+        if (specification.getDdlScript() == null || specification.getDdlScript().isBlank()) {
+            return GradeDecision.fail("Specification has no ddlScript");
+        }
+
+        List<SpecDataset> activeDatasets = specification.getDatasets() == null ? List.of()
+                : specification.getDatasets().stream()
+                        .filter(SpecDataset::isActive)
+                        .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
+                        .toList();
+
+        if (activeDatasets.isEmpty()) {
+            return gradeSelectWithSingleDataset(
+                    schemaName,
+                    specification.getDdlScript(),
+                    null,
+                    "fallback-no-dataset",
+                    question,
+                    studentQuery);
+        }
+
+        for (SpecDataset dataset : activeDatasets) {
+            String datasetLabel = "dataset[" + dataset.getId() + ":" + dataset.getName() + "]";
+            GradeDecision decision = gradeSelectWithSingleDataset(
+                    schemaName,
+                    specification.getDdlScript(),
+                    dataset.getDataScript(),
+                    datasetLabel,
+                    question,
+                    studentQuery);
+            if (!decision.isCorrect()) {
+                return decision;
+            }
+        }
+
+        return GradeDecision.pass();
+    }
+
+    private GradeDecision gradeSelectWithSingleDataset(
+            String schemaName,
+            String ddlScript,
+            String datasetScript,
+            String datasetLabel,
+            ExamQuestion question,
+            String studentQuery) {
+        try {
+            examSchemaService.resetSchema(schemaName);
+            examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
+
+            List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery);
+            List<Map<String, Object>> expected = examSchemaService.executeSql(schemaName, question.getCorrectQuery());
+
+            if (!compareResultSetsStrict(actual, expected)) {
+                return GradeDecision.fail("SELECT result mismatch on " + datasetLabel);
+            }
+            return GradeDecision.pass();
+        } catch (Exception e) {
+            return GradeDecision.fail("Failed on " + datasetLabel + ": " + e.getMessage());
+        }
+    }
+
+    private record GradeDecision(boolean isCorrect, String errorMessage) {
+        static GradeDecision pass() {
+            return new GradeDecision(true, null);
+        }
+
+        static GradeDecision fail(String message) {
+            return new GradeDecision(false, message);
         }
     }
 

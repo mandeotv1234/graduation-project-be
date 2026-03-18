@@ -23,6 +23,9 @@ public class TableMetadata {
         private String columnName;
         private String dataType;
         private boolean isPrimaryKey;
+        private boolean isForeignKey;
+        private String referencesTable;
+        private String referencesColumn;
         private boolean isNullable;
     }
 }

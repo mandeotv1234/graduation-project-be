@@ -10,6 +10,7 @@ import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.ExecuteSqlRequest;
 import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.TableMetadata;
 import lombok.RequiredArgsConstructor;
 
 import java.time.Duration;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Locale;
 
 @RequiredArgsConstructor
 public class ExecuteSqlUsecase {
@@ -47,11 +49,25 @@ public class ExecuteSqlUsecase {
         long startTime = System.currentTimeMillis();
         try {
             List<Map<String, Object>> resultSet = examSchemaService.executeSql(schemaName, request.sql());
+            List<TableMetadata> schema = null;
+            if (affectsSchema(request.sql())) {
+                schema = examSchemaService.extractMetadata(schemaName);
+            }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-            return ExecuteSqlResponse.success(resultSet, executionTimeMs);
+            return ExecuteSqlResponse.success(resultSet, executionTimeMs, schema);
         } catch (Exception e) {
             return ExecuteSqlResponse.error(e.getMessage());
         }
+    }
+
+    private boolean affectsSchema(String sql) {
+        if (sql == null) return false;
+        String upper = sql.trim().toUpperCase(Locale.ROOT);
+        // Most common DDL statements students write in this system
+        return upper.startsWith("CREATE ")
+                || upper.startsWith("ALTER ")
+                || upper.startsWith("DROP ")
+                || upper.startsWith("TRUNCATE ");
     }
 
     private void validateExamTime(Long examId, Long studentId, Exam exam) {

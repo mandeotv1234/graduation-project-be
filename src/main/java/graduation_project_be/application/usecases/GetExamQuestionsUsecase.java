@@ -31,8 +31,8 @@ public class GetExamQuestionsUsecase {
 
         // Role-aware authorization
         if (currentUser.getRole() == Role.TEACHER) {
-            // Teacher must own the class that this exam belongs to
-            boolean ownsClass = classRepository.existsByIdAndTeacherId(
+            // Teacher must have access to the class that this exam belongs to
+            boolean ownsClass = classRepository.existsTeacherAccess(
                     exam.getClassId(), currentUser.getId());
             if (!ownsClass) {
                 throw new UnauthorizedException("You do not have access to this exam");

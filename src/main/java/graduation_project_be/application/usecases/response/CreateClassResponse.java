@@ -8,7 +8,7 @@ public record CreateClassResponse(
     Long id,
     String classCode,
     String semester,
-    Long teacherId,
+    Long creatorId,
     java.time.LocalDateTime createdAt
 ) {
     public static CreateClassResponse fromModel(Class clazz) {
@@ -16,7 +16,7 @@ public record CreateClassResponse(
                 .id(clazz.getId())
                 .classCode(clazz.getClassCode())
                 .semester(clazz.getSemester())
-                .teacherId(clazz.getTeacherId())
+                .creatorId(clazz.getCreatorId())
                 .createdAt(clazz.getCreatedAt())
                 .build();
     }

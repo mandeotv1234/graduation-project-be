@@ -28,7 +28,7 @@ public class GetStudentsInClassUsecase {
     public PaginationResponse<GetStudentsInClassResponse> execute(GetStudentsInClassRequest request) {
 
         Long currentUserId = currentUserService.getCurrentUserId();
-        boolean isTeacherOfClass = classRepository.existsByIdAndTeacherId(request.classId(), currentUserId);
+        boolean isTeacherOfClass = classRepository.existsTeacherAccess(request.classId(), currentUserId);
         if (!isTeacherOfClass) {
             throw new UnauthorizedException("User is not the teacher of this class");
         }

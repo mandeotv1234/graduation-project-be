@@ -1,5 +1,7 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -12,6 +14,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class GetViolationsUsecase {
 
+    private final ClassRepository classRepository;
     private final ExamViolationRepository examViolationRepository;
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
@@ -19,12 +22,13 @@ public class GetViolationsUsecase {
     public List<ExamViolationResponse> execute(Long examId, Long studentId) {
         Long teacherId = currentUserService.getCurrentUserId();
 
-        // Validate exam exists and teacher is the creator
+        // Validate exam exists and teacher has access to the class
         Exam exam = examRepository.findById(examId)
                 .orElseThrow(() -> new IllegalArgumentException("Exam not found"));
 
-        if (!exam.getCreatorId().equals(teacherId)) {
-            throw new IllegalArgumentException("Only the exam creator can view violations");
+        boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), teacherId);
+        if (!hasAccess) {
+            throw new UnauthorizedException("You do not have access to this exam");
         }
 
         if (studentId != null) {

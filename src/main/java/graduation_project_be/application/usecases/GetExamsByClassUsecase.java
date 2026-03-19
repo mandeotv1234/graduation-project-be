@@ -20,7 +20,7 @@ public class GetExamsByClassUsecase {
     public List<CreateExamResponse> execute(Long classId) {
         Long currentUserId = currentUserService.getCurrentUserId();
 
-        boolean isTeacher = classRepository.existsByIdAndTeacherId(classId, currentUserId);
+        boolean isTeacher = classRepository.existsTeacherAccess(classId, currentUserId);
         if (!isTeacher) {
             throw new UnauthorizedException("User is not the teacher of this class");
         }

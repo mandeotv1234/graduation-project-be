@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.TeacherClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.PasswordEncoder;
@@ -9,6 +10,7 @@ import graduation_project_be.application.usecases.request.CreateClassRequest;
 import graduation_project_be.application.usecases.response.CreateClassResponse;
 import graduation_project_be.domain.models.Class;
 import graduation_project_be.domain.models.ClassEnrollment;
+import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class CreateClassUsecase {
     private static final String DEFAULT_STUDENT_PASSWORD = "Vlchinsu1234*";
 
     private final ClassRepository classRepository;
+    private final TeacherClassRepository teacherClassRepository;
     private final UserRepository userRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final PasswordEncoder passwordEncoder;
@@ -38,11 +41,17 @@ public class CreateClassUsecase {
         Class newClass = Class.builder()
                 .classCode(request.classCode())
                 .semester(request.semester())
-                .teacherId(teacherId)
+                .creatorId(teacherId)
                 .createdAt(LocalDateTime.now())
                 .build();
         
         Class savedClass = classRepository.save(newClass);
+
+        teacherClassRepository.save(TeacherClass.builder()
+                .classId(savedClass.getId())
+                .teacherId(teacherId)
+                .addedAt(LocalDateTime.now())
+                .build());
 
         List<User> studentsToSave = new ArrayList<>();
         List<ClassEnrollment> enrollments = new ArrayList<>();

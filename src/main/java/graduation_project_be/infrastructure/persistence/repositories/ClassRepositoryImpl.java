@@ -36,7 +36,7 @@ public class ClassRepositoryImpl implements ClassRepository {
     }
 
     @Override
-    public PaginatedResult<Class> findByTeacherId(Long teacherId, PaginationParams params) {
+    public PaginatedResult<Class> findAccessibleByTeacherId(Long teacherId, PaginationParams params) {
         Sort.Direction direction = params.getSortOrder() == SortDirection.DESC
                 ? Sort.Direction.DESC
                 : Sort.Direction.ASC;
@@ -44,7 +44,7 @@ public class ClassRepositoryImpl implements ClassRepository {
         String sortBy = params.getSortBy() != null ? params.getSortBy().getFieldName() : "createdAt";
 
         Pageable pageable = PageRequest.of(params.getPage(), params.getSize(), Sort.by(direction, sortBy));
-        Page<ClassEntity> page = classJpaRepository.findByTeacherId(teacherId, pageable);
+        Page<ClassEntity> page = classJpaRepository.findAccessibleByTeacherId(teacherId, pageable);
 
         return PaginatedResult.of(
                 page.getContent().stream().map(ClassEntity::toModel).toList(),
@@ -54,7 +54,7 @@ public class ClassRepositoryImpl implements ClassRepository {
     }
 
     @Override
-    public boolean existsByIdAndTeacherId(Long classId, Long teacherId) {
-        return classJpaRepository.existsByIdAndTeacherId(classId, teacherId);
+    public boolean existsTeacherAccess(Long classId, Long teacherId) {
+        return classJpaRepository.existsTeacherAccess(classId, teacherId);
     }
 }

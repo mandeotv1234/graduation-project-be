@@ -7,7 +7,7 @@ import graduation_project_be.application.usecases.response.GetClassDetailRespons
 public record GetClassDetailResponseDto(
         Long id,
         String classCode,
-        Long teacherId,
+        Long creatorId,
         String semester,
         LocalDateTime createdAt) {
     public static GetClassDetailResponseDto fromResponse(
@@ -15,7 +15,7 @@ public record GetClassDetailResponseDto(
         return new GetClassDetailResponseDto(
                 response.id(),
                 response.classCode(),
-                response.teacherId(),
+                response.creatorId(),
                 response.semester(),
                 response.createdAt());
     }

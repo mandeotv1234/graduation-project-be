@@ -9,14 +9,14 @@ import java.time.LocalDateTime;
 public record GetClassesResponse(
         Long id,
         String classCode,
-        Long teacherId,
+        Long creatorId,
         String semester,
         LocalDateTime createdAt) {
     public static GetClassesResponse fromModel(Class clazz) {
         return GetClassesResponse.builder()
                 .id(clazz.getId())
                 .classCode(clazz.getClassCode())
-                .teacherId(clazz.getTeacherId())
+                .creatorId(clazz.getCreatorId())
                 .semester(clazz.getSemester())
                 .createdAt(clazz.getCreatedAt())
                 .build();

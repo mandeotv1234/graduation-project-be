@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -15,6 +16,7 @@ public class GetExamSpecificationUsecase {
 
     private final ExamSpecificationRepository examSpecificationRepository;
     private final ExamRepository examRepository;
+    private final ClassRepository classRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
 
@@ -26,12 +28,13 @@ public class GetExamSpecificationUsecase {
         Exam exam = examRepository.findById(examId)
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", examId));
 
-        // TEACHER: phải là creator của exam
+        // TEACHER: phải có quyền access class của exam
         // STUDENT: phải được enroll vào class của exam
         if ("TEACHER".equals(currentRole)) {
-            if (!exam.getCreatorId().equals(currentUserId)) {
+            boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
+            if (!hasAccess) {
                 throw new graduation_project_be.application.exceptions.UnauthorizedException(
-                        "You are not the creator of this exam");
+                        "You do not have access to this exam");
             }
         } else if ("STUDENT".equals(currentRole)) {
             boolean enrolled = classEnrollmentRepository

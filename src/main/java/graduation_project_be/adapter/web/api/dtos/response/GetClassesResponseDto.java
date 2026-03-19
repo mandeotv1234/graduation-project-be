@@ -7,14 +7,14 @@ import java.time.LocalDateTime;
 public record GetClassesResponseDto(
         Long id,
         String classCode,
-        Long teacherId,
+        Long creatorId,
         String semester,
         LocalDateTime createdAt) {
     public static GetClassesResponseDto fromResponse(GetClassesResponse response) {
         return new GetClassesResponseDto(
                 response.id(),
                 response.classCode(),
-                response.teacherId(),
+                response.creatorId(),
                 response.semester(),
                 response.createdAt());
     }

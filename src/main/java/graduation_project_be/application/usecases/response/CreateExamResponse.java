@@ -1,6 +1,8 @@
 package graduation_project_be.application.usecases.response;
 
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamSettings;
+
 import java.time.LocalDateTime;
 
 public record CreateExamResponse(
@@ -13,7 +15,11 @@ public record CreateExamResponse(
         LocalDateTime startTime,
         LocalDateTime endTime,
         Boolean isPublished,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        String description,
+        Integer maxAttempts,
+        Integer lateThreshold,
+        ExamSettings settings) {
     public static CreateExamResponse fromModel(Exam exam) {
         return new CreateExamResponse(
                 exam.getId(),
@@ -25,6 +31,10 @@ public record CreateExamResponse(
                 exam.getStartTime(),
                 exam.getEndTime(),
                 exam.getIsPublished(),
-                exam.getCreatedAt());
+                exam.getCreatedAt(),
+                exam.getDescription(),
+                exam.getMaxAttempts(),
+                exam.getLateThreshold(),
+                exam.getSettings());
     }
 }

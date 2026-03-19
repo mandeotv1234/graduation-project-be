@@ -1,7 +1,11 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamSettings;
+import graduation_project_be.infrastructure.persistence.converters.ExamSettingsConverter;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -48,6 +52,19 @@ public class ExamEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "max_attempts")
+    private Integer maxAttempts;
+
+    @Column(name = "late_threshold")
+    private Integer lateThreshold;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "settings", columnDefinition = "json")
+    private ExamSettingsJson settings;
+
     public Exam toModel() {
         return Exam.builder()
                 .id(id)
@@ -60,6 +77,10 @@ public class ExamEntity {
                 .endTime(endTime)
                 .isPublished(isPublished)
                 .createdAt(createdAt)
+                .description(description)
+                .maxAttempts(maxAttempts)
+                .lateThreshold(lateThreshold)
+                .settings(settings != null ? settings.toModel() : null)
                 .build();
     }
 
@@ -75,6 +96,10 @@ public class ExamEntity {
                 .endTime(exam.getEndTime())
                 .isPublished(exam.getIsPublished())
                 .createdAt(exam.getCreatedAt())
+                .description(exam.getDescription())
+                .maxAttempts(exam.getMaxAttempts())
+                .lateThreshold(exam.getLateThreshold())
+                .settings(ExamSettingsJson.fromModel(exam.getSettings()))
                 .build();
     }
 }

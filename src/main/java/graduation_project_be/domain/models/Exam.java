@@ -22,4 +22,8 @@ public class Exam {
     private LocalDateTime endTime;
     private Boolean isPublished;
     private LocalDateTime createdAt;
+    private String description;
+    private Integer maxAttempts;
+    private Integer lateThreshold;
+    private ExamSettings settings;
 }

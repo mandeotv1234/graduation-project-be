@@ -12,6 +12,7 @@ import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -40,7 +41,11 @@ public class CreateExamUsecase {
                 .startTime(request.startTime())
                 .endTime(request.endTime())
                 .isPublished(request.isPublished() != null ? request.isPublished() : false)
-                .createdAt(java.time.LocalDateTime.now())
+                .createdAt(LocalDateTime.now())
+                .description(request.description())
+                .maxAttempts(request.maxAttempts() != null ? request.maxAttempts() : 1)
+                .lateThreshold(request.lateThreshold() != null ? request.lateThreshold() : 0)
+                .settings(request.settings())
                 .build();
 
         Exam savedExam = examRepository.save(exam);

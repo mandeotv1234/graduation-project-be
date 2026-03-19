@@ -15,6 +15,7 @@ public class ExamViolation {
     private Long id;
     private Long examId;
     private Long studentId;
+    private int attemptNumber;
     private String violationType;
     private String description;
     private String ipAddress;

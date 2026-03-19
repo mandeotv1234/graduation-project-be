@@ -1,0 +1,99 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1803260001
+      author: manhuynh
+      validCheckSum: ANY
+      comment: "GRAD-49: Add description, max_attempts, late_threshold, settings columns to exams"
+      changes:
+        - addColumn:
+            tableName: exams
+            columns:
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: max_attempts
+                  type: INT
+                  defaultValueNumeric: 1
+              - column:
+                  name: late_threshold
+                  type: INT
+                  defaultValueNumeric: 0
+              - column:
+                  name: settings
+                  type: JSON
+                  defaultValue: '{"prevent_copy_paste": false, "force_fullscreen": false, "track_tab_switch": false, "auto_submit_on_violation": false, "allow_review": true, "score_display_mode": "after_closed", "allow_overtime": false, "grading_method": "highest_score"}'
+
+  - changeSet:
+      id: 1803260002
+      author: manhuynh
+      comment: "Update existing exams with default settings if columns were just added"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: max_attempts
+                  valueNumeric: 1
+              - column:
+                  name: late_threshold
+                  valueNumeric: 0
+              - column:
+                  name: settings
+                  value: '{"prevent_copy_paste": false, "force_fullscreen": false, "track_tab_switch": false, "auto_submit_on_violation": false, "allow_review": true, "score_display_mode": "after_closed", "allow_overtime": false, "grading_method": "highest_score"}'
+            where: "settings IS NULL"
+
+  - changeSet:
+      id: GRAD-49-add-attempt-number
+      author: manhuynh
+      comment: "GRAD-49: Add attempt_number and late_duration_seconds columns, update unique constraints for multi-attempt support"
+      changes:
+        - addColumn:
+            tableName: exam_results
+            columns:
+              - column:
+                  name: attempt_number
+                  type: int
+                  defaultValue: 1
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: exam_submissions
+            columns:
+              - column:
+                  name: attempt_number
+                  type: int
+                  defaultValue: 1
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: exam_results
+            columns:
+              - column:
+                  name: late_duration_seconds
+                  type: int
+                  defaultValue: 0
+        - addColumn:
+            tableName: exam_violations
+            columns:
+              - column:
+                  name: attempt_number
+                  type: int
+                  defaultValue: 1
+                  constraints:
+                    nullable: false
+        - dropUniqueConstraint:
+            tableName: exam_results
+            constraintName: uq_exam_student_result
+        - dropUniqueConstraint:
+            tableName: exam_submissions
+            constraintName: uq_exam_question_student
+        - addUniqueConstraint:
+            tableName: exam_results
+            columnNames: exam_id, student_id, attempt_number
+            constraintName: uq_exam_student_attempt_result
+        - addUniqueConstraint:
+            tableName: exam_submissions
+            columnNames: exam_id, question_id, student_id, attempt_number
+            constraintName: uq_exam_question_student_attempt
+

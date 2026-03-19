@@ -194,6 +194,7 @@ public class UsecasesConfiguration {
     @Bean
     ReportViolationUsecase reportViolationUsecase(
             ExamViolationRepository examViolationRepository,
+            ExamResultRepository examResultRepository,
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
@@ -201,7 +202,7 @@ public class UsecasesConfiguration {
             SubmitExamUsecase submitExamUsecase,
             ExamSessionService examSessionService) {
         return new ReportViolationUsecase(
-                examViolationRepository, examRepository,
+                examViolationRepository, examResultRepository, examRepository,
                 classEnrollmentRepository, currentUserService,
                 violationNotificationService, submitExamUsecase,
                 examSessionService);
@@ -222,10 +223,12 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSessionService examSessionService) {
+            ExamSessionService examSessionService,
+            ExamResultRepository examResultRepository) {
         return new StartExamSessionUsecase(
                 examRepository, classEnrollmentRepository,
-                currentUserService, examSessionService);
+                currentUserService, examSessionService,
+                examResultRepository);
     }
 
     @Bean

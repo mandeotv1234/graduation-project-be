@@ -36,7 +36,7 @@ public class ExamViolationRepositoryImpl implements ExamViolationRepository {
     }
 
     @Override
-    public long countByExamIdAndStudentId(Long examId, Long studentId) {
-        return jpaRepository.countByExamIdAndStudentId(examId, studentId);
+    public long countByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber) {
+        return jpaRepository.countByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber);
     }
 }

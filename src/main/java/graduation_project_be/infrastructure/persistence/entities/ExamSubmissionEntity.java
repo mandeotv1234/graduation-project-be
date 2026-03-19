@@ -31,6 +31,9 @@ public class ExamSubmissionEntity {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
+    @Column(name = "attempt_number", nullable = false)
+    private int attemptNumber;
+
     @Column(name = "assigned_schema_name", nullable = false)
     private String assignedSchemaName;
 
@@ -61,6 +64,7 @@ public class ExamSubmissionEntity {
                 .examId(examId)
                 .questionId(questionId)
                 .studentId(studentId)
+                .attemptNumber(attemptNumber)
                 .assignedSchemaName(assignedSchemaName)
                 .studentQuery(studentQuery)
                 .isCorrect(isCorrect)
@@ -78,6 +82,7 @@ public class ExamSubmissionEntity {
                 .examId(model.getExamId())
                 .questionId(model.getQuestionId())
                 .studentId(model.getStudentId())
+                .attemptNumber(model.getAttemptNumber())
                 .assignedSchemaName(model.getAssignedSchemaName())
                 .studentQuery(model.getStudentQuery())
                 .isCorrect(model.getIsCorrect())

@@ -8,5 +8,5 @@ public interface ExamViolationRepository {
     ExamViolation save(ExamViolation violation);
     List<ExamViolation> findByExamId(Long examId);
     List<ExamViolation> findByExamIdAndStudentId(Long examId, Long studentId);
-    long countByExamIdAndStudentId(Long examId, Long studentId);
+    long countByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
 }

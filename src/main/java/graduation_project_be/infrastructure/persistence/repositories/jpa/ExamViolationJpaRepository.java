@@ -10,5 +10,5 @@ import java.util.List;
 public interface ExamViolationJpaRepository extends JpaRepository<ExamViolationEntity, Long> {
     List<ExamViolationEntity> findByExamIdOrderByCreatedAtDesc(Long examId);
     List<ExamViolationEntity> findByExamIdAndStudentIdOrderByCreatedAtDesc(Long examId, Long studentId);
-    long countByExamIdAndStudentId(Long examId, Long studentId);
+    long countByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
 }

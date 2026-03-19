@@ -4,6 +4,7 @@ import graduation_project_be.application.usecases.request.CreateExamRequest;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import java.time.LocalDateTime;
 
 public record CreateExamRequestDto(
@@ -19,7 +20,15 @@ public record CreateExamRequestDto(
 
         LocalDateTime endTime,
 
-        Boolean isPublished) {
+        Boolean isPublished,
+
+        String description,
+
+        @Positive(message = "Max attempts must be positive") Integer maxAttempts,
+
+        @PositiveOrZero(message = "Late threshold must be positive or zero") Integer lateThreshold,
+
+        ExamSettingsDto settings) {
     public CreateExamRequest toRequest() {
         return new CreateExamRequest(
                 specificationId,
@@ -28,6 +37,10 @@ public record CreateExamRequestDto(
                 durationMinutes,
                 startTime,
                 endTime,
-                isPublished);
+                isPublished,
+                description,
+                maxAttempts,
+                lateThreshold,
+                settings != null ? settings.toModel() : null);
     }
 }

@@ -14,9 +14,11 @@ public class ExamResult {
     private Long id;
     private Long examId;
     private Long studentId;
+    private int attemptNumber;
     private BigDecimal totalScore;
     private BigDecimal maxScore;
     private int totalQuestions;
     private int correctCount;
+    private int lateDurationSeconds;
     private LocalDateTime submittedAt;
 }

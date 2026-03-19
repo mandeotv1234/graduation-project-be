@@ -26,6 +26,9 @@ public class ExamResultEntity {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
+    @Column(name = "attempt_number", nullable = false)
+    private int attemptNumber;
+
     @Column(name = "total_score", precision = 5, scale = 2)
     private BigDecimal totalScore;
 
@@ -38,6 +41,9 @@ public class ExamResultEntity {
     @Column(name = "correct_count")
     private int correctCount;
 
+    @Column(name = "late_duration_seconds")
+    private int lateDurationSeconds;
+
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
 
@@ -46,10 +52,12 @@ public class ExamResultEntity {
                 .id(id)
                 .examId(examId)
                 .studentId(studentId)
+                .attemptNumber(attemptNumber)
                 .totalScore(totalScore)
                 .maxScore(maxScore)
                 .totalQuestions(totalQuestions)
                 .correctCount(correctCount)
+                .lateDurationSeconds(lateDurationSeconds)
                 .submittedAt(submittedAt)
                 .build();
     }
@@ -59,10 +67,12 @@ public class ExamResultEntity {
                 .id(domain.getId())
                 .examId(domain.getExamId())
                 .studentId(domain.getStudentId())
+                .attemptNumber(domain.getAttemptNumber())
                 .totalScore(domain.getTotalScore())
                 .maxScore(domain.getMaxScore())
                 .totalQuestions(domain.getTotalQuestions())
                 .correctCount(domain.getCorrectCount())
+                .lateDurationSeconds(domain.getLateDurationSeconds())
                 .submittedAt(domain.getSubmittedAt())
                 .build();
     }

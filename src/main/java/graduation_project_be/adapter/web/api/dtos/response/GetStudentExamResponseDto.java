@@ -12,7 +12,11 @@ public record GetStudentExamResponseDto(
         LocalDateTime endTime,
         LocalDateTime serverTime,
         String status,
-        long secondsUntilStart) {
+        long secondsUntilStart,
+        String description,
+        Integer maxAttempts,
+        Integer lateThreshold,
+        ExamSettingsResponseDto settings) {
     public static GetStudentExamResponseDto fromResponse(GetStudentExamResponse response) {
         return new GetStudentExamResponseDto(
                 response.examId(),
@@ -23,6 +27,10 @@ public record GetStudentExamResponseDto(
                 response.endTime(),
                 response.serverTime(),
                 response.status(),
-                response.secondsUntilStart());
+                response.secondsUntilStart(),
+                response.description(),
+                response.maxAttempts(),
+                response.lateThreshold(),
+                ExamSettingsResponseDto.fromModel(response.settings()));
     }
 }

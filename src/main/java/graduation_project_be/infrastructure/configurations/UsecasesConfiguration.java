@@ -13,12 +13,13 @@ public class UsecasesConfiguration {
     @Bean
     CreateClassUsecase createClassUsecase(
             ClassRepository classRepository,
+            TeacherClassRepository teacherClassRepository,
             UserRepository userRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService) {
-        return new CreateClassUsecase(classRepository, userRepository, classEnrollmentRepository, passwordEncoder,
-                currentUserService);
+        return new CreateClassUsecase(classRepository, teacherClassRepository, userRepository,
+                classEnrollmentRepository, passwordEncoder, currentUserService);
     }
 
     @Bean
@@ -107,10 +108,12 @@ public class UsecasesConfiguration {
 
     @Bean
     CreateExamQuestionUsecase createExamQuestionUsecase(
+            ClassRepository classRepository,
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
             CurrentUserService currentUserService) {
-        return new CreateExamQuestionUsecase(examQuestionRepository, examRepository, currentUserService);
+        return new CreateExamQuestionUsecase(classRepository, examQuestionRepository, examRepository,
+                currentUserService);
     }
 
     @Bean
@@ -206,11 +209,12 @@ public class UsecasesConfiguration {
 
     @Bean
     GetViolationsUsecase getViolationsUsecase(
+            ClassRepository classRepository,
             ExamViolationRepository examViolationRepository,
             ExamRepository examRepository,
             CurrentUserService currentUserService) {
         return new GetViolationsUsecase(
-                examViolationRepository, examRepository, currentUserService);
+                classRepository, examViolationRepository, examRepository, currentUserService);
     }
 
     @Bean
@@ -269,32 +273,74 @@ public class UsecasesConfiguration {
 
     @Bean
     SaveExamSpecificationUsecase saveExamSpecificationUsecase(
+            ClassRepository classRepository,
             ExamSpecificationRepository examSpecificationRepository,
             ExamRepository examRepository,
             CurrentUserService currentUserService) {
-        return new SaveExamSpecificationUsecase(examSpecificationRepository, examRepository, currentUserService);
+        return new SaveExamSpecificationUsecase(classRepository, examSpecificationRepository, examRepository,
+                currentUserService);
     }
 
     @Bean
     GetExamSpecificationUsecase getExamSpecificationUsecase(
+            ClassRepository classRepository,
             ExamSpecificationRepository examSpecificationRepository,
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService) {
         return new GetExamSpecificationUsecase(examSpecificationRepository, examRepository,
-                classEnrollmentRepository, currentUserService);
+                classRepository, classEnrollmentRepository, currentUserService);
     }
 
     // ===== AI USECASES =====
 
     @Bean
     CreateExamQuestionsUsecase createExamQuestionsUsecase(
+            ClassRepository classRepository,
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
             GeminiService geminiService) {
-        return new CreateExamQuestionsUsecase(examQuestionRepository, examRepository,
+        return new CreateExamQuestionsUsecase(classRepository, examQuestionRepository, examRepository,
                 examSpecificationRepository, currentUserService, geminiService);
     }
+
+        @Bean
+    AddTeacherToClassUsecase addTeacherToClassUsecase(
+            ClassRepository classRepository,
+            TeacherClassRepository teacherClassRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new AddTeacherToClassUsecase(
+                classRepository,
+                teacherClassRepository,
+                userRepository,
+                currentUserService);
+    }
+
+    @Bean
+    GetClassTeachersUsecase getClassTeachersUsecase(
+            ClassRepository classRepository,
+            TeacherClassRepository teacherClassRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetClassTeachersUsecase(
+                classRepository,
+                teacherClassRepository,
+                userRepository,
+                currentUserService);
+    }
+
+    @Bean
+    RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase(
+            ClassRepository classRepository,
+            TeacherClassRepository teacherClassRepository,
+            CurrentUserService currentUserService) {
+        return new RemoveTeacherFromClassUsecase(
+                classRepository,
+                teacherClassRepository,
+                currentUserService);
+    }
+
 }

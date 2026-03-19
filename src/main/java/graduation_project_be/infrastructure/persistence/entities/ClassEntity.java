@@ -24,8 +24,8 @@ public class ClassEntity {
     @Column(name = "class_code", unique = true, nullable = false)
     private String classCode;
 
-    @Column(name = "teacher_id")
-    private Long teacherId;
+    @Column(name = "creator_id")
+    private Long creatorId;
 
     private String semester;
 
@@ -36,7 +36,7 @@ public class ClassEntity {
         return Class.builder()
                 .id(id)
                 .classCode(classCode)
-                .teacherId(teacherId)
+                .creatorId(creatorId)
                 .semester(semester)
                 .createdAt(createdAt)
                 .build();
@@ -46,7 +46,7 @@ public class ClassEntity {
         return ClassEntity.builder()
                 .id(classModel.getId())
                 .classCode(classModel.getClassCode())
-                .teacherId(classModel.getTeacherId())
+                .creatorId(classModel.getCreatorId())
                 .semester(classModel.getSemester())
                 .createdAt(classModel.getCreatedAt())
                 .build();

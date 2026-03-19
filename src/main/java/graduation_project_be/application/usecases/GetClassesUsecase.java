@@ -28,7 +28,7 @@ public class GetClassesUsecase {
                 int page = paginationParams.getPage() < 1 ? 0 : paginationParams.getPage() - 1;
                 paginationParams.setPage(page);
 
-                PaginatedResult<Class> classes = classRepository.findByTeacherId(
+                PaginatedResult<Class> classes = classRepository.findAccessibleByTeacherId(
                                 teacherId,
                                 paginationParams);
 

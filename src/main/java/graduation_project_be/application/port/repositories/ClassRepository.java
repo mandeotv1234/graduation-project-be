@@ -9,7 +9,7 @@ public interface ClassRepository {
 
     Class findById(Long classId);
 
-    PaginatedResult<Class> findByTeacherId(Long teacherId, PaginationParams paginationParams);
+    PaginatedResult<Class> findAccessibleByTeacherId(Long teacherId, PaginationParams paginationParams);
 
-    boolean existsByIdAndTeacherId(Long classId, Long teacherId);
+    boolean existsTeacherAccess(Long classId, Long teacherId);
 }

@@ -8,14 +8,14 @@ import java.time.LocalDateTime;
 public record GetClassDetailResponse(
         Long id,
         String classCode,
-        Long teacherId,
+        Long creatorId,
         String semester,
         LocalDateTime createdAt) {
     public static GetClassDetailResponse fromModel(Class clazz) {
         return GetClassDetailResponse.builder()
                 .id(clazz.getId())
                 .classCode(clazz.getClassCode())
-                .teacherId(clazz.getTeacherId())
+                .creatorId(clazz.getCreatorId())
                 .semester(clazz.getSemester())
                 .createdAt(clazz.getCreatedAt())
                 .build();

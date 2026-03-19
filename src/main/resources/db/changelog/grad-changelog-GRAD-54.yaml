@@ -1,0 +1,153 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1803262101
+      author: donald-mun
+      comment: "Seed teacher account tdthao@fit.hcmus.edu.vn for local testing"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: tdthao@fit.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy"
+              - column:
+                  name: full_name
+                  value: Tran Duy Thao
+              - column:
+                  name: role
+                  value: TEACHER
+              - column:
+                  name: is_active
+                  valueBoolean: true
+      rollback:
+        - delete:
+            tableName: users
+            where: email = 'tdthao@fit.hcmus.edu.vn'
+
+  - changeSet:
+      id: 1803265401
+      author: donald-mun
+      comment: "GRAD-54: add creator_id to classes"
+      changes:
+        - addColumn:
+            tableName: classes
+            columns:
+              - column:
+                  name: creator_id
+                  type: INT
+        - addForeignKeyConstraint:
+            baseTableName: classes
+            baseColumnNames: creator_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_class_creator
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - sql:
+            sql: |
+              UPDATE classes
+              SET creator_id = teacher_id
+              WHERE creator_id IS NULL;
+
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: classes
+            constraintName: fk_class_creator
+        - dropColumn:
+            tableName: classes
+            columnName: creator_id
+
+  - changeSet:
+      id: 1803265402
+      author: donald-mun
+      comment: "GRAD-54: create teacher_classes table and backfill data"
+      changes:
+        - createTable:
+            tableName: teacher_classes
+            columns:
+              - column:
+                  name: class_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: teacher_id
+                  type: INT
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: added_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - addForeignKeyConstraint:
+            baseTableName: teacher_classes
+            baseColumnNames: class_id
+            referencedTableName: classes
+            referencedColumnNames: id
+            constraintName: fk_teacher_class_class
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: teacher_classes
+            baseColumnNames: teacher_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_teacher_class_teacher
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: teacher_classes
+            indexName: idx_teacher_classes_teacher_id
+            columns:
+              - column:
+                  name: teacher_id
+        - createIndex:
+            tableName: teacher_classes
+            indexName: idx_teacher_classes_class_id
+            columns:
+              - column:
+                  name: class_id
+        - sql:
+            sql: |
+              INSERT INTO teacher_classes (class_id, teacher_id, added_at)
+              SELECT id, teacher_id, COALESCE(created_at, CURRENT_TIMESTAMP)
+              FROM classes
+              WHERE teacher_id IS NOT NULL
+              ON CONFLICT (class_id, teacher_id) DO NOTHING;
+
+      rollback:
+        - dropTable:
+            tableName: teacher_classes
+
+  - changeSet:
+      id: 1803265403
+      author: donald-mun
+      comment: "GRAD-54: drop legacy teacher_id from classes after creator_id migration"
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: classes
+            constraintName: fk_class_teacher
+        - dropColumn:
+            tableName: classes
+            columnName: teacher_id
+
+      rollback:
+        - addColumn:
+            tableName: classes
+            columns:
+              - column:
+                  name: teacher_id
+                  type: INT
+        - addForeignKeyConstraint:
+            baseTableName: classes
+            baseColumnNames: teacher_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_class_teacher
+            onDelete: SET NULL
+            onUpdate: CASCADE

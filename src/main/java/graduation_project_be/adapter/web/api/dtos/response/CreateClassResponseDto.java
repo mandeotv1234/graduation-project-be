@@ -10,14 +10,14 @@ public record CreateClassResponseDto(
         Long id,
         String classCode,
         String semester,
-        Long teacherId,
+        Long creatorId,
         LocalDateTime createdAt) {
     public static CreateClassResponseDto fromResponse(CreateClassResponse response) {
         return CreateClassResponseDto.builder()
                 .id(response.id())
                 .classCode(response.classCode())
                 .semester(response.semester())
-                .teacherId(response.teacherId())
+                .creatorId(response.creatorId())
                 .createdAt(response.createdAt())
                 .build();
     }

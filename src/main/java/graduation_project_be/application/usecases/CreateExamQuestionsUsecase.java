@@ -1,6 +1,7 @@
 package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
@@ -23,6 +24,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CreateExamQuestionsUsecase {
 
+    private final ClassRepository classRepository;
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
@@ -36,8 +38,9 @@ public class CreateExamQuestionsUsecase {
         Exam exam = examRepository.findById(request.examId())
                 .orElseThrow(() -> new IllegalArgumentException("Exam not found with id: " + request.examId()));
 
-        if (!exam.getCreatorId().equals(currentUserId)) {
-            throw new UnauthorizedException("Only the exam creator can add questions");
+        boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
+        if (!hasAccess) {
+            throw new UnauthorizedException("You do not have access to this exam");
         }
 
         // Build schema context from specification (if exists) for better AI prompts

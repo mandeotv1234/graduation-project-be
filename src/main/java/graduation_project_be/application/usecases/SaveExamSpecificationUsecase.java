@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -21,6 +22,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SaveExamSpecificationUsecase {
 
+    private final ClassRepository classRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
@@ -32,8 +34,9 @@ public class SaveExamSpecificationUsecase {
         Exam exam = examRepository.findById(request.examId())
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", request.examId()));
 
-        if (!exam.getCreatorId().equals(currentUserId)) {
-            throw new UnauthorizedException("You are not the creator of this exam");
+        boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
+        if (!hasAccess) {
+            throw new UnauthorizedException("You do not have access to this exam");
         }
 
         Long specificationId = exam.getSpecificationId();

@@ -21,7 +21,8 @@ public class GetClassDetailUsecase {
         Long currentUserId = currentUserService.getCurrentUserId();
         Class clazz = classRepository.findById(request.classId());
 
-        if (!clazz.getTeacherId().equals(currentUserId)) {
+        boolean hasAccess = classRepository.existsTeacherAccess(request.classId(), currentUserId);
+        if (!hasAccess) {
             throw new UnauthorizedException("User is not the teacher of this class");
         }
 

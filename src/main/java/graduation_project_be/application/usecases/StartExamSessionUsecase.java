@@ -5,6 +5,7 @@ import graduation_project_be.application.exceptions.ConflictException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.StartExamSessionRequest;
@@ -23,6 +24,7 @@ public class StartExamSessionUsecase {
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
+    private final ExamResultRepository examResultRepository;
 
     public StartExamSessionResponse execute(StartExamSessionRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -45,6 +47,15 @@ public class StartExamSessionUsecase {
         }
         if (exam.getEndTime() != null && now.isAfter(exam.getEndTime())) {
             throw new BadRequestException("Exam has already ended");
+        }
+
+        // Validate maxAttempts — block student if they have exhausted all attempts
+        if (exam.getMaxAttempts() != null && exam.getMaxAttempts() > 0) {
+            long attemptCount = examResultRepository.countByExamIdAndStudentId(request.examId(), studentId);
+            if (attemptCount >= exam.getMaxAttempts()) {
+                throw new BadRequestException(
+                        "Bạn đã hết số lần làm bài (" + exam.getMaxAttempts() + "/" + exam.getMaxAttempts() + ").");
+            }
         }
 
         // Check existing start time BEFORE creating/refreshing the session.

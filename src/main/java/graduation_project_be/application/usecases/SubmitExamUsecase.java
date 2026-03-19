@@ -18,11 +18,14 @@ import graduation_project_be.domain.models.SpecDataset;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +49,7 @@ public class SubmitExamUsecase {
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
 
+    @Transactional
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
         Long examId = request.examId();
@@ -63,7 +67,7 @@ public class SubmitExamUsecase {
         }
 
         // 2b. Backend time validation — prevent DevTools time manipulation
-        validateExamTime(examId, studentId, exam, submittedAt);
+        long lateDurationSeconds = validateExamTime(examId, studentId, exam, submittedAt);
 
         ExamSpecification specification = null;
         if (exam.getSpecificationId() != null) {
@@ -86,7 +90,7 @@ public class SubmitExamUsecase {
 
         // 3b. Validate submitted answers: no duplicates, all questionIds must belong to
         // this exam
-        Map<Long, String> answerMap = new java.util.LinkedHashMap<>();
+        Map<Long, String> answerMap = new LinkedHashMap<>();
         for (SubmitExamRequest.AnswerItem answer : request.answers()) {
             if (!questionMap.containsKey(answer.questionId())) {
                 throw new IllegalArgumentException("Question " + answer.questionId() + " does not belong to this exam");
@@ -98,6 +102,19 @@ public class SubmitExamUsecase {
         }
 
         String schemaName = String.format("exam_%d_student_%d", examId, studentId);
+
+        // Determine the current attempt number (1-based)
+        long previousAttempts = examResultRepository.countByExamIdAndStudentId(examId, studentId);
+
+        // Validate maxAttempts — block student if they have exhausted all attempts
+        if (exam.getMaxAttempts() != null && exam.getMaxAttempts() > 0) {
+            if (previousAttempts >= exam.getMaxAttempts()) {
+                throw new BadRequestException(
+                        "Bạn đã hết số lần làm bài (" + previousAttempts + "/" + exam.getMaxAttempts() + ").");
+            }
+        }
+
+        int attemptNumber = (int) previousAttempts + 1;
 
         // 4. Reset schema — drop all existing objects so student SQL runs cleanly
         log.info("Resetting schema [{}] before grading", schemaName);
@@ -160,6 +177,7 @@ public class SubmitExamUsecase {
                     .examId(examId)
                     .questionId(question.getId())
                     .studentId(studentId)
+                    .attemptNumber(attemptNumber)
                     .assignedSchemaName(schemaName)
                     .studentQuery(studentQuery != null ? studentQuery : "")
                     .isCorrect(isCorrect)
@@ -170,8 +188,8 @@ public class SubmitExamUsecase {
                     .submittedAt(submittedAt)
                     .build();
 
-            // Upsert: update existing submission if student re-submits
-            ExamSubmission saved = upsertSubmission(submission);
+            // Always INSERT a new record per attempt (not upsert)
+            ExamSubmission saved = examSubmissionRepository.save(submission);
 
             // Add to results
             results.add(new SubmitExamResponse.QuestionResult(
@@ -186,17 +204,19 @@ public class SubmitExamUsecase {
                     executionTimeMs));
         }
 
-        // 6. Upsert total result to exam_results table
+        // 6. INSERT total result to exam_results table (per attempt)
         ExamResult examResult = ExamResult.builder()
                 .examId(examId)
                 .studentId(studentId)
+                .attemptNumber(attemptNumber)
                 .totalScore(totalScore)
                 .maxScore(maxScore)
                 .totalQuestions(totalQuestions)
                 .correctCount(correctCount)
+                .lateDurationSeconds((int) lateDurationSeconds)
                 .submittedAt(submittedAt)
                 .build();
-        upsertExamResult(examResult);
+        examResultRepository.save(examResult);
 
         // 7. Cleanup — drop the student's schema after grading is complete
         try {
@@ -214,43 +234,7 @@ public class SubmitExamUsecase {
 
         return new SubmitExamResponse(
                 examId, studentId, totalScore, maxScore,
-                totalQuestions, correctCount, submittedAt, results);
-    }
-
-    // ========== Upsert helpers ==========
-
-    private ExamSubmission upsertSubmission(ExamSubmission submission) {
-        var existing = examSubmissionRepository.findByExamIdAndQuestionIdAndStudentId(
-                submission.getExamId(), submission.getQuestionId(), submission.getStudentId());
-        if (existing.isPresent()) {
-            // Update existing submission
-            ExamSubmission toUpdate = existing.get();
-            toUpdate.setStudentQuery(submission.getStudentQuery());
-            toUpdate.setIsCorrect(submission.getIsCorrect());
-            toUpdate.setScoreEarned(submission.getScoreEarned());
-            toUpdate.setErrorMessage(submission.getErrorMessage());
-            toUpdate.setExecutionTimeMs(submission.getExecutionTimeMs());
-            toUpdate.setStatus(submission.getStatus());
-            toUpdate.setSubmittedAt(submission.getSubmittedAt());
-            return examSubmissionRepository.save(toUpdate);
-        }
-        return examSubmissionRepository.save(submission);
-    }
-
-    private void upsertExamResult(ExamResult examResult) {
-        var existing = examResultRepository.findByExamIdAndStudentId(
-                examResult.getExamId(), examResult.getStudentId());
-        if (existing.isPresent()) {
-            ExamResult toUpdate = existing.get();
-            toUpdate.setTotalScore(examResult.getTotalScore());
-            toUpdate.setMaxScore(examResult.getMaxScore());
-            toUpdate.setTotalQuestions(examResult.getTotalQuestions());
-            toUpdate.setCorrectCount(examResult.getCorrectCount());
-            toUpdate.setSubmittedAt(examResult.getSubmittedAt());
-            examResultRepository.save(toUpdate);
-        } else {
-            examResultRepository.save(examResult);
-        }
+                totalQuestions, correctCount, (int) lateDurationSeconds, submittedAt, results);
     }
 
     // ========== Grading Logic ==========
@@ -455,7 +439,7 @@ public class SubmitExamUsecase {
      * the backend-managed start time stored in Redis.
      * This prevents DevTools time manipulation attacks.
      */
-    private void validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt) {
+    private long validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt) {
         Optional<LocalDateTime> startTimeOpt = examSessionService.getExamStartTime(examId, studentId);
 
         if (startTimeOpt.isPresent()) {
@@ -468,7 +452,30 @@ public class SubmitExamUsecase {
             }
 
             long secondsOverdue = Duration.between(examDeadline, submittedAt).getSeconds();
+
+            // Determine allowable late window from exam settings
+            boolean allowOvertime = exam.getSettings() != null
+                    && Boolean.TRUE.equals(exam.getSettings().getAllowOvertime());
+            int lateThresholdMinutes = exam.getLateThreshold() != null ? exam.getLateThreshold() : 0;
+
             if (secondsOverdue > SUBMIT_GRACE_SECONDS) {
+                if (allowOvertime && lateThresholdMinutes > 0) {
+                    // Check if within the late submission window
+                    long lateThresholdSeconds = (long) lateThresholdMinutes * 60;
+                    if (secondsOverdue <= lateThresholdSeconds) {
+                        log.info("Late submission accepted within lateThreshold: exam={}, student={}, overdue={}s, threshold={}min",
+                                examId, studentId, secondsOverdue, lateThresholdMinutes);
+                        // Allow — within the late submission window
+                        return secondsOverdue;
+                    }
+                    // Beyond the late threshold
+                    log.warn("Late submission rejected: exam={}, student={}, overdue={}s exceeds lateThreshold={}min",
+                            examId, studentId, secondsOverdue, lateThresholdMinutes);
+                    throw new BadRequestException(
+                            "Thời gian nộp bài trễ đã vượt quá ngưỡng cho phép (" + lateThresholdMinutes + " phút).");
+                }
+
+                // allowOvertime is false — strict deadline
                 log.warn("Late submission rejected: exam={}, student={}, overdue={}s (grace={}s)",
                         examId, studentId, secondsOverdue, SUBMIT_GRACE_SECONDS);
                 throw new BadRequestException(
@@ -478,10 +485,13 @@ public class SubmitExamUsecase {
             if (secondsOverdue > 0) {
                 log.info("Late submission accepted within grace period: exam={}, student={}, overdue={}s",
                         examId, studentId, secondsOverdue);
+                return secondsOverdue;
             }
         } else {
             log.warn("No backend start time found for exam={}, student={}. Allowing submission.",
                     examId, studentId);
         }
+
+        return 0L;
     }
 }

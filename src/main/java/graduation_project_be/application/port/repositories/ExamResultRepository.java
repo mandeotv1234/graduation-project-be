@@ -8,4 +8,6 @@ public interface ExamResultRepository {
     ExamResult save(ExamResult examResult);
 
     Optional<ExamResult> findByExamIdAndStudentId(Long examId, Long studentId);
+
+    long countByExamIdAndStudentId(Long examId, Long studentId);
 }

@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface ExamResultJpaRepository extends JpaRepository<ExamResultEntity, Long> {
     Optional<ExamResultEntity> findByExamIdAndStudentId(Long examId, Long studentId);
+
+    long countByExamIdAndStudentId(Long examId, Long studentId);
 }

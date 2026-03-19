@@ -1,6 +1,7 @@
 package graduation_project_be.application.usecases.response;
 
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamSettings;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -14,7 +15,11 @@ public record GetStudentExamResponse(
         LocalDateTime endTime,
         LocalDateTime serverTime,
         String status,
-        long secondsUntilStart
+        long secondsUntilStart,
+        String description,
+        Integer maxAttempts,
+        Integer lateThreshold,
+        ExamSettings settings
 ) {
     /**
      * Status values:
@@ -45,7 +50,11 @@ public record GetStudentExamResponse(
                 exam.getEndTime(),
                 now,
                 status,
-                secondsUntilStart
+                secondsUntilStart,
+                exam.getDescription(),
+                exam.getMaxAttempts(),
+                exam.getLateThreshold(),
+                exam.getSettings()
         );
     }
 }

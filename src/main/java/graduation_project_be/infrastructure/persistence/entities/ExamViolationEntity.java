@@ -27,6 +27,9 @@ public class ExamViolationEntity {
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
+    @Column(name = "attempt_number", nullable = false)
+    private int attemptNumber;
+
     @Column(name = "violation_type", nullable = false, length = 50)
     private String violationType;
 
@@ -47,6 +50,7 @@ public class ExamViolationEntity {
                 .id(id)
                 .examId(examId)
                 .studentId(studentId)
+                .attemptNumber(attemptNumber)
                 .violationType(violationType)
                 .description(description)
                 .ipAddress(ipAddress)
@@ -60,6 +64,7 @@ public class ExamViolationEntity {
                 .id(model.getId())
                 .examId(model.getExamId())
                 .studentId(model.getStudentId())
+                .attemptNumber(model.getAttemptNumber())
                 .violationType(model.getViolationType())
                 .description(model.getDescription())
                 .ipAddress(model.getIpAddress())

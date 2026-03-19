@@ -11,6 +11,7 @@ public record SubmitExamResponse(
         BigDecimal maxScore,
         int totalQuestions,
         int correctCount,
+        int lateDurationSeconds,
         LocalDateTime submittedAt,
         List<QuestionResult> questionResults) {
 

@@ -12,6 +12,7 @@ public record SubmitExamResponseDto(
         BigDecimal maxScore,
         int totalQuestions,
         int correctCount,
+        int lateDurationSeconds,
         LocalDateTime submittedAt,
         List<QuestionResultDto> questionResults) {
 
@@ -37,6 +38,6 @@ public record SubmitExamResponseDto(
 
         return new SubmitExamResponseDto(
                 r.examId(), r.studentId(), r.totalScore(), r.maxScore(),
-                r.totalQuestions(), r.correctCount(), r.submittedAt(), results);
+                r.totalQuestions(), r.correctCount(), r.lateDurationSeconds(), r.submittedAt(), results);
     }
 }

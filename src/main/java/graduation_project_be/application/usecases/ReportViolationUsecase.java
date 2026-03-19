@@ -5,10 +5,12 @@ import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
 import graduation_project_be.application.usecases.request.ReportViolationRequest;
+import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.ReportViolationResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamViolation;
@@ -16,13 +18,16 @@ import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
+
 @Slf4j
 @RequiredArgsConstructor
 public class ReportViolationUsecase {
 
-    private static final int MAX_VIOLATIONS = 100;
+    private static final int DEFAULT_MAX_VIOLATIONS = 100;
 
     private final ExamViolationRepository examViolationRepository;
+    private final ExamResultRepository examResultRepository;
     private final ExamRepository examRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
@@ -46,9 +51,17 @@ public class ReportViolationUsecase {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
 
-        // Check if already auto-submitted (prevent further violations after forced submit)
-        long existingCount = examViolationRepository.countByExamIdAndStudentId(request.examId(), studentId);
-        if (existingCount >= MAX_VIOLATIONS) {
+        // Determine current attempt
+        long previousAttempts = examResultRepository.countByExamIdAndStudentId(request.examId(), studentId);
+        int currentAttempt = (int) previousAttempts + 1;
+
+        // Determine max violations limit
+        int maxViolationsLimit = DEFAULT_MAX_VIOLATIONS;
+        boolean enableAutoSubmit = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getAutoSubmitOnViolation());
+
+        // Check if already auto-submitted (prevent further violations only if auto-submit is enabled)
+        long existingCount = examViolationRepository.countByExamIdAndStudentIdAndAttemptNumber(request.examId(), studentId, currentAttempt);
+        if (enableAutoSubmit && existingCount >= maxViolationsLimit) {
             throw new BadRequestException("Exam has already been auto-submitted due to maximum violations");
         }
 
@@ -56,6 +69,7 @@ public class ReportViolationUsecase {
         ExamViolation violation = ExamViolation.builder()
                 .examId(request.examId())
                 .studentId(studentId)
+                .attemptNumber(currentAttempt)
                 .violationType(request.violationType())
                 .description(request.description())
                 .ipAddress(request.ipAddress())
@@ -65,9 +79,9 @@ public class ReportViolationUsecase {
         ExamViolation saved = examViolationRepository.save(violation);
         long violationCount = existingCount + 1;
 
-        // Check if max violations reached → auto-submit
+        // Check if max violations reached -> auto-submit
         boolean autoSubmitted = false;
-        if (violationCount >= MAX_VIOLATIONS) {
+        if (enableAutoSubmit && violationCount >= maxViolationsLimit) {
             autoSubmitted = true;
             log.warn("Student {} ({}) reached {} violations for exam {} — auto-submitting exam",
                     studentId, studentName, violationCount, request.examId());
@@ -91,9 +105,7 @@ public class ReportViolationUsecase {
     private void autoSubmitExam(Long examId, Long studentId) {
         // Auto-submit with empty answers — the SubmitExamUsecase will grade
         // any previously saved work
-        submitExamUsecase.execute(
-                new graduation_project_be.application.usecases.request.SubmitExamRequest(
-                        examId, java.util.List.of()));
+        submitExamUsecase.execute(new SubmitExamRequest(examId, List.of()));
 
         // End the session
         examSessionService.endSession(examId, studentId);

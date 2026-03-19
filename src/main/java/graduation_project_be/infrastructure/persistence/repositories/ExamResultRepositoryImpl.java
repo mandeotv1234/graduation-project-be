@@ -27,4 +27,9 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
         return jpaRepository.findByExamIdAndStudentId(examId, studentId)
                 .map(ExamResultEntity::toModel);
     }
+
+    @Override
+    public long countByExamIdAndStudentId(Long examId, Long studentId) {
+        return jpaRepository.countByExamIdAndStudentId(examId, studentId);
+    }
 }

@@ -17,6 +17,7 @@ public class ExamSubmission {
     private Long examId;
     private Long questionId;
     private Long studentId;
+    private int attemptNumber;
     private String assignedSchemaName;
     private String studentQuery;
     private Boolean isCorrect;

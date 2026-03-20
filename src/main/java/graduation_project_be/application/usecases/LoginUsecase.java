@@ -1,18 +1,13 @@
 package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.UnauthorizedException;
-import graduation_project_be.application.port.repositories.RefreshTokenRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
-import graduation_project_be.application.port.services.JwtService;
 import graduation_project_be.application.port.services.PasswordEncoder;
-import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.application.usecases.request.LoginRequest;
 import graduation_project_be.application.usecases.response.LoginResponse;
-import graduation_project_be.domain.models.Token;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -20,9 +15,7 @@ public class LoginUsecase {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
-    private final RefreshTokenRepository refreshTokenRepository;
-    private final RefreshTokenHasher refreshTokenHasher;
+    private final TokenIssuer tokenIssuer;
 
     public LoginResponse execute(LoginRequest loginRequest) {
 
@@ -32,34 +25,11 @@ public class LoginUsecase {
             throw new UnauthorizedException("Invalid email or password");
         }
 
-        if (!passwordEncoder.matches(loginRequest.password(),userOptional.get().getPassword())) {
+        String storedPassword = userOptional.get().getPassword();
+        if (storedPassword == null || !passwordEncoder.matches(loginRequest.password(), storedPassword)) {
             throw new UnauthorizedException("Invalid email or password");
         }
 
-        User user = userOptional.get();
-        String accessToken = jwtService.generateToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
-
-        String userId = String.valueOf(user.getId());
-        refreshTokenRepository.deleteAllByUserId(userId);
-
-        String tokenId = jwtService.extractTokenId(refreshToken);
-        String hashed = refreshTokenHasher.hash(refreshToken);
-        refreshTokenRepository.save(userId, tokenId, hashed, jwtService.getJwtRefreshTokenValiditySeconds());
-
-        LocalDateTime accessTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
-        LocalDateTime refreshTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtRefreshTokenValiditySeconds());
-
-        Token token = Token.builder()
-            .accessToken(accessToken)
-            .refreshToken(refreshToken)
-            .accessTokenExpiresAt(accessTokenExpiresAt)
-            .refreshTokenExpiresAt(refreshTokenExpiresAt)
-            .build();
-
-        return LoginResponse.fromModel(token);
+        return tokenIssuer.issueToken(userOptional.get());
     }
-
-
-
 }

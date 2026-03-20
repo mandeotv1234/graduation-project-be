@@ -26,15 +26,11 @@ public class UsecasesConfiguration {
     LoginUsecase authenticationUsecase(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            JwtService jwtService,
-            RefreshTokenRepository refreshTokenRepository,
-            RefreshTokenHasher refreshTokenHasher) {
+            TokenIssuer tokenIssuer) {
         return new LoginUsecase(
                 userRepository,
                 passwordEncoder,
-                jwtService,
-                refreshTokenRepository,
-                refreshTokenHasher);
+                tokenIssuer);
     }
 
     @Bean

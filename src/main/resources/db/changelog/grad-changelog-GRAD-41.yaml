@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2003200001"
+      author: system
+      comment: "Make password nullable in users table for Google OAuth users"
+      changes:
+        - modifyDataType:
+            tableName: users
+            columnName: password
+            newDataType: VARCHAR(255)
+        - sql:
+            sql: ALTER TABLE users ALTER COLUMN password DROP NOT NULL
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: google_subject
+                  type: VARCHAR(255)

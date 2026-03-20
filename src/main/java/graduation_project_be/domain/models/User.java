@@ -21,6 +21,7 @@ public class User {
     private Role role;
     private Boolean isActive;
     private LocalDateTime createdAt;
+    private String googleSubject;
 
     public static User.UserBuilder builder() {
         return internalBuilder();

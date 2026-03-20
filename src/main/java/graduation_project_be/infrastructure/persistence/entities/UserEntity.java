@@ -39,6 +39,9 @@ public class UserEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "google_subject")
+    private String googleSubject;
+
     public User toModel() {
         return User.builder()
                 .id(id)
@@ -48,6 +51,7 @@ public class UserEntity {
                 .role(role)
                 .isActive(isActive)
                 .createdAt(createdAt)
+                .googleSubject(googleSubject)
                 .build();
     }
 
@@ -60,6 +64,7 @@ public class UserEntity {
                 .role(userModel.getRole())
                 .isActive(userModel.getIsActive())
                 .createdAt(userModel.getCreatedAt())
+                .googleSubject(userModel.getGoogleSubject())
                 .build();
     }
 }

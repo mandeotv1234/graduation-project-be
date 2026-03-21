@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public record GetStudentExamResponse(
         Long examId,
         Long classId,
+        String className,
         String title,
         Integer durationMinutes,
         LocalDateTime startTime,
@@ -27,7 +28,7 @@ public record GetStudentExamResponse(
      * - IN_PROGRESS: exam is currently active (startTime <= now <= endTime)
      * - ENDED: exam has ended (now > endTime)
      */
-    public static GetStudentExamResponse fromModel(Exam exam) {
+    public static GetStudentExamResponse fromModel(Exam exam, String className) {
         LocalDateTime now = LocalDateTime.now();
         String status;
         long secondsUntilStart = 0;
@@ -44,6 +45,7 @@ public record GetStudentExamResponse(
         return new GetStudentExamResponse(
                 exam.getId(),
                 exam.getClassId(),
+                className,
                 exam.getTitle(),
                 exam.getDurationMinutes(),
                 exam.getStartTime(),

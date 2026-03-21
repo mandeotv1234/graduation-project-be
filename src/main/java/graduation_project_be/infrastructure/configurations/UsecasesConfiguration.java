@@ -73,9 +73,10 @@ public class UsecasesConfiguration {
     @Bean
     GetStudentExamUsecase getStudentExamUsecase(
             ExamRepository examRepository,
+            ClassRepository classRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService) {
-        return new GetStudentExamUsecase(examRepository, classEnrollmentRepository, currentUserService);
+        return new GetStudentExamUsecase(examRepository, classRepository, classEnrollmentRepository, currentUserService);
     }
 
     @Bean

@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record GetStudentExamResponseDto(
         Long examId,
         Long classId,
+        String className,
         String title,
         Integer durationMinutes,
         LocalDateTime startTime,
@@ -21,6 +22,7 @@ public record GetStudentExamResponseDto(
         return new GetStudentExamResponseDto(
                 response.examId(),
                 response.classId(),
+                response.className(),
                 response.title(),
                 response.durationMinutes(),
                 response.startTime(),

@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: GRAD-63-update-default-settings
+      author: manhuynh
+      comment: "GRAD-63: Update default settings for exams"
+      changes:
+        - addDefaultValue:
+            tableName: exams
+            columnName: settings
+            defaultValue: '{"allow_review": true, "allow_overtime": false, "grading_method": "highest_score", "force_fullscreen": true, "track_tab_switch": true, "prevent_copy_paste": true, "score_display_mode": "after_closed", "auto_submit_on_violation": false}'
+
+  - changeSet:
+      id: GRAD-63-update-existing-settings
+      author: manhuynh
+      comment: "GRAD-63: Update existing exams to use new default settings"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: settings
+                  value: '{"allow_review": true, "allow_overtime": false, "grading_method": "highest_score", "force_fullscreen": true, "track_tab_switch": true, "prevent_copy_paste": true, "score_display_mode": "after_closed", "auto_submit_on_violation": false}'
+            where: "settings IS NULL OR settings::text = '{\"prevent_copy_paste\": false, \"force_fullscreen\": false, \"track_tab_switch\": false, \"auto_submit_on_violation\": false, \"allow_review\": true, \"score_display_mode\": \"after_closed\", \"allow_overtime\": false, \"grading_method\": \"highest_score\"}'"

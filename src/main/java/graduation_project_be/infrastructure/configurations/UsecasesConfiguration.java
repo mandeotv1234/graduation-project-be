@@ -101,6 +101,22 @@ public class UsecasesConfiguration {
         return new GetClassDetailUsecase(classRepository, currentUserService);
     }
 
+    @Bean
+    UpdateExamUsecase updateExamUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateExamUsecase(examRepository, classRepository, currentUserService);
+    }
+
+    @Bean
+    GetTeacherExamDetailUsecase getTeacherExamDetailUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new GetTeacherExamDetailUsecase(examRepository, classRepository, currentUserService);
+    }
+
     // ===== NEW USECASES =====
 
     @Bean

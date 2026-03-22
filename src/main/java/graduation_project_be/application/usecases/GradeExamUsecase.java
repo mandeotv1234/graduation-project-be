@@ -1,5 +1,9 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.domain.models.TableMetadata;
+import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.TriggerMetadata;
+import graduation_project_be.domain.models.TableMetadata.ColumnMetadata;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.ExamSchemaService;
@@ -22,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -134,10 +139,21 @@ public class GradeExamUsecase {
                             isCorrect = decision.isCorrect();
                             errorMessage = decision.errorMessage();
                         } else {
-                            examSchemaService.executeSql(schemaName, studentQuery);
+                            try {
+                                examSchemaService.executeSql(schemaName, studentQuery);
+                            } catch (Exception execErr) {
+                                errorMessage = "Cảnh báo Lỗi Execute: " + execErr.getMessage();
+                            }
                             isCorrect = gradeAnswer(schemaName, teacherSchemaName, question, submission);
-                            if (!isCorrect && errorMessage == null) {
-                                errorMessage = submission.getErrorMessage() != null ? submission.getErrorMessage() : "Answer did not match expected result";
+                            
+                            if (submission.getErrorMessage() != null && !submission.getErrorMessage().isBlank()) {
+                                if (errorMessage != null) {
+                                    errorMessage = errorMessage + " | Lỗi cú pháp/Cấu trúc: " + submission.getErrorMessage();
+                                } else {
+                                    errorMessage = submission.getErrorMessage();
+                                }
+                            } else if (!isCorrect && errorMessage == null) {
+                                errorMessage = "Kết quả không khớp với đáp án mẫu.";
                             }
                         }
                         executionTimeMs = (int) (System.currentTimeMillis() - startTime);
@@ -149,8 +165,15 @@ public class GradeExamUsecase {
                 }
 
                 BigDecimal scoreEarned;
-                if (question.getQuestionType() == QuestionType.CREATE_TABLE || question.getQuestionType() == QuestionType.INSERT_DATA) {
-                    scoreEarned = submission.getScoreEarned() != null ? submission.getScoreEarned() : (isCorrect ? question.getPoints() : BigDecimal.ZERO);
+                if (question.getQuestionType() == QuestionType.CREATE_TABLE
+                        || question.getQuestionType() == QuestionType.INSERT_DATA
+                        || question.getQuestionType() == QuestionType.STORED_PROCEDURE
+                        || question.getQuestionType() == QuestionType.FUNCTION
+                        || question.getQuestionType() == QuestionType.TRIGGER) {
+                    // These types use algorithmic/partial grading — respect scoreEarned set by grader
+                    scoreEarned = (submission != null && submission.getScoreEarned() != null)
+                            ? submission.getScoreEarned()
+                            : (isCorrect ? question.getPoints() : BigDecimal.ZERO);
                 } else {
                     scoreEarned = isCorrect ? question.getPoints() : BigDecimal.ZERO;
                 }
@@ -226,16 +249,213 @@ public class GradeExamUsecase {
         QuestionType type = question.getQuestionType();
         switch (type) {
             case CREATE_TABLE:
+                return gradeCreateTableAlgorithmic(schemaName, teacherSchemaName, question, submission);
             case INSERT_DATA:
-                return gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+                return gradeInsertDataAlgorithmic(schemaName, teacherSchemaName, question, submission);
             case TRIGGER:
+                return gradeTriggerAlgorithmic(schemaName, teacherSchemaName, question, submission);
             case FUNCTION:
             case STORED_PROCEDURE:
-                return gradeByVerifyScript(schemaName, question);
+                return gradeRoutineAlgorithmic(schemaName, teacherSchemaName, question, submission);
             default:
                 log.warn("Unknown question type: {}", type);
                 return false;
         }
+    }
+
+    private boolean gradeCreateTableAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+        List<TableMetadata> expectedTables = examSchemaService.extractMetadata(teacherSchemaName);
+        List<TableMetadata> actualTables = examSchemaService.extractMetadata(schemaName);
+
+        if (expectedTables == null || expectedTables.isEmpty()) {
+            return gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+        }
+
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        BigDecimal perTablePoints = totalPoints.divide(BigDecimal.valueOf(expectedTables.size()), 4, RoundingMode.HALF_UP);
+        BigDecimal earnedTotal = BigDecimal.ZERO;
+        StringBuilder errorBuilder = new StringBuilder();
+        boolean allPassed = true;
+
+        for (TableMetadata expectedTable : expectedTables) {
+            TableMetadata actualTable = actualTables.stream()
+                    .filter(t -> t.getTableName().equalsIgnoreCase(expectedTable.getTableName()))
+                    .findFirst().orElse(null);
+
+            if (actualTable == null) {
+                allPassed = false;
+                errorBuilder.append(String.format("Thiếu bảng %s. ", expectedTable.getTableName()));
+                continue;
+            }
+
+            int expectedColCount = expectedTable.getColumns().size();
+            if (expectedColCount == 0) {
+                earnedTotal = earnedTotal.add(perTablePoints);
+                continue; 
+            }
+            
+            double tableScore = 0.0;
+            double perColScore = 1.0 / expectedColCount; 
+            
+            for (ColumnMetadata expectedCol : expectedTable.getColumns()) {
+                 ColumnMetadata actualCol = actualTable.getColumns().stream()
+                         .filter(c -> c.getColumnName().equalsIgnoreCase(expectedCol.getColumnName()))
+                         .findFirst().orElse(null);
+                 
+                 if (actualCol != null) {
+                      double colPoints = 0.5 * perColScore; // 50% for existing column
+                      
+                      // 30% for type match
+                      if (actualCol.getDataType().equalsIgnoreCase(expectedCol.getDataType())) {
+                          colPoints += 0.3 * perColScore;
+                      } else {
+                          errorBuilder.append(String.format("Bảng %s: cột %s sai kiểu dữ liệu (Kỳ vọng: %s, Thực tế: %s). ", 
+                              expectedTable.getTableName(), expectedCol.getColumnName(), expectedCol.getDataType(), actualCol.getDataType()));
+                          allPassed = false;
+                      }
+                      
+                      // 10% for PK match
+                      if (actualCol.isPrimaryKey() == expectedCol.isPrimaryKey()) {
+                          colPoints += 0.1 * perColScore;
+                      } else {
+                          if (expectedCol.isPrimaryKey()) {
+                              errorBuilder.append(String.format("Bảng %s: thiếu khoá chính ở cột %s. ", expectedTable.getTableName(), expectedCol.getColumnName()));
+                          } else {
+                              errorBuilder.append(String.format("Bảng %s: dư định nghĩa khoá chính ở cột %s. ", expectedTable.getTableName(), expectedCol.getColumnName()));
+                          }
+                          allPassed = false;
+                      }
+                      
+                      // 10% for FK match
+                      if (expectedCol.isForeignKey()) {
+                           if (actualCol.isForeignKey() && 
+                               expectedCol.getReferencesTable().equalsIgnoreCase(actualCol.getReferencesTable())) {
+                               colPoints += 0.1 * perColScore;
+                           } else {
+                               errorBuilder.append(String.format("Bảng %s, cột %s: thiếu khoá ngoại tham chiếu %s. ", expectedTable.getTableName(), expectedCol.getColumnName(), expectedCol.getReferencesTable()));
+                               allPassed = false;
+                           }
+                      } else {
+                           if (!actualCol.isForeignKey()) {
+                               colPoints += 0.1 * perColScore;
+                           } else {
+                               errorBuilder.append(String.format("Bảng %s, cột %s: bị dư khoá ngoại sai đề. ", expectedTable.getTableName(), expectedCol.getColumnName()));
+                               allPassed = false;
+                           }
+                      }
+                      
+                      tableScore += colPoints;
+                 } else {
+                      allPassed = false;
+                      errorBuilder.append(String.format("Bảng %s: thiếu cột %s. ", expectedTable.getTableName(), expectedCol.getColumnName()));
+                 }
+            }
+            BigDecimal tblEarned = perTablePoints.multiply(BigDecimal.valueOf(tableScore));
+            earnedTotal = earnedTotal.add(tblEarned);
+        }
+
+        if (allPassed) {
+            earnedTotal = totalPoints;
+        } else if (earnedTotal.compareTo(totalPoints) > 0) {
+            earnedTotal = totalPoints;
+        }
+
+        if (submission != null) {
+            submission.setScoreEarned(earnedTotal);
+            if (!allPassed) {
+                submission.setErrorMessage(errorBuilder.toString().trim());
+            }
+        }
+        
+        return allPassed;
+    }
+
+    private boolean gradeInsertDataAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+        List<TableMetadata> expectedTables = examSchemaService.extractMetadata(teacherSchemaName);
+
+        if (expectedTables == null || expectedTables.isEmpty()) {
+            return gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+        }
+
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        BigDecimal perTablePoints = totalPoints.divide(BigDecimal.valueOf(expectedTables.size()), 4, RoundingMode.HALF_UP);
+        BigDecimal earnedTotal = BigDecimal.ZERO;
+        StringBuilder errorBuilder = new StringBuilder();
+        boolean allPassed = true;
+
+        for (TableMetadata expectedTable : expectedTables) {
+            String tName = expectedTable.getTableName();
+            
+            try {
+                // 1. teacher count
+                List<Map<String, Object>> tcRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + teacherSchemaName + "]." + tName);
+                long tCount = ((Number) tcRes.get(0).values().iterator().next()).longValue();
+                
+                if (tCount == 0) {
+                     earnedTotal = earnedTotal.add(perTablePoints); // table not required to have data
+                     continue;
+                }
+
+                // 2. student count
+                long sCount = 0;
+                try {
+                    List<Map<String, Object>> scRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + schemaName + "]." + tName);
+                    sCount = ((Number) scRes.get(0).values().iterator().next()).longValue();
+                } catch (Exception e) {
+                    allPassed = false;
+                    errorBuilder.append(String.format("Bảng %s lỗi trống rỗng hoặc chưa được tạo. ", tName));
+                    continue; // 0 points for this table
+                }
+
+                // 3. missing count
+                long missingCount = 0;
+                try {
+                    String missingSql = "SELECT COUNT(*) FROM (SELECT * FROM [" + teacherSchemaName + "]." + tName + " EXCEPT SELECT * FROM [" + schemaName + "]." + tName + ") a";
+                    List<Map<String, Object>> mRes = examSchemaService.executeAdminSql(missingSql);
+                    missingCount = ((Number) mRes.get(0).values().iterator().next()).longValue();
+                } catch (Exception e) {
+                    missingCount = tCount; // fallback
+                }
+
+                // 4. extra count
+                long extraCount = 0;
+                try {
+                    String extraSql = "SELECT COUNT(*) FROM (SELECT * FROM [" + schemaName + "]." + tName + " EXCEPT SELECT * FROM [" + teacherSchemaName + "]." + tName + ") b";
+                    List<Map<String, Object>> eRes = examSchemaService.executeAdminSql(extraSql);
+                    extraCount = ((Number) eRes.get(0).values().iterator().next()).longValue();
+                } catch (Exception e) {
+                    extraCount = 0;
+                }
+
+                if (missingCount == 0 && extraCount == 0 && sCount == tCount) {
+                    earnedTotal = earnedTotal.add(perTablePoints);
+                } else {
+                    allPassed = false;
+                    long correctRows = Math.max(0, tCount - missingCount);
+                    // Penalize extra wrong rows
+                    long finalCorrect = Math.max(0, correctRows - extraCount);
+                    
+                    double ratio = (double) finalCorrect / tCount;
+                    earnedTotal = earnedTotal.add(perTablePoints.multiply(BigDecimal.valueOf(ratio)));
+                    errorBuilder.append(String.format("Bảng %s: thiếu %d dòng, dư/sai %d dòng. ", tName, missingCount, extraCount));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to grade Insert data algorithmically for table {}", tName, e);
+                allPassed = false;
+                errorBuilder.append(String.format("Lỗi hệ thống khi chấm bảng %s. ", tName));
+            }
+        }
+
+        if (earnedTotal.compareTo(totalPoints) > 0) earnedTotal = totalPoints;
+
+        if (submission != null) {
+            submission.setScoreEarned(earnedTotal);
+            if (!allPassed) {
+                submission.setErrorMessage(errorBuilder.toString().trim());
+            }
+        }
+        
+        return allPassed;
     }
 
     private GradeDecision gradeSelectAcrossDatasets(
@@ -307,6 +527,7 @@ public class GradeExamUsecase {
 
     private boolean gradeByTestCases(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
         List<TestCase> testCases = testCaseRepository.findByQuestionId(question.getId());
+        log.info("[gradeByTestCases] Q{} has {} test cases", question.getId(), testCases == null ? 0 : testCases.size());
         
         if (testCases == null || testCases.isEmpty()) {
             return gradeByStrictComparison(schemaName, question);
@@ -321,35 +542,51 @@ public class GradeExamUsecase {
                 String validationQuery = tc.getValidationQuery()
                                            .replace("{SCHEMA}", schemaName)
                                            .replace("{TEACHER_SCHEMA}", teacherSchemaName);
+                log.info("[gradeByTestCases] Q{} TC{} running query: {}", question.getId(), tc.getOrderIndex(), validationQuery);
                 
                 List<Map<String, Object>> actual = examSchemaService.executeAdminSql(validationQuery);
+                log.info("[gradeByTestCases] Q{} TC{} actual result: {}", question.getId(), tc.getOrderIndex(), actual);
                 
                 boolean isTcCorrect = false;
                 
-                if (tc.getExpectedValue() != null) {
+                if (tc.getExpectedValue() == null) {
+                    // null expectedValue = just verify the query ran without error and returned some result
+                    isTcCorrect = actual != null && !actual.isEmpty()
+                            && actual.get(0).values().stream().anyMatch(v -> v != null);
+                    log.info("[gradeByTestCases] Q{} TC{} null-expected check, result non-null: {}", question.getId(), tc.getOrderIndex(), isTcCorrect);
+                } else if (tc.getExpectedValue() != null) {
                     String expectedStr = tc.getExpectedValue().trim();
                     if (actual != null && actual.size() == 1 && actual.get(0).size() == 1) {
                          Object firstVal = actual.get(0).values().iterator().next();
                          String actualStr = normalizeValue(firstVal);
+                         log.info("[gradeByTestCases] Q{} TC{} compare: actual='{}' expected='{}'", question.getId(), tc.getOrderIndex(), actualStr, expectedStr);
                          if (actualStr.equalsIgnoreCase(expectedStr)) {
                              isTcCorrect = true;
                          }
                     } else if (actual != null && actual.isEmpty() && "0".equals(expectedStr)) {
                          isTcCorrect = true;
+                    } else {
+                         log.warn("[gradeByTestCases] Q{} TC{} unexpected result shape: rows={}, expected='{}'",
+                                 question.getId(), tc.getOrderIndex(),
+                                 actual == null ? "null" : actual.size(), expectedStr);
                     }
                 }
 
                 if (isTcCorrect) {
                      earnedTotal = earnedTotal.add(tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO);
+                     log.info("[gradeByTestCases] Q{} TC{} PASSED, earnedTotal={}", question.getId(), tc.getOrderIndex(), earnedTotal);
                 } else {
                      allPassed = false;
                      errorBuilder.append(java.lang.String.format("Test case %d failed. ", tc.getOrderIndex() != null ? tc.getOrderIndex() : tc.getId()));
+                     log.warn("[gradeByTestCases] Q{} TC{} FAILED", question.getId(), tc.getOrderIndex());
                 }
             } catch (Exception e) {
                 allPassed = false;
                 errorBuilder.append(java.lang.String.format("Test case %d error: %s. ", tc.getOrderIndex() != null ? tc.getOrderIndex() : tc.getId(), e.getMessage()));
+                log.error("[gradeByTestCases] Q{} TC{} threw exception: {}", question.getId(), tc.getOrderIndex(), e.getMessage(), e);
             }
         }
+        log.info("[gradeByTestCases] Q{} allPassed={} earnedTotal={}", question.getId(), allPassed, earnedTotal);
 
         if (submission != null) {
             submission.setScoreEarned(earnedTotal);
@@ -448,5 +685,187 @@ public class GradeExamUsecase {
             str = str.replaceAll("0+$", "").replaceAll("\\.$", "");
         }
         return str;
+    }
+
+    private boolean gradeRoutineAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+        List<RoutineMetadata> expectedRoutines = examSchemaService.extractRoutineMetadata(teacherSchemaName);
+        List<RoutineMetadata> actualRoutines = examSchemaService.extractRoutineMetadata(schemaName);
+
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        boolean hasTestCases = !testCaseRepository.findByQuestionId(question.getId()).isEmpty();
+
+        // If teacher schema has no routines (DDL-only), grade purely by test cases (100% weight)
+        if (expectedRoutines == null || expectedRoutines.isEmpty()) {
+            if (!hasTestCases) {
+                // Nothing to grade against
+                log.warn("No routine metadata and no test cases for Q{}", question.getId());
+                return false;
+            }
+            boolean passed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+            // gradeByTestCases already sets scoreEarned based on scoreWeight sum (0..1 range)
+            // Scale up to totalPoints
+            if (submission != null && submission.getScoreEarned() != null) {
+                BigDecimal scaled = totalPoints.multiply(submission.getScoreEarned());
+                if (scaled.compareTo(totalPoints) > 0) scaled = totalPoints;
+                submission.setScoreEarned(scaled);
+            }
+            return passed;
+        }
+
+        // Metadata check is worth 20% if there are test cases, otherwise 100%
+        BigDecimal metadataWeight = hasTestCases ? new BigDecimal("0.20") : BigDecimal.ONE;
+        BigDecimal testCaseWeight = hasTestCases ? new BigDecimal("0.80") : BigDecimal.ZERO;
+
+        BigDecimal maxMetadataScore = totalPoints.multiply(metadataWeight);
+        BigDecimal perRoutineMax = maxMetadataScore.divide(BigDecimal.valueOf(expectedRoutines.size()), 4, RoundingMode.HALF_UP);
+        BigDecimal earnedMetadataScore = BigDecimal.ZERO;
+        
+        StringBuilder errorBuilder = new StringBuilder();
+        boolean allPassedMetadata = true;
+
+        for (RoutineMetadata expected : expectedRoutines) {
+            RoutineMetadata actual = actualRoutines.stream()
+                .filter(r -> r.getRoutineName().equalsIgnoreCase(expected.getRoutineName()))
+                .findFirst().orElse(null);
+
+            if (actual == null) {
+                allPassedMetadata = false;
+                errorBuilder.append(String.format("Thiếu %s %s. ", expected.getRoutineType(), expected.getRoutineName()));
+                continue;
+            }
+            
+            double score = 0.5; // Found it
+
+            // Type check (Procedure vs Function)
+            if (expected.getRoutineType().equalsIgnoreCase(actual.getRoutineType())) {
+                score += 0.2;
+            } else {
+                errorBuilder.append(String.format("Sai loại Routine %s (Kỳ vọng: %s). ", expected.getRoutineName(), expected.getRoutineType()));
+                allPassedMetadata = false;
+            }
+
+            // Params check
+            if (expected.getParameters().size() == actual.getParameters().size()) {
+                score += 0.3;
+            } else {
+                errorBuilder.append(String.format("%s %s sai số lượng Parameters. ", expected.getRoutineType(), expected.getRoutineName()));
+                allPassedMetadata = false;
+            }
+            
+            earnedMetadataScore = earnedMetadataScore.add(perRoutineMax.multiply(BigDecimal.valueOf(score)));
+        }
+
+        if (allPassedMetadata) earnedMetadataScore = maxMetadataScore;
+
+        BigDecimal earnedTestCaseScore = BigDecimal.ZERO;
+        boolean testCasesPassed = true;
+
+        if (hasTestCases) {
+            testCasesPassed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+            // gradeByTestCases sets scoreEarned as sum of scoreWeights (0..1 ratio)
+            // Multiply by maxTestCaseScore (= totalPoints * testCaseWeight)
+            if (submission != null && submission.getScoreEarned() != null) {
+                BigDecimal maxTestCaseScore = totalPoints.multiply(testCaseWeight);
+                earnedTestCaseScore = maxTestCaseScore.multiply(submission.getScoreEarned());
+            }
+        }
+
+        BigDecimal finalScore = earnedMetadataScore.add(earnedTestCaseScore);
+        if (finalScore.compareTo(totalPoints) > 0) finalScore = totalPoints;
+
+        if (submission != null) {
+            submission.setScoreEarned(finalScore);
+            boolean totalPassed = allPassedMetadata && testCasesPassed;
+            if (!totalPassed) {
+                String tcError = submission.getErrorMessage() != null ? submission.getErrorMessage() : "";
+                submission.setErrorMessage((errorBuilder.toString().trim() + " " + tcError).trim());
+            }
+        }
+
+        return allPassedMetadata && testCasesPassed;
+    }
+
+    private boolean gradeTriggerAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+        java.util.List<TriggerMetadata> expectedTriggers = examSchemaService.extractTriggerMetadata(teacherSchemaName);
+        java.util.List<TriggerMetadata> actualTriggers = examSchemaService.extractTriggerMetadata(schemaName);
+
+        if (expectedTriggers == null || expectedTriggers.isEmpty()) {
+            return gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+        }
+
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        boolean hasTestCases = !testCaseRepository.findByQuestionId(question.getId()).isEmpty();
+
+        BigDecimal metadataWeight = hasTestCases ? new BigDecimal("0.20") : BigDecimal.ONE;
+        BigDecimal testCaseWeight = hasTestCases ? new BigDecimal("0.80") : BigDecimal.ZERO;
+
+        BigDecimal maxMetadataScore = totalPoints.multiply(metadataWeight);
+        BigDecimal perTriggerMax = maxMetadataScore.divide(BigDecimal.valueOf(expectedTriggers.size()), 4, RoundingMode.HALF_UP);
+        BigDecimal earnedMetadataScore = BigDecimal.ZERO;
+        
+        StringBuilder errorBuilder = new StringBuilder();
+        boolean allPassedMetadata = true;
+
+        for (TriggerMetadata expected : expectedTriggers) {
+            TriggerMetadata actual = actualTriggers.stream()
+                .filter(t -> t.getTriggerName().equalsIgnoreCase(expected.getTriggerName()))
+                .findFirst().orElse(null);
+
+            if (actual == null) {
+                allPassedMetadata = false;
+                errorBuilder.append(String.format("Thiếu Trigger %s trên bảng %s. ", expected.getTriggerName(), expected.getTableName()));
+                continue;
+            }
+
+            double score = 0.4;
+
+            if (actual.getTableName().equalsIgnoreCase(expected.getTableName())) score += 0.2;
+            else {
+                 allPassedMetadata = false;
+                 errorBuilder.append(String.format("Trigger %s gắn sai bảng. ", expected.getTriggerName()));
+            }
+
+            if (expected.isInsert() == actual.isInsert() && expected.isUpdate() == actual.isUpdate() && expected.isDelete() == actual.isDelete()) {
+                score += 0.2;
+            } else {
+                 allPassedMetadata = false;
+                 errorBuilder.append(String.format("Trigger %s bắt sai Event (INSERT/UPDATE/DELETE). ", expected.getTriggerName()));
+            }
+
+            if (expected.isAfter() == actual.isAfter()) {
+                score += 0.2;
+            } else {
+                 allPassedMetadata = false;
+                 errorBuilder.append(String.format("Trigger %s sai Timing (AFTER/INSTEAD OF). ", expected.getTriggerName()));
+            }
+
+            earnedMetadataScore = earnedMetadataScore.add(perTriggerMax.multiply(BigDecimal.valueOf(score)));
+        }
+
+        if (allPassedMetadata) earnedMetadataScore = maxMetadataScore;
+
+        BigDecimal earnedTestCaseScore = BigDecimal.ZERO;
+        boolean testCasesPassed = true;
+
+        if (hasTestCases) {
+            testCasesPassed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+            if (submission != null && submission.getScoreEarned() != null) {
+                earnedTestCaseScore = submission.getScoreEarned().multiply(testCaseWeight);
+            }
+        }
+
+        BigDecimal finalScore = earnedMetadataScore.add(earnedTestCaseScore);
+        if (finalScore.compareTo(totalPoints) > 0) finalScore = totalPoints;
+
+        if (submission != null) {
+            submission.setScoreEarned(finalScore);
+            boolean totalPassed = allPassedMetadata && testCasesPassed;
+            if (!totalPassed) {
+                String tcError = submission.getErrorMessage() != null ? submission.getErrorMessage() : "";
+                submission.setErrorMessage((errorBuilder.toString().trim() + " " + tcError).trim());
+            }
+        }
+
+        return allPassedMetadata && testCasesPassed;
     }
 }

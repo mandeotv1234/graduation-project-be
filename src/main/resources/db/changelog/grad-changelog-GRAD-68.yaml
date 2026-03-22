@@ -213,3 +213,121 @@ databaseChangeLog:
                   WHERE exam_id = v_exam_id AND order_index = 5;
                 END IF;
               END $$;
+
+  - changeSet:
+      id: 2203261704
+      author: manhuynh
+      comment: "GRAD-68: Cập nhật lại ddl_script của Đề 1010 để khớp với đáp án thực thực tế (FLOAT vs DECIMAL)"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE specifications
+              SET ddl_script = '-- 1. Tạo bảng CONGTY
+              CREATE TABLE CONGTY (
+                  MaCT VARCHAR(5) PRIMARY KEY,
+                  TenCT NVARCHAR(50),
+                  QuocGia NVARCHAR(50),
+                  TruSo NVARCHAR(50),
+                  CongTrinhTB VARCHAR(5)
+              );
+              
+              -- 2. Tạo bảng CONGTRINH
+              CREATE TABLE CONGTRINH (
+                  MaCongTrinh VARCHAR(5),
+                  MaCongTy VARCHAR(5),
+                  TenCongTrinh NVARCHAR(100),
+                  Nam INT DEFAULT YEAR(GETDATE()) CHECK (Nam <= YEAR(GETDATE())),
+                  DiaDiem NVARCHAR(100),
+                  PRIMARY KEY (MaCongTrinh, MaCongTy),
+                  FOREIGN KEY (MaCongTy) REFERENCES CONGTY(MaCT)
+              );
+              
+              -- 3. Thêm ràng buộc khóa ngoại cho bảng CONGTY
+              ALTER TABLE CONGTY
+              ADD CONSTRAINT FK_CONGTY_CONGTRINH 
+              FOREIGN KEY (CongTrinhTB, MaCT) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy);
+              
+              -- 4. Tạo bảng HANGMUC
+              CREATE TABLE HANGMUC (
+                  STT INT,
+                  MaCongTrinh VARCHAR(5),
+                  MaCongTy VARCHAR(5),
+                  TenHangMuc NVARCHAR(100),
+                  ChiPhi FLOAT,
+                  NhanCong INT,
+                  PRIMARY KEY (STT, MaCongTrinh, MaCongTy),
+                  FOREIGN KEY (MaCongTrinh, MaCongTy) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy)
+              );
+              ' || CHR(10) || (SELECT data_script FROM spec_datasets WHERE specification_id = specifications.id ORDER BY order_index LIMIT 1)
+              WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%';
+
+  - changeSet:
+      id: 2203261705
+      author: manhuynh
+      comment: "GRAD-68: Add 3 advanced format questions (TRIGGER, STORED_PROCEDURE, FUNCTION) to De 1010 to test algorithmic grading"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_exam_id BIGINT;
+                v_q6_id BIGINT;
+                v_q7_id BIGINT;
+                v_q8_id BIGINT;
+              BEGIN
+                SELECT id INTO v_exam_id FROM exams WHERE title = 'De 1010 - Mon Co so du lieu' LIMIT 1;
+                IF v_exam_id IS NOT NULL THEN
+                  -- Xoá test cũ nếu chạy lại
+                  DELETE FROM exam_questions WHERE exam_id = v_exam_id AND order_index IN (6,7,8);
+                  
+                  -- CÂU 6: TRIGGER
+                  INSERT INTO exam_questions (exam_id, content, question_type, correct_query, verify_script, points, order_index)
+                  VALUES (
+                    v_exam_id,
+                    'Câu 6 (1.00 điểm): Tạo TRIGGER tên trg_CheckNhanCong gắn vào bảng HANGMUC. Nếu người dùng INSERT hoặc UPDATE mà có số NhanCong < 0 thì tự động hủy giao dịch (ROLLBACK TRANSACTION).',
+                    'TRIGGER',
+                    'CREATE TRIGGER trg_CheckNhanCong ON HANGMUC FOR INSERT, UPDATE AS BEGIN IF EXISTS (SELECT * FROM inserted WHERE NhanCong < 0) BEGIN ROLLBACK TRANSACTION; END END',
+                    '', 1.00, 6
+                  ) RETURNING id INTO v_q6_id;
+
+                  -- CÂU 7: STORED_PROCEDURE
+                  INSERT INTO exam_questions (exam_id, content, question_type, correct_query, verify_script, points, order_index)
+                  VALUES (
+                    v_exam_id,
+                    'Câu 7 (1.00 điểm): Tạo STORED PROCEDURE tên sp_TangChiPhi nhận vào 3 tham số: @MaCT VARCHAR(5), @MaCongTrinh VARCHAR(5), @Tien FLOAT. Thủ tục cộng dồn @Tien vào cột ChiPhi của bảng HANGMUC.',
+                    'STORED_PROCEDURE',
+                    'CREATE PROCEDURE sp_TangChiPhi @MaCT VARCHAR(5), @MaCongTrinh VARCHAR(5), @Tien FLOAT AS BEGIN UPDATE HANGMUC SET ChiPhi = ChiPhi + @Tien WHERE MaCongTy = @MaCT AND MaCongTrinh = @MaCongTrinh; END',
+                    '', 1.00, 7
+                  ) RETURNING id INTO v_q7_id;
+
+                  -- CÂU 8: FUNCTION
+                  INSERT INTO exam_questions (exam_id, content, question_type, correct_query, verify_script, points, order_index)
+                  VALUES (
+                    v_exam_id,
+                    'Câu 8 (1.00 điểm): Tạo FUNCTION tên fn_TongNhanCong nhận vào tham số @MaCT VARCHAR(5), trả về tổng số công nhân (kiểu INT) làm việc cho công ty đó trong mọi hạng mục. Trả về 0 nếu không có hạng mục nào.',
+                    'FUNCTION',
+                    'CREATE FUNCTION fn_TongNhanCong (@MaCT VARCHAR(5)) RETURNS INT AS BEGIN DECLARE @Tong INT; SELECT @Tong = ISNULL(SUM(NhanCong), 0) FROM HANGMUC WHERE MaCongTy = @MaCT; RETURN @Tong; END',
+                    '', 1.00, 8
+                  ) RETURNING id INTO v_q8_id;
+
+                  -- INSERT Test Cases
+                  INSERT INTO test_cases (question_id, validation_query, expected_value, score_weight, order_index) VALUES
+                  -- Test TRIGGER
+                  (v_q6_id, 'BEGIN TRY INSERT INTO {SCHEMA}.HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES(99, ''001'', ''CTY01'', ''Test Ngang'', 10, -5); SELECT CAST(1 AS INT); END TRY BEGIN CATCH SELECT CAST(0 AS INT); END CATCH', '0', 0.50, 1),
+                  (v_q6_id, 'BEGIN TRY UPDATE {SCHEMA}.HANGMUC SET NhanCong = -1 WHERE STT=1; SELECT CAST(1 AS INT); END TRY BEGIN CATCH SELECT CAST(0 AS INT); END CATCH', '0', 0.50, 2),
+                  
+                  -- Test PROCEDURE: Tự kiểm tra logic đúng hay sai bằng cách so sánh trước và sau khi thực thi SP. Trả về 1 nếu đúng, 0 nếu sai.
+                  (v_q7_id, 'DECLARE @OldSum DECIMAL(12,2) = ISNULL((SELECT SUM(ChiPhi) FROM {SCHEMA}.HANGMUC WHERE MaCongTy=''CTY01'' AND MaCongTrinh=''001''), 0); DECLARE @RowCount INT = (SELECT COUNT(*) FROM {SCHEMA}.HANGMUC WHERE MaCongTy=''CTY01'' AND MaCongTrinh=''001''); EXEC {SCHEMA}.sp_TangChiPhi ''CTY01'', ''001'', 50; DECLARE @NewSum DECIMAL(12,2) = ISNULL((SELECT SUM(ChiPhi) FROM {SCHEMA}.HANGMUC WHERE MaCongTy=''CTY01'' AND MaCongTrinh=''001''), 0); SELECT CASE WHEN @NewSum = @OldSum + (@RowCount * 50.0) THEN CAST(1 AS INT) ELSE CAST(0 AS INT) END;', '1', 1.00, 1),
+
+                  -- Test FUNCTION
+                  (v_q8_id, 'SELECT {SCHEMA}.fn_TongNhanCong(''CTY01'')', 'SELECT ISNULL(SUM(NhanCong), 0) FROM {TEACHER_SCHEMA}.HANGMUC WHERE MaCongTy=''CTY01''', 0.50, 1),
+                  (v_q8_id, 'SELECT {SCHEMA}.fn_TongNhanCong(''CTY99'')', '0', 0.50, 2);
+                  
+                  -- Cập nhật data testcase
+                  UPDATE test_cases SET expected_value = '180' WHERE question_id = v_q8_id AND order_index = 1;
+                END IF;
+              END $$;

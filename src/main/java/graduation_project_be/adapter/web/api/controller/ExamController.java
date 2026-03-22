@@ -5,16 +5,21 @@ import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionRequ
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.GetTeacherExamDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SaveExamSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.StartExamSessionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SubmitExamRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.UpdateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
+import graduation_project_be.application.usecases.request.UpdateExamRequest;
 import graduation_project_be.application.usecases.response.*;
 import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
 import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
+import graduation_project_be.application.usecases.response.GetTeacherExamDetailResponse;
+import graduation_project_be.application.usecases.response.UpdateExamResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -47,6 +52,8 @@ public class ExamController {
         private final GetExamTimeUsecase getExamTimeUsecase;
         private final SaveExamSpecificationUsecase saveExamSpecificationUsecase;
         private final GetExamSpecificationUsecase getExamSpecificationUsecase;
+        private final UpdateExamUsecase updateExamUsecase;
+        private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -61,6 +68,34 @@ public class ExamController {
                                                 CreateExamResponseDto.fromResponse(response),
                                                 "CREATED",
                                                 "Exam created successfully"));
+        }
+
+        @PutMapping("/{examId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateExam(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid UpdateExamRequestDto requestDto) {
+                UpdateExamRequest request = requestDto.toRequest(examId);
+                UpdateExamResponse response = updateExamUsecase.execute(request);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                UpdateExamResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam updated successfully"));
+        }
+
+        @GetMapping("/{examId}/teacher-detail")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getTeacherExamDetail(
+                        @PathVariable("examId") @Positive Long examId) {
+                GetTeacherExamDetailRequestDto requestDto = new GetTeacherExamDetailRequestDto(examId);
+                GetTeacherExamDetailResponse response = getTeacherExamDetailUsecase
+                                .execute(requestDto.toRequest());
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                GetTeacherExamDetailResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam detail retrieved successfully"));
         }
 
         @PostMapping("/{examId}/questions")

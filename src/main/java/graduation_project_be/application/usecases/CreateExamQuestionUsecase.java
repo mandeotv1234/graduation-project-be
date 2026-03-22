@@ -4,14 +4,18 @@ import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.usecases.request.CreateExamQuestionRequest;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @RequiredArgsConstructor
 public class CreateExamQuestionUsecase {
 
@@ -19,6 +23,8 @@ public class CreateExamQuestionUsecase {
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSpecificationRepository examSpecificationRepository;
+    private final GeminiService geminiService;
 
     public ExamQuestionResponse execute(CreateExamQuestionRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -42,18 +48,80 @@ public class CreateExamQuestionUsecase {
                     "Invalid question type. Must be one of: CREATE_TABLE, INSERT_DATA, SELECT_QUERY, TRIGGER, FUNCTION, STORED_PROCEDURE");
         }
 
+        String correctQuery = request.correctQuery();
+        String verifyScript = request.verifyScript();
+
+        boolean needsAi = (correctQuery == null || correctQuery.isBlank()) ||
+                          (verifyScript == null || verifyScript.isBlank());
+
+        if (needsAi) {
+            String schemaContext = buildSchemaContext(request.examId());
+            log.info("Calling Gemini for question: {}", request.content());
+            GeminiService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+                    request.content(),
+                    questionType.name(),
+                    schemaContext);
+
+            if (correctQuery == null || correctQuery.isBlank()) {
+                correctQuery = generated.correctQuery();
+            }
+            if (verifyScript == null || verifyScript.isBlank()) {
+                verifyScript = generated.verifyScript();
+            }
+        }
+
         ExamQuestion question = ExamQuestion.builder()
                 .examId(request.examId())
                 .content(request.content())
-                .correctQuery(request.correctQuery())
+                .correctQuery(correctQuery)
                 .difficultyLevel(request.difficultyLevel() != null ? request.difficultyLevel() : 1)
                 .points(request.points())
                 .orderIndex(request.orderIndex())
                 .questionType(questionType)
-                .verifyScript(request.verifyScript())
+                .verifyScript(verifyScript)
                 .build();
 
         ExamQuestion saved = examQuestionRepository.save(question);
         return ExamQuestionResponse.fromModel(saved);
+    }
+
+    private String buildSchemaContext(Long examId) {
+        try {
+            return examRepository.findById(examId)
+                    .flatMap(exam -> examSpecificationRepository.findById(exam.getSpecificationId()))
+                    .map(spec -> {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("Database: ").append(spec.getName()).append("\n");
+                        if (spec.getDescription() != null) {
+                            sb.append(spec.getDescription()).append("\n\n");
+                        }
+                        if (spec.getEntities() != null) {
+                            spec.getEntities().forEach(entity -> {
+                                sb.append("Table ").append(entity.getEntityName())
+                                        .append(" (").append(entity.getDisplayName()).append("):\n");
+                                if (entity.getAttributes() != null) {
+                                    entity.getAttributes().forEach(attr ->
+                                            sb.append("  - ").append(attr.getAttributeName())
+                                                    .append(" [").append(attr.getDataType()).append("]")
+                                                    .append(attr.isPrimaryKey() ? " PRIMARY KEY" : "")
+                                                    .append(!attr.isNullable() ? " NOT NULL" : "")
+                                                    .append(attr.getDescription() != null
+                                                            ? " -- " + attr.getDescription() : "")
+                                                    .append("\n")
+                                    );
+                                }
+                                if (entity.getDescription() != null) {
+                                    sb.append("  Note: ").append(entity.getDescription()).append("\n");
+                                }
+                                sb.append("\n");
+                            });
+                        }
+                        return sb.toString();
+                    })
+                    .orElse("No schema specification available");
+        } catch (Exception e) {
+            log.warn("Could not load schema context for exam {}: {}", examId, e.getMessage());
+            return "No schema specification available";
+        }
     }
 }

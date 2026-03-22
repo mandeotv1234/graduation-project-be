@@ -7,6 +7,7 @@ import graduation_project_be.infrastructure.persistence.repositories.jpa.ExamRes
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -29,7 +30,20 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
     }
 
     @Override
+    public Optional<ExamResult> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber) {
+        return jpaRepository.findByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber)
+                .map(ExamResultEntity::toModel);
+    }
+
+    @Override
     public long countByExamIdAndStudentId(Long examId, Long studentId) {
         return jpaRepository.countByExamIdAndStudentId(examId, studentId);
+    }
+
+    @Override
+    public List<ExamResult> findByExamId(Long examId) {
+        return jpaRepository.findByExamId(examId).stream()
+                .map(ExamResultEntity::toModel)
+                .toList();
     }
 }

@@ -206,7 +206,9 @@ public class ExamViolation {
 ```
 
 #### Enums (`domain.models.enums`)
-- Chứa các enum dùng chung: `SortField`, `SortDirection`
+- Mọi trường dữ liệu có tập giá trị cố định (ví dụ: trạng thái, phân loại, type) **phải được định nghĩa bằng Java Enum**, tuyệt đối không dùng kiểu `String` thuần để tránh lỗi typo và dễ maintain.
+- Các enum nên đặt ở thư mục `domain.models.enums`.
+- Ví dụ: `GradingStatus` (PENDING, GRADING, COMPLETED, FAILED), `Role` (ADMIN, TEACHER, STUDENT), v.v.
 
 ### 2.4 Infrastructure Layer (`infrastructure`)
 
@@ -355,7 +357,73 @@ graduation_project_be/
 - Serialize/deserialize thủ công (String-based)
 - Set TTL phù hợp cho mỗi loại data
 
-## 7. Database Migration
+## 7. Database Migration — Liquibase Changelog Convention
 
 - Sử dụng Liquibase với YAML changelog
 - File nằm trong `src/main/resources/db/changelog/`
+- **Các changeSet PHẢI tuân thủ quy tắc ID và Author sau:**
+
+### 7.1 ChangeSet ID Format
+
+**ID format: `DDMMYYhhmm`** (Date + Time)
+
+```
+DD = Ngày (01-31)
+MM = Tháng (01-12)
+YY = Năm (25, 26, ...)
+hh = Giờ (00-23)
+mm = Phút (00-59)
+```
+
+**Ví dụ:**
+- `2212251601` = 22/12/25 16:01 (lúc 16 giờ 01 phút)
+- `1803260002` = 18/03/26 00:02 (lúc 00 giờ 02 phút)
+- `2103260003` = 21/03/26 00:03 (lúc 00 giờ 03 phút)
+
+**❌ SAI**: `GRAD-68-add-status`, `GRAD-63-update-default`, ...  
+**✅ ĐÚNG**: `2212251601`, `1803260002`, `2103260003`, ...
+
+### 7.2 Author Convention
+
+**Author PHẢI là tên thực của người tạo changelog**, không phải "graduation-project" hay "system".
+
+**Ví dụ tên hợp lệ:**
+- `manhuynh` (Mạn Huy Ân)
+- `phucpha` (Phúc Phạm)
+- `tdhoang` (Trần Duy Hoàng)
+
+**❌ SAI**: `graduation-project`, `system`, `Graduation Project`, ...  
+**✅ ĐÚNG**: `manhuynh`, `phucpha`, `tdhoang`, ...
+
+### 7.3 Changelog File Naming
+
+File changelog nên đặt tên theo JIRA ticket hoặc feature:
+- `grad-changelog-GRAD-25.yaml` (cho ticket GRAD-25)
+- `grad-changelog-GRAD-68.yaml` (cho ticket GRAD-68)
+
+### 7.4 Example ChangeSet
+
+```yaml
+databaseChangeLog:
+  - changeSet:
+      id: 2212251601
+      author: manhuynh
+      comment: "GRAD-25: Add user roles and created_at timestamp"
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: role
+                  type: VARCHAR(20)
+                  defaultValue: "STUDENT"
+```
+
+**Giải thích:**
+- ID `2212251601` = Được tạo lúc 22/12/25 16:01 (4:01 PM)
+- Author `manhuynh` = Tên thực của developer ([không dùng "graduation-project" hay "system")
+- Comment ghi rõ JIRA ticket ID (GRAD-25) và mô tả ngắn gọn
+
+## 8. General Coding Standards
+
+- **Tránh dùng Fully Qualified Class Names (FQCN) trực tiếp trong code**: Các package chuẩn của Java/Spring (`java.util.List`, `java.time.LocalDateTime`, v.v.) BẮT BUỘC phải được đưa lên phần `import` ở đầu file, nghiêm cấm viết thẳng package (`java.util.List<T>`) vào khai báo thuộc tính, tham số hoặc kiểu trả về của method.

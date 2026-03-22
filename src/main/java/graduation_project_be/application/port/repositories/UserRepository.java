@@ -13,4 +13,5 @@ public interface UserRepository {
     List<User> saveAll(List<User> users);
     Optional<User> findById(Long id);
     List<User> findByIdIn(List<Long> ids, int limit, int offset);
+    List<User> findAllById(List<Long> ids);
 }

@@ -12,6 +12,8 @@ import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -24,6 +26,7 @@ public class CreateExamUsecase {
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final ExamSchemaService examSchemaService;
 
+    @Transactional
     public CreateExamResponse execute(CreateExamRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
 

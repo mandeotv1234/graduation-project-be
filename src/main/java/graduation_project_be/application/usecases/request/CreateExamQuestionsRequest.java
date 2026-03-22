@@ -9,6 +9,8 @@ public record CreateExamQuestionsRequest(
 
     public record QuestionItem(
             String content,
+            String correctQuery,
+            String verifyScript,
             Integer difficultyLevel,
             BigDecimal points,
             Integer orderIndex,

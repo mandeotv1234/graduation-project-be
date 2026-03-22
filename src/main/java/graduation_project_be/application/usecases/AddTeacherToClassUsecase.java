@@ -14,11 +14,9 @@ import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
-@Service
 @RequiredArgsConstructor
 public class AddTeacherToClassUsecase {
 

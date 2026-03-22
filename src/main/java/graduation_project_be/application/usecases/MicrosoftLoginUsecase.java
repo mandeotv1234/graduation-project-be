@@ -8,12 +8,10 @@ import graduation_project_be.application.usecases.response.LoginResponse;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
-@Service
 @RequiredArgsConstructor
 public class MicrosoftLoginUsecase {
 
@@ -25,6 +23,10 @@ public class MicrosoftLoginUsecase {
         try {
             MicrosoftAuthService.MicrosoftUserInfo microsoftUserInfo = microsoftAuthService.verifyMicrosoftToken(
                     request.idToken());
+
+            if (!microsoftUserInfo.email().endsWith("@student.hcmus.edu.vn")) {
+                throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc @student.hcmus.edu.vn để đăng nhập");
+            }
 
             Optional<User> userOptional = userRepository.findByEmail(microsoftUserInfo.email());
 

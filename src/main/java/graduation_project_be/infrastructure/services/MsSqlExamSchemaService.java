@@ -451,4 +451,52 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             }
         }
     }
+
+    @Override
+    public List<Map<String, Object>> executeAdminSql(String sql) {
+        log.debug("Executing admin SQL: {}", sql);
+
+        try {
+            return jdbcTemplate.execute((Connection conn) -> {
+                List<Map<String, Object>> results = new ArrayList<>();
+
+                try (Statement stmt = conn.createStatement()) {
+                    boolean isResultSet = stmt.execute(sql);
+
+                    while (true) {
+                        if (isResultSet) {
+                            try (ResultSet rs = stmt.getResultSet()) {
+                                if (rs != null) {
+                                    ResultSetMetaData meta = rs.getMetaData();
+                                    int colCount = meta.getColumnCount();
+                                    while (rs.next()) {
+                                        Map<String, Object> row = new LinkedHashMap<>();
+                                        for (int i = 1; i <= colCount; i++) {
+                                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                                        }
+                                        results.add(row);
+                                    }
+                                }
+                            }
+                        } else {
+                            int updateCount = stmt.getUpdateCount();
+                            if (updateCount == -1) {
+                                break;
+                            }
+                        }
+                        isResultSet = stmt.getMoreResults();
+                    }
+
+                    if (results.isEmpty()) {
+                        results.add(Map.of("result", "Admin statement executed successfully"));
+                    }
+                }
+
+                return results;
+            });
+        } catch (Exception e) {
+            log.error("Admin SQL execution error: {}", e.getMessage());
+            throw new RuntimeException("Admin SQL execution error: " + e.getMessage(), e);
+        }
+    }
 }

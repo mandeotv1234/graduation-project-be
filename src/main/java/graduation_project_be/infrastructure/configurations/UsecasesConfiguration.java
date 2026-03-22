@@ -34,6 +34,37 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    TokenIssuer tokenIssuer(
+            JwtService jwtService,
+            RefreshTokenRepository refreshTokenRepository,
+            RefreshTokenHasher refreshTokenHasher) {
+        return new TokenIssuer(jwtService, refreshTokenRepository, refreshTokenHasher);
+    }
+
+    @Bean
+    GoogleLoginUsecase googleLoginUsecase(
+            UserRepository userRepository,
+            GoogleAuthService googleAuthService,
+            TokenIssuer tokenIssuer) {
+        return new GoogleLoginUsecase(userRepository, googleAuthService, tokenIssuer);
+    }
+
+    @Bean
+    MicrosoftLoginUsecase microsoftLoginUsecase(
+            UserRepository userRepository,
+            MicrosoftAuthService microsoftAuthService,
+            TokenIssuer tokenIssuer) {
+        return new MicrosoftLoginUsecase(userRepository, microsoftAuthService, tokenIssuer);
+    }
+
+    @Bean
+    GetCurrentUserUsecase getCurrentUserUsecase(
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetCurrentUserUsecase(userRepository, currentUserService);
+    }
+
+    @Bean
     RefreshUsecase refreshUsecase(
             RefreshTokenRepository refreshTokenRepository,
             JwtService jwtService,
@@ -124,9 +155,11 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            ExamSpecificationRepository examSpecificationRepository,
+            GeminiService geminiService) {
         return new CreateExamQuestionUsecase(classRepository, examQuestionRepository, examRepository,
-                currentUserService);
+                currentUserService, examSpecificationRepository, geminiService);
     }
 
     @Bean
@@ -164,15 +197,40 @@ public class UsecasesConfiguration {
             ExamQuestionRepository examQuestionRepository,
             ExamSubmissionRepository examSubmissionRepository,
             ExamResultRepository examResultRepository,
-            ExamSpecificationRepository examSpecificationRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSchemaService examSchemaService,
-            ExamSessionService examSessionService) {
+            ExamSessionService examSessionService,
+            GradingQueueService gradingQueueService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, examSpecificationRepository, classEnrollmentRepository, currentUserService,
-                examSchemaService, examSessionService);
+                examResultRepository, classEnrollmentRepository, currentUserService,
+                examSessionService, gradingQueueService);
+    }
+
+    @Bean
+    GradeExamUsecase gradeExamUsecase(
+            ExamRepository examRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamResultRepository examResultRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamSchemaService examSchemaService,
+            ExamSessionService examSessionService,
+            GradingNotificationService gradingNotificationService,
+            UserRepository userRepository,
+            TestCaseRepository testCaseRepository) {
+        return new GradeExamUsecase(
+                examRepository, examQuestionRepository, examSubmissionRepository,
+                examResultRepository, examSpecificationRepository,
+                examSchemaService, examSessionService, gradingNotificationService, userRepository, testCaseRepository);
+    }
+
+    @Bean
+    GetExamResultsUsecase getExamResultsUsecase(
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            UserRepository userRepository) {
+        return new GetExamResultsUsecase(examRepository, examResultRepository, userRepository);
     }
 
     @Bean

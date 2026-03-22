@@ -16,4 +16,6 @@ public interface ExamSchemaService {
     List<TableMetadata> extractMetadata(String schemaName);
 
     List<Map<String, Object>> executeSql(String schemaName, String sql);
+
+    List<Map<String, Object>> executeAdminSql(String sql);
 }

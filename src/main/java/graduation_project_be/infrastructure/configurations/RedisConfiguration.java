@@ -16,9 +16,11 @@ import graduation_project_be.application.port.repositories.RefreshTokenRepositor
 import graduation_project_be.application.port.repositories.TeacherNotificationRepository;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.NotificationBufferService;
+import graduation_project_be.application.port.services.GradingQueueService;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.infrastructure.persistence.repositories.redis.RedisRefreshTokenRepository;
 import graduation_project_be.infrastructure.services.RedisExamSessionService;
+import graduation_project_be.infrastructure.services.RedisGradingQueueService;
 import graduation_project_be.infrastructure.services.RedisNotificationBufferService;
 import graduation_project_be.infrastructure.services.Sha256RefreshTokenHasher;
 
@@ -108,5 +110,11 @@ public class RedisConfiguration {
             TeacherNotificationRepository teacherNotificationRepository) {
         return new RedisNotificationBufferService(redisTemplate, teacherNotificationRepository,
                 notificationFlushThreshold);
+    }
+
+    @Bean
+    public GradingQueueService gradingQueueService(
+            @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
+        return new RedisGradingQueueService(redisTemplate);
     }
 }

@@ -1,5 +1,6 @@
 package graduation_project_be.domain.models;
 
+import graduation_project_be.domain.models.enums.SubmissionStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,6 +25,6 @@ public class ExamSubmission {
     private BigDecimal scoreEarned;
     private String errorMessage;
     private Integer executionTimeMs;
-    private String status;
+    private SubmissionStatus status;
     private LocalDateTime submittedAt;
 }

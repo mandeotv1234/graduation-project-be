@@ -44,7 +44,7 @@ databaseChangeLog:
             where: "settings IS NULL"
 
   - changeSet:
-      id: GRAD-49-add-attempt-number
+      id: 1803260003
       author: manhuynh
       comment: "GRAD-49: Add attempt_number and late_duration_seconds columns, update unique constraints for multi-attempt support"
       changes:

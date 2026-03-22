@@ -17,6 +17,8 @@ public record CreateExamQuestionsRequestDto(
 
     public record QuestionItemDto(
             @NotBlank(message = "Content is required") String content,
+            String correctQuery,
+            String verifyScript,
             Integer difficultyLevel,
             @NotNull(message = "Points are required") @Positive BigDecimal points,
             Integer orderIndex,
@@ -26,7 +28,8 @@ public record CreateExamQuestionsRequestDto(
     public CreateExamQuestionsRequest toRequest(Long examId) {
         List<CreateExamQuestionsRequest.QuestionItem> items = questions.stream()
                 .map(q -> new CreateExamQuestionsRequest.QuestionItem(
-                        q.content(), q.difficultyLevel(), q.points(),
+                        q.content(), q.correctQuery(), q.verifyScript(),
+                        q.difficultyLevel(), q.points(),
                         q.orderIndex(), q.questionType()))
                 .toList();
         return new CreateExamQuestionsRequest(examId, items);

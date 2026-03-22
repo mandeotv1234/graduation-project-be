@@ -11,11 +11,9 @@ import graduation_project_be.domain.models.Class;
 import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Service
 @RequiredArgsConstructor
 public class GetClassTeachersUsecase {
 

@@ -7,6 +7,7 @@ import graduation_project_be.infrastructure.persistence.repositories.jpa.ExamSub
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -26,5 +27,13 @@ public class ExamSubmissionRepositoryImpl implements ExamSubmissionRepository {
             Long studentId) {
         return jpaRepository.findByExamIdAndQuestionIdAndStudentId(examId, questionId, studentId)
                 .map(ExamSubmissionEntity::toModel);
+    }
+
+    @Override
+    public List<ExamSubmission> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber) {
+        return jpaRepository.findByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber)
+                .stream()
+                .map(ExamSubmissionEntity::toModel)
+                .toList();
     }
 }

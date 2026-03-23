@@ -192,6 +192,13 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    UpdateSpecificationUsecase updateSpecificationUsecase(
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamSchemaService examSchemaService) {
+        return new UpdateSpecificationUsecase(examSpecificationRepository, examSchemaService);
+    }
+
+    @Bean
     GetSpecificationsUsecase getSpecificationsUsecase(
             ExamSpecificationRepository examSpecificationRepository) {
         return new GetSpecificationsUsecase(examSpecificationRepository);

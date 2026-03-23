@@ -2,12 +2,14 @@ package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationV2RequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.UpdateSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.ExamSpecificationResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SpecificationResponseDto;
 import graduation_project_be.application.usecases.CreateSpecificationUsecase;
 import graduation_project_be.application.usecases.GetSpecificationByIdUsecase;
 import graduation_project_be.application.usecases.GetSpecificationsUsecase;
+import graduation_project_be.application.usecases.UpdateSpecificationUsecase;
 import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
 import graduation_project_be.application.usecases.response.SpecificationResponse;
 import jakarta.validation.Valid;
@@ -28,6 +30,7 @@ import java.util.List;
 public class SpecificationController {
 
     private final CreateSpecificationUsecase createSpecificationUsecase;
+    private final UpdateSpecificationUsecase updateSpecificationUsecase;
     private final GetSpecificationsUsecase getSpecificationsUsecase;
     private final GetSpecificationByIdUsecase getSpecificationByIdUsecase;
 
@@ -53,6 +56,19 @@ public class SpecificationController {
                         SpecificationResponseDto.fromResponse(response),
                         "CREATED",
                         "Specification created successfully (v2)"));
+    }
+
+    @PutMapping("/{specificationId}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> updateSpecification(
+            @PathVariable("specificationId") @Positive Long specificationId,
+            @RequestBody @Valid UpdateSpecificationRequestDto requestDto) {
+        ExamSpecificationResponse response = updateSpecificationUsecase.execute(specificationId, requestDto.toRequest());
+        return ResponseEntity.ok(
+                ResponseDto.of(
+                        ExamSpecificationResponseDto.fromResponse(response),
+                        "SUCCESS",
+                        "Specification updated successfully"));
     }
 
     @GetMapping

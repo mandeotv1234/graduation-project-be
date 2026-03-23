@@ -25,9 +25,9 @@ public class GoogleLoginUsecase {
                     request.code(),
                     request.redirectUri());
 
-            // if (!googleUserInfo.email().endsWith("@fit.hcmus.edu.vn")) {
-            //     throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc @fit.hcmus.edu.vn để đăng nhập");
-            // }
+             if (!googleUserInfo.email().endsWith("@fit.hcmus.edu.vn")) {
+                 throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc @fit.hcmus.edu.vn để đăng nhập");
+             }
 
             Optional<User> userOptional = userRepository.findByEmail(googleUserInfo.email());
 

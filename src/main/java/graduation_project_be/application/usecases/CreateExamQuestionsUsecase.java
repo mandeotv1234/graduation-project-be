@@ -60,22 +60,37 @@ public class CreateExamQuestionsUsecase {
                         + ". Must be one of: CREATE_TABLE, INSERT_DATA, SELECT_QUERY, TRIGGER, FUNCTION, STORED_PROCEDURE");
             }
 
-            // Call Gemini to generate correctQuery + verifyScript
-            log.info("Calling Gemini for question: {}", item.content());
-            GeminiService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
-                    item.content(),
-                    questionType.name(),
-                    schemaContext);
+            String correctQuery = item.correctQuery();
+            String verifyScript = item.verifyScript();
+
+            boolean needsAi = (correctQuery == null || correctQuery.isBlank()) ||
+                              (verifyScript == null || verifyScript.isBlank());
+
+            if (needsAi) {
+                // Call Gemini to generate correctQuery + verifyScript
+                log.info("Calling Gemini for question: {}", item.content());
+                GeminiService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+                        item.content(),
+                        questionType.name(),
+                        schemaContext);
+
+                if (correctQuery == null || correctQuery.isBlank()) {
+                    correctQuery = generated.correctQuery();
+                }
+                if (verifyScript == null || verifyScript.isBlank()) {
+                    verifyScript = generated.verifyScript();
+                }
+            }
 
             ExamQuestion question = ExamQuestion.builder()
                     .examId(request.examId())
                     .content(item.content())
-                    .correctQuery(generated.correctQuery())
+                    .correctQuery(correctQuery)
                     .difficultyLevel(item.difficultyLevel() != null ? item.difficultyLevel() : 1)
                     .points(item.points())
                     .orderIndex(item.orderIndex())
                     .questionType(questionType)
-                    .verifyScript(generated.verifyScript())
+                    .verifyScript(verifyScript)
                     .build();
 
             questionsToSave.add(question);

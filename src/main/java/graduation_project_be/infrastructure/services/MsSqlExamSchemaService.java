@@ -9,6 +9,10 @@ import org.springframework.stereotype.Service;
 import java.sql.*;
 import java.util.*;
 
+import graduation_project_be.domain.models.TableMetadata;
+import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.TriggerMetadata;
+
 @Slf4j
 @Service
 public class MsSqlExamSchemaService implements ExamSchemaService {
@@ -261,7 +265,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
                 "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
                 "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME " +
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION " +
                 "    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' " +
                 ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME " +
                 "WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE' " +
@@ -451,4 +455,130 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             }
         }
     }
+
+    @Override
+    public List<Map<String, Object>> executeAdminSql(String sql) {
+        log.debug("Executing admin SQL: {}", sql);
+
+        try {
+            return jdbcTemplate.execute((Connection conn) -> {
+                List<Map<String, Object>> results = new ArrayList<>();
+
+                try (Statement stmt = conn.createStatement()) {
+                    boolean isResultSet = stmt.execute(sql);
+
+                    while (true) {
+                        if (isResultSet) {
+                            try (ResultSet rs = stmt.getResultSet()) {
+                                if (rs != null) {
+                                    ResultSetMetaData meta = rs.getMetaData();
+                                    int colCount = meta.getColumnCount();
+                                    while (rs.next()) {
+                                        Map<String, Object> row = new LinkedHashMap<>();
+                                        for (int i = 1; i <= colCount; i++) {
+                                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                                        }
+                                        results.add(row);
+                                    }
+                                }
+                            }
+                        } else {
+                            int updateCount = stmt.getUpdateCount();
+                            if (updateCount == -1) {
+                                break;
+                            }
+                        }
+                        isResultSet = stmt.getMoreResults();
+                    }
+
+                    if (results.isEmpty()) {
+                        results.add(Map.of("result", "Admin statement executed successfully"));
+                    }
+                }
+
+                return results;
+            });
+        } catch (Exception e) {
+            log.error("Admin SQL execution error: {}", e.getMessage());
+            throw new RuntimeException("Admin SQL execution error: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public java.util.List<RoutineMetadata> extractRoutineMetadata(String schemaName) {
+        String sql = "SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE AS RET_TYPE, " +
+                "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE " +
+                "FROM INFORMATION_SCHEMA.ROUTINES r " +
+                "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p ON r.ROUTINE_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA " +
+                "WHERE r.ROUTINE_SCHEMA = ? " +
+                "ORDER BY r.ROUTINE_NAME, p.ORDINAL_POSITION";
+        
+        return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
+            Map<String, RoutineMetadata> routines = new LinkedHashMap<>();
+            while (rs.next()) {
+                String routineName = rs.getString("ROUTINE_NAME");
+                String routineType = rs.getString("ROUTINE_TYPE");
+                String retType = rs.getString("RET_TYPE");
+                
+                RoutineMetadata routine = routines.computeIfAbsent(routineName,
+                        k -> RoutineMetadata.builder()
+                                .routineName(routineName)
+                                .routineType(routineType)
+                                .dataType(retType)
+                                .parameters(new ArrayList<>())
+                                .build());
+                
+                String paramName = rs.getString("PARAMETER_NAME");
+                if (paramName != null) {
+                    RoutineMetadata.ParameterMetadata param = RoutineMetadata.ParameterMetadata.builder()
+                            .parameterMode(rs.getString("PARAMETER_MODE"))
+                            .parameterName(paramName)
+                            .dataType(rs.getString("PARAM_TYPE"))
+                            .build();
+                    routine.getParameters().add(param);
+                }
+            }
+            return new ArrayList<>(routines.values());
+        });
+    }
+
+    @Override
+    public java.util.List<TriggerMetadata> extractTriggerMetadata(String schemaName) {
+        String sql = "SELECT t.name AS triggerName, tbl.name AS tableName, " +
+                "te.type_desc, t.is_disabled, t.is_instead_of_trigger " +
+                "FROM sys.triggers t " +
+                "JOIN sys.tables tbl ON t.parent_id = tbl.object_id " +
+                "JOIN sys.schemas s ON tbl.schema_id = s.schema_id " +
+                "JOIN sys.trigger_events te ON t.object_id = te.object_id " +
+                "WHERE s.name = ?";
+                
+        return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
+            Map<String, TriggerMetadata> triggers = new LinkedHashMap<>();
+            while (rs.next()) {
+                String name = rs.getString("triggerName");
+                String typeDesc = rs.getString("type_desc"); // INSERT, UPDATE, DELETE
+                
+                TriggerMetadata tm = triggers.computeIfAbsent(name, 
+                    k -> { 
+                        try {
+                           return TriggerMetadata.builder()
+                                .triggerName(name)
+                                .tableName(rs.getString("tableName"))
+                                .isDisabled(rs.getBoolean("is_disabled"))
+                                .isInsteadOf(rs.getBoolean("is_instead_of_trigger"))
+                                .isAfter(!rs.getBoolean("is_instead_of_trigger"))
+                                .build();
+                        } catch(Exception e) { return null; }
+                    });
+                
+                if (tm != null && typeDesc != null) {
+                    if (typeDesc.equalsIgnoreCase("INSERT")) tm.setInsert(true);
+                    if (typeDesc.equalsIgnoreCase("UPDATE")) tm.setUpdate(true);
+                    if (typeDesc.equalsIgnoreCase("DELETE")) tm.setDelete(true);
+                }
+            }
+            return new ArrayList<>(triggers.values());
+        });
+    }
 }
+

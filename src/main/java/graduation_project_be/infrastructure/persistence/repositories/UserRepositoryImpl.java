@@ -48,8 +48,15 @@ public class UserRepositoryImpl implements UserRepository {
     @Override
     public List<User> findByIdIn(List<Long> ids, int limit, int offset) {
         int page = offset / limit;
-        return userJpaRepository.findByIdIn(ids, PageRequest.of(page,limit))
+        return userJpaRepository.findByIdIn(ids, PageRequest.of(page, limit))
                 .stream()
+                .map(UserEntity::toModel)
+                .toList();
+    }
+
+    @Override
+    public List<User> findAllById(List<Long> ids) {
+        return userJpaRepository.findAllById(ids).stream()
                 .map(UserEntity::toModel)
                 .toList();
     }

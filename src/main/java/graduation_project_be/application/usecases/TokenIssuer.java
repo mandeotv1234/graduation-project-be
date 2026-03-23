@@ -7,11 +7,9 @@ import graduation_project_be.application.usecases.response.LoginResponse;
 import graduation_project_be.domain.models.Token;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
-@Service
 @RequiredArgsConstructor
 public class TokenIssuer {
 

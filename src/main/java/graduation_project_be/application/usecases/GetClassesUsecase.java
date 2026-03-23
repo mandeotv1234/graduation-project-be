@@ -9,11 +9,9 @@ import graduation_project_be.domain.models.PaginatedResult;
 import graduation_project_be.domain.models.PaginationParams;
 import graduation_project_be.domain.models.Class;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-@Service
 @RequiredArgsConstructor
 public class GetClassesUsecase {
 

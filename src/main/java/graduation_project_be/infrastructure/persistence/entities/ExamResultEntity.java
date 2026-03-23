@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.ExamResult;
+import graduation_project_be.domain.models.enums.GradingStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -47,6 +48,10 @@ public class ExamResultEntity {
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 20)
+    private GradingStatus status;
+
     public ExamResult toModel() {
         return ExamResult.builder()
                 .id(id)
@@ -59,6 +64,7 @@ public class ExamResultEntity {
                 .correctCount(correctCount)
                 .lateDurationSeconds(lateDurationSeconds)
                 .submittedAt(submittedAt)
+                .status(status)
                 .build();
     }
 
@@ -74,6 +80,7 @@ public class ExamResultEntity {
                 .correctCount(domain.getCorrectCount())
                 .lateDurationSeconds(domain.getLateDurationSeconds())
                 .submittedAt(domain.getSubmittedAt())
+                .status(domain.getStatus())
                 .build();
     }
 }

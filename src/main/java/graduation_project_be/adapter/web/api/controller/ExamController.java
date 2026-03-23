@@ -54,6 +54,7 @@ public class ExamController {
         private final GetExamSpecificationUsecase getExamSpecificationUsecase;
         private final UpdateExamUsecase updateExamUsecase;
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
+        private final GetExamResultsUsecase getExamResultsUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -165,6 +166,18 @@ public class ExamController {
                 }
         }
 
+        @GetMapping("/{examId}/results")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamResults(
+                        @PathVariable("examId") @Positive Long examId) {
+                List<GetExamResultsResponse> responses = getExamResultsUsecase.execute(examId);
+                List<GetExamResultsResponseDto> dtos = responses.stream()
+                        .map(GetExamResultsResponseDto::fromResponse)
+                        .toList();
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
+        }
+
         // ===== STUDENT ENDPOINTS =====
 
         @GetMapping("/{examId}")
@@ -212,11 +225,11 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid SubmitExamRequestDto requestDto) {
                 SubmitExamResponse response = submitExamUsecase.execute(requestDto.toRequest(examId));
-                return ResponseEntity.status(HttpStatus.CREATED)
+                return ResponseEntity.status(HttpStatus.ACCEPTED)
                                 .body(ResponseDto.of(
                                                 SubmitExamResponseDto.fromResponse(response),
-                                                "CREATED",
-                                                "Exam submitted and graded successfully"));
+                                                "ACCEPTED",
+                                                "Exam submitted successfully. Grading in progress."));
         }
 
         // ===== ANTI-CHEATING ENDPOINTS =====

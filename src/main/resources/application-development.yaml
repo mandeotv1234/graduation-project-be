@@ -40,3 +40,11 @@ spring:
         pepper: ${SECURITY_REFRESH_TOKEN_PEPPER}
         expiration: ${SPRING_APPLICATION_SECURITY_JWT_REFRESH_EXPIRATION}
     url: ${SPRING_APPLICATION_URL}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}

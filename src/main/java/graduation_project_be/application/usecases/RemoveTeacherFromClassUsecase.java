@@ -8,10 +8,8 @@ import graduation_project_be.application.port.repositories.TeacherClassRepositor
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.domain.models.Class;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Service
 @RequiredArgsConstructor
 public class RemoveTeacherFromClassUsecase {
 

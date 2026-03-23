@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.ExamSubmission;
+import graduation_project_be.domain.models.enums.SubmissionStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -52,8 +53,9 @@ public class ExamSubmissionEntity {
     @Column(name = "execution_time_ms")
     private Integer executionTimeMs;
 
-    @Column(name = "status")
-    private String status;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", length = 20)
+    private SubmissionStatus status;
 
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;

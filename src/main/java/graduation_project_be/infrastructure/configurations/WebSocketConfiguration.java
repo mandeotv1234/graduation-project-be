@@ -1,7 +1,9 @@
 package graduation_project_be.infrastructure.configurations;
 
+import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
+import graduation_project_be.infrastructure.services.WebSocketGradingNotificationService;
 import graduation_project_be.infrastructure.services.WebSocketViolationNotificationService;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -44,5 +46,11 @@ public class WebSocketConfiguration implements WebSocketMessageBrokerConfigurer 
             SimpMessagingTemplate messagingTemplate,
             NotificationBufferService notificationBufferService) {
         return new WebSocketViolationNotificationService(messagingTemplate, notificationBufferService);
+    }
+
+    @Bean
+    public GradingNotificationService gradingNotificationService(
+            SimpMessagingTemplate messagingTemplate) {
+        return new WebSocketGradingNotificationService(messagingTemplate);
     }
 }

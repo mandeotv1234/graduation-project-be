@@ -8,12 +8,10 @@ import graduation_project_be.application.usecases.response.LoginResponse;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
-@Service
 @RequiredArgsConstructor
 public class GoogleLoginUsecase {
 
@@ -27,9 +25,9 @@ public class GoogleLoginUsecase {
                     request.code(),
                     request.redirectUri());
 
-            if (!googleUserInfo.email().endsWith("@hcmus.edu.vn") && !googleUserInfo.email().endsWith(".hcmus.edu.vn")) {
-                throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc hệ thống hcmus.edu.vn để đăng nhập Google");
-            }
+             if (!googleUserInfo.email().endsWith("@fit.hcmus.edu.vn")) {
+                 throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc @fit.hcmus.edu.vn để đăng nhập");
+             }
 
             Optional<User> userOptional = userRepository.findByEmail(googleUserInfo.email());
 
@@ -39,7 +37,7 @@ public class GoogleLoginUsecase {
                         .email(googleUserInfo.email())
                         .fullName(googleUserInfo.name())
                         .googleSubject(googleUserInfo.subject())
-                        .role(Role.STUDENT)
+                        .role(Role.TEACHER)
                         .isActive(true)
                         .createdAt(LocalDateTime.now())
                         .build();

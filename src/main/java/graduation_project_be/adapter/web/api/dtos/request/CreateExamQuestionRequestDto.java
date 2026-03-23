@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 public record CreateExamQuestionRequestDto(
         @NotBlank(message = "Content is required") String content,
-        @NotBlank(message = "Correct query is required") String correctQuery,
+        String correctQuery,
         Integer difficultyLevel,
         @NotNull(message = "Points are required") @Positive BigDecimal points,
         Integer orderIndex,

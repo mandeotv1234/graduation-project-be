@@ -148,6 +148,23 @@ public class UsecasesConfiguration {
         return new GetTeacherExamDetailUsecase(examRepository, classRepository, currentUserService);
     }
 
+    @Bean
+    GetExamMonitorUsecase getExamMonitorUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            UserRepository userRepository,
+            ExamViolationRepository examViolationRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamMonitorUsecase(
+                examRepository,
+                classRepository,
+                classEnrollmentRepository,
+                userRepository,
+                examViolationRepository,
+                currentUserService);
+    }
+
     // ===== NEW USECASES =====
 
     @Bean

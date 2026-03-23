@@ -5,6 +5,7 @@ import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionRequ
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.GetExamMonitorRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetTeacherExamDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SaveExamSpecificationRequestDto;
@@ -55,6 +56,7 @@ public class ExamController {
         private final UpdateExamUsecase updateExamUsecase;
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
+        private final GetExamMonitorUsecase getExamMonitorUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -97,6 +99,19 @@ public class ExamController {
                                                 GetTeacherExamDetailResponseDto.fromResponse(response),
                                                 "OK",
                                                 "Exam detail retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/monitor")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamMonitor(
+                        @PathVariable("examId") @Positive Long examId) {
+                GetExamMonitorRequestDto requestDto = new GetExamMonitorRequestDto(examId);
+                GetExamMonitorResponse response = getExamMonitorUsecase.execute(requestDto.toRequest());
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                GetExamMonitorResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam monitor data retrieved successfully"));
         }
 
         @PostMapping("/{examId}/questions")

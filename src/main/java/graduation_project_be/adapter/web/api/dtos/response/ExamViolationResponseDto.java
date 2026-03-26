@@ -8,6 +8,7 @@ public record ExamViolationResponseDto(
         Long id,
         Long examId,
         Long studentId,
+        Integer attemptNumber,
         String violationType,
         String description,
         String ipAddress,
@@ -16,7 +17,7 @@ public record ExamViolationResponseDto(
 
     public static ExamViolationResponseDto fromResponse(ExamViolationResponse r) {
         return new ExamViolationResponseDto(
-                r.id(), r.examId(), r.studentId(), r.violationType(),
+            r.id(), r.examId(), r.studentId(), r.attemptNumber(), r.violationType(),
                 r.description(), r.ipAddress(), r.userAgent(), r.createdAt());
     }
 }

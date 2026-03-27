@@ -3,6 +3,7 @@ package graduation_project_be.infrastructure.configurations;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -235,11 +236,24 @@ public class UsecasesConfiguration {
             ExamSessionService examSessionService,
             GradingNotificationService gradingNotificationService,
             UserRepository userRepository,
-            TestCaseRepository testCaseRepository) {
+            TestCaseRepository testCaseRepository,
+            ObjectMapper objectMapper) {
         return new GradeExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, examSpecificationRepository,
-                examSchemaService, examSessionService, gradingNotificationService, userRepository, testCaseRepository);
+                examSchemaService, examSessionService, gradingNotificationService, userRepository, testCaseRepository, objectMapper);
+    }
+
+    @Bean
+    RubricTestingUsecase rubricTestingUsecase(
+            GeminiService geminiService,
+            ExamSchemaService examSchemaService,
+            GetExamQuestionsUsecase getExamQuestionsUsecase,
+            GradeExamUsecase gradeExamUsecase,
+            ObjectMapper objectMapper) {
+        return new RubricTestingUsecase(
+                geminiService, examSchemaService,
+                getExamQuestionsUsecase, gradeExamUsecase, objectMapper);
     }
 
     @Bean

@@ -1,0 +1,59 @@
+Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
+Phân tích câu lệnh CREATE TABLE SQL bên dưới và tạo ra một cấu trúc JSON để chấm điểm từng phần.
+
+=== CÂU HỎI ===
+%s
+
+=== SQL ĐÁP ÁN MẪU ===
+%s
+
+=== TỔNG ĐIỂM ===
+%.2f điểm
+
+=== YÊU CẦU ĐẦU RA ===
+Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+{
+  "total_points": <tổng điểm>,
+  "question_category": "CREATE_TABLE",
+  "grading_payload": {
+    "grading_settings": {
+      "syntax_error_action": "PARTIAL",
+      "case_sensitive_names": false,
+      "allow_implicit_constraints": true
+    },
+    "tables": [
+      {
+        "expected_name": "<TEN_BANG>",
+        "existence_points": <điểm cho sự tồn tại bảng - khoảng 5-10%% tổng điểm>,
+        "missing_penalty_action": "SKIP_TABLE",
+        "columns": [
+          {
+            "name": "<TEN_COT>",
+            "expected_type": "<KIEU_DU_LIEU>",
+            "is_nullable": <true/false>,
+            "points": <điểm cho cột đúng>,
+            "type_mismatch_penalty": <điểm trừ khi sai kiểu>
+          }
+        ],
+        "constraints": [
+          {
+            "type": "<PRIMARY_KEY|FOREIGN_KEY|UNIQUE|CHECK|DEFAULT>",
+            "columns": ["<tên cột>"],
+            "points": <điểm cho ràng buộc>,
+            "missing_penalty": <điểm trừ khi thiếu>,
+            "references_table": "<bảng tham chiếu - chỉ cho FK>",
+            "references_columns": ["<cột tham chiếu - chỉ cho FK>"],
+            "expression": "<biểu thức - chỉ cho CHECK/DEFAULT>"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+=== QUY TẮC PHÂN BỐ ĐIỂM ===
+- Tổng tất cả điểm (existence_points + column points + constraint points) phải BẰNG ĐÚNG %.2f
+- Mỗi cột: points ~ 60-70%% điểm trung bình, type_mismatch_penalty ~ 40%% points cột đó
+- Mỗi constraint: points ~ tuỳ độ quan trọng, missing_penalty ~ 50%% points constraint đó
+- Kiểu dữ liệu: dùng tên ngắn SQL Server (INT, VARCHAR, NVARCHAR, DATE, DECIMAL, BIT, v.v.)
+- Phát hiện tất cả ràng buộc: PRIMARY KEY, FOREIGN KEY, NOT NULL (qua is_nullable), CHECK, DEFAULT, UNIQUE

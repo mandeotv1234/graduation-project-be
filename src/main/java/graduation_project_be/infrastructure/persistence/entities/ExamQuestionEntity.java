@@ -47,6 +47,9 @@ public class ExamQuestionEntity {
     @Column(name = "verify_script", columnDefinition = "TEXT")
     private String verifyScript;
 
+    @Column(name = "grading_rubric", columnDefinition = "TEXT")
+    private String gradingRubric;
+
     public ExamQuestion toModel() {
         return ExamQuestion.builder()
                 .id(id)
@@ -58,6 +61,7 @@ public class ExamQuestionEntity {
                 .orderIndex(orderIndex)
                 .questionType(questionType)
                 .verifyScript(verifyScript)
+                .gradingRubric(gradingRubric)
                 .build();
     }
 
@@ -72,6 +76,7 @@ public class ExamQuestionEntity {
                 .orderIndex(model.getOrderIndex())
                 .questionType(model.getQuestionType())
                 .verifyScript(model.getVerifyScript())
+                .gradingRubric(model.getGradingRubric())
                 .build();
     }
 }

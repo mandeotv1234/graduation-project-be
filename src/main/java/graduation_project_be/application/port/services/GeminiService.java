@@ -14,5 +14,16 @@ public interface GeminiService {
             String questionType,
             String schemaContext);
 
+    /**
+     * Given a CREATE TABLE SQL statement, ask Gemini to generate
+     * a structured grading rubric JSON for partial scoring.
+     */
+    String generateGradingRubric(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String questionType,
+            String priorQuestionContext);
+
     record GeneratedQuestion(String correctQuery, String verifyScript) {}
 }

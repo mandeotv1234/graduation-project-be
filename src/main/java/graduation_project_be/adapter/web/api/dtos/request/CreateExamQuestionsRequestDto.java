@@ -22,7 +22,8 @@ public record CreateExamQuestionsRequestDto(
             Integer difficultyLevel,
             @NotNull(message = "Points are required") @Positive BigDecimal points,
             Integer orderIndex,
-            @NotBlank(message = "Question type is required") String questionType) {
+            @NotBlank(message = "Question type is required") String questionType,
+            String gradingRubric) {
     }
 
     public CreateExamQuestionsRequest toRequest(Long examId) {
@@ -30,7 +31,7 @@ public record CreateExamQuestionsRequestDto(
                 .map(q -> new CreateExamQuestionsRequest.QuestionItem(
                         q.content(), q.correctQuery(), q.verifyScript(),
                         q.difficultyLevel(), q.points(),
-                        q.orderIndex(), q.questionType()))
+                        q.orderIndex(), q.questionType(), q.gradingRubric()))
                 .toList();
         return new CreateExamQuestionsRequest(examId, items);
     }

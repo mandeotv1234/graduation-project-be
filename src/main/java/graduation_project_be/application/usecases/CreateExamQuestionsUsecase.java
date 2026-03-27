@@ -91,6 +91,7 @@ public class CreateExamQuestionsUsecase {
                     .orderIndex(item.orderIndex())
                     .questionType(questionType)
                     .verifyScript(verifyScript)
+                    .gradingRubric(item.gradingRubric())
                     .build();
 
             questionsToSave.add(question);

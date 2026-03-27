@@ -14,6 +14,7 @@ public record CreateExamQuestionsRequest(
             Integer difficultyLevel,
             BigDecimal points,
             Integer orderIndex,
-            String questionType) {
+            String questionType,
+            String gradingRubric) {
     }
 }

@@ -1,26 +1,26 @@
 package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionsRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.GenerateGradingRubricRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetExamMonitorRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetTeacherExamDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SaveExamSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.StartExamSessionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.SubmitExamRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.TestGradeCreateTableRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.TestGradeInsertRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.TestGradeSelectRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateExamRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.request.UpdateExamRequest;
 import graduation_project_be.application.usecases.response.*;
-import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
-import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
-import graduation_project_be.application.usecases.response.GetTeacherExamDetailResponse;
-import graduation_project_be.application.usecases.response.UpdateExamResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -32,6 +32,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/exams")
@@ -57,6 +58,8 @@ public class ExamController {
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
         private final GetExamMonitorUsecase getExamMonitorUsecase;
+        private final RubricTestingUsecase rubricTestingUsecase;
+        private final ObjectMapper objectMapper;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -317,5 +320,72 @@ public class ExamController {
                         return xForwardedFor.split(",")[0].trim();
                 }
                 return request.getRemoteAddr();
+        }
+
+        // ===== AI RUBRIC GENERATION =====
+
+        @PostMapping("/generate-rubric")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> generateGradingRubric(
+                        @RequestBody @Valid GenerateGradingRubricRequestDto requestDto) {
+                String rubricJson = rubricTestingUsecase.generateGradingRubric(requestDto.toRequest());
+
+                if (rubricJson == null) {
+                        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                                        .body(ResponseDto.of(null, "AI_UNAVAILABLE",
+                                                        "AI service is currently unavailable"));
+                }
+
+                return ResponseEntity.ok(
+                                ResponseDto.of(rubricJson, "OK", "Rubric generated successfully"));
+        }
+
+        // ===== TEST GRADING =====
+
+        @PostMapping("/{examId}/test-grade-insert")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> testGradeInsert(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid TestGradeInsertRequestDto requestDto) {
+                try {
+                        Map<String, Object> result = rubricTestingUsecase.testGradeInsert(
+                                        requestDto.toRequest(examId, objectMapper));
+                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "GRADING_ERROR",
+                                                        "Lỗi chấm thử: " + e.getMessage()));
+                }
+        }
+
+        @PostMapping("/{examId}/test-grade-select")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> testGradeSelect(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid TestGradeSelectRequestDto requestDto) {
+                try {
+                        Map<String, Object> result = rubricTestingUsecase.testGradeSelect(
+                                        requestDto.toRequest(examId, objectMapper));
+                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "GRADING_ERROR",
+                                                        "Lỗi chấm thử SELECT: " + e.getMessage()));
+                }
+        }
+
+        @PostMapping("/test-grade")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> testGrade(
+                        @RequestBody @Valid TestGradeCreateTableRequestDto requestDto) {
+                try {
+                        Map<String, Object> result = rubricTestingUsecase.testGradeCreateTable(
+                                        requestDto.toRequest(objectMapper));
+                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "GRADING_ERROR",
+                                                        "Lỗi chấm thử: " + e.getMessage()));
+                }
         }
 }

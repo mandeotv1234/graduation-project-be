@@ -1,0 +1,48 @@
+Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
+Phân tích câu lệnh INSERT SQL bên dưới và tạo ra một cấu trúc JSON để chấm điểm từng dòng dữ liệu.
+
+=== CÂU HỎI ===
+%s
+
+=== SQL ĐÁP ÁN MẪU ===
+%s
+
+=== TỔNG ĐIỂM ===
+%.2f điểm
+
+=== YÊU CẦU ĐẦU RA ===
+Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+{
+  "total_points": %.2f,
+  "question_category": "INSERT_DATA",
+  "grading_payload": {
+    "grading_settings": {
+      "inject_seed_schema": true,
+      "ignore_column_order": true,
+      "trim_string_spaces": true,
+      "case_insensitive_data": false
+    },
+    "seed_schema_script": "",
+    "expected_datasets": [
+      {
+        "table_name": "<TEN_BANG>",
+        "table_points": <điểm của bảng này>,
+        "points_per_row": <điểm mỗi dòng đúng (table_points / số dòng định dạng số thập phân)>,
+        "primary_keys": ["<tên cột khóa chính dự đoán>"],
+        "columns_to_grade": ["<cột 1>", "<cột 2>"],
+        "rows": [
+          {
+            "<tên cột 1>": "<giá trị chữ>",
+            "<tên cột 2>": <giá trị số>
+          }
+        ]
+      }
+    ]
+  }
+}
+
+=== QUY TẮC PHÂN BỐ ĐIỂM ===
+- Tổng tất cả `table_points` trong `expected_datasets` phải BẰNG ĐÚNG %.2f
+- `points_per_row` phải bằng `table_points` chia cho số lượng dòng (`rows.length`)
+- Dự đoán ít nhất 1 khóa chính đưa vào `primary_keys` để hệ thống đối chiếu dòng.
+- Nếu insert vào nhiều bảng, hãy tạo nhiều block trong `expected_datasets`.

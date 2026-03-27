@@ -12,11 +12,12 @@ public record ExamQuestionResponseDto(
         BigDecimal points,
         Integer orderIndex,
         String questionType,
-        String verifyScript) {
+        String verifyScript,
+        String gradingRubric) {
     public static ExamQuestionResponseDto fromResponse(ExamQuestionResponse r) {
         return new ExamQuestionResponseDto(
                 r.id(), r.examId(), r.content(), r.correctQuery(),
                 r.difficultyLevel(), r.points(), r.orderIndex(),
-                r.questionType(), r.verifyScript());
+                r.questionType(), r.verifyScript(), r.gradingRubric());
     }
 }

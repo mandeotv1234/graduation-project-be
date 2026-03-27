@@ -1,0 +1,76 @@
+Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
+Hãy tạo JSON rubric chấm loại SELECT_QUERY theo mô hình test case.
+
+=== CÂU HỎI ===
+%s
+
+=== SQL ĐÁP ÁN MẪU (SELECT) ===
+%s
+
+=== NGỮ CẢNH CÂU TRƯỚC (CREATE/INSERT) ===
+%s
+
+=== TỔNG ĐIỂM ===
+%.2f điểm
+
+=== YÊU CẦU ĐẦU RA ===
+Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+{
+  "question_id": "Q_AUTO_01",
+  "total_points": %.2f,
+  "question_category": "SELECT_QUERY",
+  "grading_payload": {
+    "global_grading_rules": {
+      "baseline_weight_ratio": 0.20,
+      "wrong_order_penalty": 0.00,
+      "wrong_column_order_penalty": 0.10,
+      "extra_row_penalty": 0.20
+    },
+    "test_cases": [
+      {
+        "case_id": "TC_01",
+        "case_name": "Dữ liệu cơ bản",
+        "is_hidden": false,
+        "weight_ratio": 1.00,
+        "setup_dependency_id": "",
+        "setup_custom_script": "",
+        "expected_result": {
+          "expected_row_count": <số dòng>,
+          "columns_config": [
+            { "column_name": "<tên cột>", "data_type": "<kiểu dữ liệu>" }
+          ],
+          "rows": [
+            ["<giá trị cột 1>", "<giá trị cột 2>"]
+          ]
+        }
+      }
+    ]
+  }
+}
+
+=== QUY TẮC BẮT BUỘC ===
+- baseline_weight_ratio là tỉ trọng cho case nền [BASELINE] (đối chiếu studentQuery với correctQuery trên dữ liệu từ câu trước)
+- Tổng weight_ratio của test_cases + baseline_weight_ratio phải = 1.00
+- expected_result.rows phải khớp logic của SQL đáp án mẫu
+- expected_row_count phải đúng bằng số dòng trong rows
+- columns_config phải đúng thứ tự cột trong SELECT
+- BẮT BUỘC tạo ít nhất 4 test case chất lượng cao, bao phủ các lỗi thường gặp của sinh viên.
+- YÊU CẦU CÁC LOẠI TEST CASE (Dựa trên phân tích SQL đáp án mẫu):
+  1. Happy Path (Dữ liệu chuẩn): Dữ liệu bình thường để kiểm tra logic chính.
+  2. Bẫy Khóa chính kép / Thiếu JOIN (Composite Key / Missing JOIN Trap): Phân tích nếu có JOIN, hãy cố tình tạo dữ liệu ở bảng cha/con có trùng một phần khóa nhưng khác phần còn lại (ví dụ trùng Ma nhưng khác MaCongTy) để bắt lỗi sinh viên JOIN thiếu điều kiện. Hệ thống phải sinh ra bản ghi đánh lừa (dummy record).
+  3. Bẫy lọc chuỗi (String Matching Trap): Nếu có WHERE chuỗi, hãy tạo dữ liệu cố tình gần giống để kiểm tra sinh viên dùng LIKE hay '=' (ví dụ đề yêu cầu LIKE bắt đầu bằng thì tạo bản ghi có thêm phía sau thay vì đúng y hệt).
+  4. Bẫy dữ liệu rỗng (Empty State / Null Trap): Tạo dữ liệu thỏa mãn WHERE nhưng bảng con chưa có dữ liệu để tính toán, nhằm bắt lỗi sai hàm tổng hợp (SUM ra NULL thay vì COUNT ra 0) hoặc nhầm INNER/LEFT JOIN.
+  5. Các bẫy khác (Grouping/Having): Tùy thuộc vào câu truy vấn.
+- case_name phải là tiếng Việt, dễ hiểu với giáo viên (VD: "Bẫy Khóa chính kép", "Bẫy lọc chuỗi (LIKE)", "Bẫy dữ liệu rỗng (SUM/COUNT)").
+- setup_dependency_id chỉ điền khi thực sự cần phụ thuộc câu khác; nếu không để chuỗi rỗng
+- setup_custom_script phải là script SQL đầy đủ để tạo dữ liệu test cho từng case. KỊCH BẢN PHẢI THỰC SỰ TẠO RA DỮ LIỆU "BẪY" (TRAP).
+- TUYỆT ĐỐI KHÔNG đưa CREATE TABLE / DROP TABLE vào setup_custom_script
+- Chỉ được dùng ALTER TABLE khi ở dạng CHECK/NOCHECK CONSTRAINT để xử lý phụ thuộc khóa ngoại vòng
+- setup_custom_script chỉ dùng để thao tác dữ liệu (DELETE/TRUNCATE/INSERT/UPDATE)
+- Chỉ được dùng tên bảng/cột có thật trong schema đã có từ các câu CREATE_TABLE trước đó
+- KHÔNG tự bịa thêm cột mới (ví dụ: nếu schema không có MaHangMuc hoặc DiaDiem thì không được dùng)
+- Ưu tiên insert theo tập cột tối thiểu chắc chắn có: khóa join, cột lọc WHERE, cột được SELECT/tính toán
+- Nếu có FOREIGN KEY thì setup_custom_script BẮT BUỘC insert theo thứ tự bảng cha -> bảng con
+- setup_custom_script phải tự tạo đủ dòng dữ liệu cha để KHÔNG phát sinh lỗi FK khi insert dữ liệu con
+- Không được giả định dữ liệu cha đã tồn tại sẵn nếu script không tự tạo
+- TRÁNH để test_cases hời hợt; hệ thống sẽ kiểm tra xem test case có thực sự bao phủ được các bẫy chưa. Phải đa dạng hóa data!

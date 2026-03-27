@@ -1,0 +1,368 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2703260001"
+      author: system
+      changes:
+        - addColumn:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: grading_rubric
+                  type: NTEXT
+                  constraints:
+                    nullable: true
+      comment: "Add grading_rubric column to store JSON rubric for polymorphic grading (CREATE_TABLE, etc.)"
+
+  - changeSet:
+      id: "2703260002"
+      author: system
+      comment: "GRAD-78: Refresh sample questions and grading rubric JSON for exam 1010 (supported types only)"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_exam_id BIGINT;
+              BEGIN
+                SELECT id INTO v_exam_id
+                FROM exams
+                WHERE title = 'De 1010 - Mon Co so du lieu'
+                LIMIT 1;
+
+                IF v_exam_id IS NULL THEN
+                  RETURN;
+                END IF;
+
+                -- Update question content and type for supported questions only (1-5).
+                UPDATE exam_questions
+                SET content = CASE order_index
+                      WHEN 1 THEN 'Câu 1 (2.50đ): Tạo bảng và các ràng buộc cần thiết cho CONGTY, CONGTRINH, HANGMUC.'
+                      WHEN 2 THEN 'Câu 2 (2.00đ): Nhập dữ liệu theo đề bài vào các bảng tương ứng.'
+                      WHEN 3 THEN 'Câu 3 (1.50đ): Tính tổng chi phí và tổng số nhân công của công trình "Trung tâm thương mại CoCo".'
+                      WHEN 4 THEN 'Câu 4 (2.00đ): Danh sách tên công ty, trụ sở và tên công trình tiêu biểu của các công ty Việt Nam.'
+                      WHEN 5 THEN 'Câu 5 (2.00đ): Với mỗi công trình được xây trước năm hiện hành và thuộc công ty có công trình tiêu biểu kết thúc bởi "ABC Buildings", cho biết tên công trình và tổng chi phí.'
+                      ELSE content
+                    END,
+                    question_type = CASE order_index
+                      WHEN 1 THEN 'CREATE_TABLE'
+                      WHEN 2 THEN 'INSERT_DATA'
+                      WHEN 3 THEN 'SELECT_QUERY'
+                      WHEN 4 THEN 'SELECT_QUERY'
+                      WHEN 5 THEN 'SELECT_QUERY'
+                      ELSE question_type
+                      END,
+                      correct_query = CASE order_index
+                        WHEN 1 THEN $Q1_CORRECT$
+                        -- 1. Tạo bảng CONGTY
+                        CREATE TABLE CONGTY (
+                          MaCT VARCHAR(5) PRIMARY KEY,
+                          TenCT NVARCHAR(50),
+                          QuocGia NVARCHAR(50),
+                          TruSo NVARCHAR(50),
+                          CongTrinhTB VARCHAR(5)
+                        );
+
+                        -- 2. Tạo bảng CONGTRINH
+                        CREATE TABLE CONGTRINH (
+                          MaCongTrinh VARCHAR(5),
+                          MaCongTy VARCHAR(5),
+                          TenCongTrinh NVARCHAR(100),
+                          Nam INT DEFAULT YEAR(GETDATE()) CHECK (Nam <= YEAR(GETDATE())),
+                          DiaDiem NVARCHAR(100),
+                          PRIMARY KEY (MaCongTrinh, MaCongTy),
+                          FOREIGN KEY (MaCongTy) REFERENCES CONGTY(MaCT)
+                        );
+
+                        -- 3. Thêm ràng buộc khóa ngoại cho bảng CONGTY
+                        ALTER TABLE CONGTY
+                        ADD CONSTRAINT FK_CONGTY_CONGTRINH
+                        FOREIGN KEY (CongTrinhTB, MaCT) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy);
+
+                        -- 4. Tạo bảng HANGMUC
+                        CREATE TABLE HANGMUC (
+                          STT INT,
+                          MaCongTrinh VARCHAR(5),
+                          MaCongTy VARCHAR(5),
+                          TenHangMuc NVARCHAR(100),
+                          ChiPhi FLOAT,
+                          NhanCong INT,
+                          PRIMARY KEY (STT, MaCongTrinh, MaCongTy),
+                          FOREIGN KEY (MaCongTrinh, MaCongTy) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy)
+                        );
+                        $Q1_CORRECT$
+                        WHEN 2 THEN $Q2_CORRECT$
+                        -- Bước 2: Chèn dữ liệu vào CONGTY trước, để cột CongTrinhTB là NULL
+                        INSERT INTO CONGTY (MaCT, TenCT, QuocGia, TruSo, CongTrinhTB) VALUES
+                        (N'CTY01', N'Vinaconex', N'Việt Nam', N'Hà Nội', NULL),
+                        (N'CTY02', N'Coteccons', N'Việt Nam', N'TP.HCM', NULL),
+                        (N'CTY03', N'Lotte E&C', N'Hàn Quốc', N'Seoul', NULL);
+
+                        -- Bước 3: Chèn dữ liệu vào CONGTRINH
+                        -- Bây giờ đã có MaCT để thỏa mãn khóa ngoại của CONGTRINH
+                        INSERT INTO CONGTRINH (MaCongTrinh, MaCongTy, TenCongTrinh, DiaDiem, Nam) VALUES
+                        (N'001', N'CTY01', N'Toà nhà văn phòng ABC Buildings', N'Hà Nội, Việt Nam', 2023),
+                        (N'002', N'CTY02', N'Trung tâm thương mại CoCo', N'TP.HCM, Việt Nam', 2022),
+                        (N'001', N'CTY03', N'Chung cư cao cấp Star', N'Đà Nẵng, Việt Nam', 2024),
+                        (N'001', N'CTY02', N'Khách sạn 5 sao Seoul', N'Seoul, Hàn Quốc', 2021);
+
+                        -- Bước 4: Cập nhật lại cột CongTrinhTB cho bảng CONGTY
+                        -- Bây giờ MaCongTrinh và MaCongTy đã tồn tại trong bảng CONGTRINH
+                        UPDATE CONGTY SET CongTrinhTB = '001' WHERE MaCT = 'CTY01';
+                        UPDATE CONGTY SET CongTrinhTB = '002' WHERE MaCT = 'CTY02';
+                        UPDATE CONGTY SET CongTrinhTB = '001' WHERE MaCT = 'CTY03';
+
+                        -- Bước 5: Chèn dữ liệu vào HANGMUC (Thực hiện cuối cùng)
+                        INSERT INTO HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES
+                        (1, N'001', N'CTY01', N'Móng nền', 500, 100),
+                        (2, N'001', N'CTY01', N'Kết cấu', 700, 80),
+                        (1, N'002', N'CTY02', N'Nội thất', 300, 50),
+                        (2, N'002', N'CTY02', N'Hệ thống điện', 200, 90),
+                        (1, N'001', N'CTY03', N'Sàn bê tông', 400, 100);
+                        $Q2_CORRECT$
+                        ELSE correct_query
+                    END
+                WHERE exam_id = v_exam_id
+                  AND order_index BETWEEN 1 AND 5;
+
+                -- Rubric JSON for supported types: CREATE_TABLE, INSERT_DATA, SELECT_QUERY.
+                UPDATE exam_questions
+                SET grading_rubric = CASE order_index
+                  WHEN 1 THEN $RUBRIC_Q1$
+                  {
+                    "total_points": 2.5,
+                    "question_category": "CREATE_TABLE",
+                    "grading_payload": {
+                      "grading_settings": {
+                        "syntax_error_action": "PARTIAL",
+                        "case_sensitive_names": false,
+                        "allow_implicit_constraints": true,
+                        "positive_only_scoring": false
+                      },
+                      "tables": [
+                        {
+                          "expected_name": "CONGTY",
+                          "existence_points": 0.10,
+                          "missing_penalty_action": "SKIP_TABLE",
+                          "columns": [
+                            {"name": "MaCT", "expected_type": "VARCHAR(5)", "is_nullable": false, "points": 0.12, "type_mismatch_penalty": 0.05},
+                            {"name": "TenCT", "expected_type": "NVARCHAR(50)", "is_nullable": true, "points": 0.12, "type_mismatch_penalty": 0.05},
+                            {"name": "QuocGia", "expected_type": "NVARCHAR(50)", "is_nullable": true, "points": 0.12, "type_mismatch_penalty": 0.05},
+                            {"name": "TruSo", "expected_type": "NVARCHAR(50)", "is_nullable": true, "points": 0.12, "type_mismatch_penalty": 0.05},
+                            {"name": "CongTrinhTB", "expected_type": "VARCHAR(5)", "is_nullable": true, "points": 0.12, "type_mismatch_penalty": 0.05}
+                          ],
+                          "constraints": [
+                            {"type": "PRIMARY_KEY", "columns": ["MaCT"], "points": 0.10, "missing_penalty": 0.05},
+                            {"type": "FOREIGN_KEY", "columns": ["CongTrinhTB", "MaCT"], "points": 0.10, "missing_penalty": 0.05, "references_table": "CONGTRINH", "references_columns": ["MaCongTrinh", "MaCongTy"]}
+                          ]
+                        },
+                        {
+                          "expected_name": "CONGTRINH",
+                          "existence_points": 0.10,
+                          "missing_penalty_action": "SKIP_TABLE",
+                          "columns": [
+                            {"name": "MaCongTrinh", "expected_type": "VARCHAR(5)", "is_nullable": true, "points": 0.10, "type_mismatch_penalty": 0.04},
+                            {"name": "MaCongTy", "expected_type": "VARCHAR(5)", "is_nullable": true, "points": 0.10, "type_mismatch_penalty": 0.04},
+                            {"name": "TenCongTrinh", "expected_type": "NVARCHAR(100)", "is_nullable": true, "points": 0.10, "type_mismatch_penalty": 0.04},
+                            {"name": "Nam", "expected_type": "INT", "is_nullable": true, "points": 0.10, "type_mismatch_penalty": 0.04},
+                            {"name": "DiaDiem", "expected_type": "NVARCHAR(100)", "is_nullable": true, "points": 0.10, "type_mismatch_penalty": 0.04}
+                          ],
+                          "constraints": [
+                            {"type": "PRIMARY_KEY", "columns": ["MaCongTrinh", "MaCongTy"], "points": 0.15, "missing_penalty": 0.08},
+                            {"type": "FOREIGN_KEY", "columns": ["MaCongTy"], "points": 0.15, "missing_penalty": 0.08, "references_table": "CONGTY", "references_columns": ["MaCT"]}
+                          ]
+                        },
+                        {
+                          "expected_name": "HANGMUC",
+                          "existence_points": 0.10,
+                          "missing_penalty_action": "SKIP_TABLE",
+                          "columns": [
+                            {"name": "STT", "expected_type": "INT", "is_nullable": true, "points": 0.07, "type_mismatch_penalty": 0.03},
+                            {"name": "MaCongTrinh", "expected_type": "VARCHAR(5)", "is_nullable": true, "points": 0.07, "type_mismatch_penalty": 0.03},
+                            {"name": "MaCongTy", "expected_type": "VARCHAR(5)", "is_nullable": true, "points": 0.07, "type_mismatch_penalty": 0.03},
+                            {"name": "TenHangMuc", "expected_type": "NVARCHAR(100)", "is_nullable": true, "points": 0.07, "type_mismatch_penalty": 0.03},
+                            {"name": "ChiPhi", "expected_type": "FLOAT", "is_nullable": true, "points": 0.06, "type_mismatch_penalty": 0.02},
+                            {"name": "NhanCong", "expected_type": "INT", "is_nullable": true, "points": 0.06, "type_mismatch_penalty": 0.02}
+                          ],
+                          "constraints": [
+                            {"type": "PRIMARY_KEY", "columns": ["STT", "MaCongTrinh", "MaCongTy"], "points": 0.10, "missing_penalty": 0.05},
+                            {"type": "FOREIGN_KEY", "columns": ["MaCongTrinh", "MaCongTy"], "points": 0.10, "missing_penalty": 0.05, "references_table": "CONGTRINH", "references_columns": ["MaCongTrinh", "MaCongTy"]}
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                  $RUBRIC_Q1$
+                  WHEN 2 THEN $RUBRIC_Q2$
+                  {
+                    "total_points": 2.0,
+                    "question_category": "INSERT_DATA",
+                    "grading_payload": {
+                      "grading_settings": {
+                        "syntax_error_action": "PARTIAL",
+                        "ignore_column_order": true,
+                        "trim_string_spaces": true,
+                        "case_insensitive_data": false,
+                        "allow_extra_rows": false,
+                        "penalty_per_extra_row": 0.1
+                      },
+                      "expected_datasets": [
+                        {
+                          "table_name": "CONGTY",
+                          "table_points": 0.60,
+                          "points_per_row": 0.20,
+                          "primary_keys": ["MaCT"],
+                          "columns_to_grade": ["MaCT", "TenCT", "QuocGia", "TruSo", "CongTrinhTB"],
+                          "rows": [
+                            {"MaCT": "CTY01", "TenCT": "Vinaconex", "QuocGia": "Việt Nam", "TruSo": "Hà Nội", "CongTrinhTB": "001"},
+                            {"MaCT": "CTY02", "TenCT": "Coteccons", "QuocGia": "Việt Nam", "TruSo": "TP.HCM", "CongTrinhTB": "002"},
+                            {"MaCT": "CTY03", "TenCT": "Lotte E&C", "QuocGia": "Hàn Quốc", "TruSo": "Seoul", "CongTrinhTB": "001"}
+                          ]
+                        },
+                        {
+                          "table_name": "CONGTRINH",
+                          "table_points": 0.70,
+                          "points_per_row": 0.175,
+                          "primary_keys": ["MaCongTy", "MaCongTrinh"],
+                          "columns_to_grade": ["MaCongTrinh", "MaCongTy", "TenCongTrinh", "DiaDiem", "Nam"],
+                          "rows": [
+                            {"MaCongTrinh": "001", "MaCongTy": "CTY01", "TenCongTrinh": "Toà nhà văn phòng ABC Buildings", "DiaDiem": "Hà Nội, Việt Nam", "Nam": 2023},
+                            {"MaCongTrinh": "002", "MaCongTy": "CTY02", "TenCongTrinh": "Trung tâm thương mại CoCo", "DiaDiem": "TP.HCM, Việt Nam", "Nam": 2022},
+                            {"MaCongTrinh": "001", "MaCongTy": "CTY03", "TenCongTrinh": "Chung cư cao cấp Star", "DiaDiem": "Đà Nẵng, Việt Nam", "Nam": 2024},
+                            {"MaCongTrinh": "001", "MaCongTy": "CTY02", "TenCongTrinh": "Khách sạn 5 sao Seoul", "DiaDiem": "Seoul, Hàn Quốc", "Nam": 2021}
+                          ]
+                        },
+                        {
+                          "table_name": "HANGMUC",
+                          "table_points": 0.70,
+                          "points_per_row": 0.14,
+                          "primary_keys": ["MaCongTy", "MaCongTrinh", "STT"],
+                          "columns_to_grade": ["STT", "MaCongTrinh", "MaCongTy", "TenHangMuc", "ChiPhi", "NhanCong"],
+                          "rows": [
+                            {"STT": 1, "MaCongTrinh": "001", "MaCongTy": "CTY01", "TenHangMuc": "Móng nền", "ChiPhi": 500, "NhanCong": 100},
+                            {"STT": 2, "MaCongTrinh": "001", "MaCongTy": "CTY01", "TenHangMuc": "Kết cấu", "ChiPhi": 700, "NhanCong": 80},
+                            {"STT": 1, "MaCongTrinh": "002", "MaCongTy": "CTY02", "TenHangMuc": "Nội thất", "ChiPhi": 300, "NhanCong": 50},
+                            {"STT": 2, "MaCongTrinh": "002", "MaCongTy": "CTY02", "TenHangMuc": "Hệ thống điện", "ChiPhi": 200, "NhanCong": 90},
+                            {"STT": 1, "MaCongTrinh": "001", "MaCongTy": "CTY03", "TenHangMuc": "Sàn bê tông", "ChiPhi": 400, "NhanCong": 100}
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                  $RUBRIC_Q2$
+                  WHEN 3 THEN $RUBRIC_Q3$
+                  {
+                    "total_points": 1.5,
+                    "question_category": "SELECT_QUERY",
+                    "grading_payload": {
+                      "global_grading_rules": {
+                        "baseline_weight_ratio": 0.20,
+                        "wrong_order_penalty": 0.00,
+                        "wrong_column_order_penalty": 0.10,
+                        "extra_row_penalty": 0.20,
+                        "strict_ordering": false,
+                        "allow_partial_row_credit": true
+                      },
+                      "test_cases": [
+                        {
+                          "case_id": "TC_01",
+                          "case_name": "Dữ liệu cơ bản",
+                          "is_hidden": false,
+                          "weight_ratio": 0.80,
+                          "setup_dependency_id": "",
+                          "setup_custom_script": "",
+                          "expected_result": {
+                            "expected_row_count": 1,
+                            "columns_config": [
+                              {"column_name": "TongChiPhi", "data_type": "numeric"},
+                              {"column_name": "TongNhanCong", "data_type": "numeric"}
+                            ],
+                            "rows": [
+                              [500, 140]
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                  $RUBRIC_Q3$
+                  WHEN 4 THEN $RUBRIC_Q4$
+                  {
+                    "total_points": 2.0,
+                    "question_category": "SELECT_QUERY",
+                    "grading_payload": {
+                      "global_grading_rules": {
+                        "baseline_weight_ratio": 0.20,
+                        "wrong_order_penalty": 0.00,
+                        "wrong_column_order_penalty": 0.10,
+                        "extra_row_penalty": 0.20,
+                        "strict_ordering": false,
+                        "allow_partial_row_credit": true
+                      },
+                      "test_cases": [
+                        {
+                          "case_id": "TC_01",
+                          "case_name": "Dữ liệu cơ bản",
+                          "is_hidden": false,
+                          "weight_ratio": 0.80,
+                          "setup_dependency_id": "",
+                          "setup_custom_script": "",
+                          "expected_result": {
+                            "expected_row_count": 2,
+                            "columns_config": [
+                              {"column_name": "TenCT", "data_type": "nvarchar"},
+                              {"column_name": "TruSo", "data_type": "nvarchar"},
+                              {"column_name": "CongTrinhTieuBieu", "data_type": "nvarchar"}
+                            ],
+                            "rows": [
+                              ["Vinaconex", "Hà Nội", "Toà nhà văn phòng ABC Buildings"],
+                              ["Coteccons", "TP.HCM", "Trung tâm thương mại CoCo"]
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                  $RUBRIC_Q4$
+                  WHEN 5 THEN $RUBRIC_Q5$
+                  {
+                    "total_points": 2.0,
+                    "question_category": "SELECT_QUERY",
+                    "grading_payload": {
+                      "global_grading_rules": {
+                        "baseline_weight_ratio": 0.20,
+                        "wrong_order_penalty": 0.00,
+                        "wrong_column_order_penalty": 0.10,
+                        "extra_row_penalty": 0.20,
+                        "strict_ordering": false,
+                        "allow_partial_row_credit": true
+                      },
+                      "test_cases": [
+                        {
+                          "case_id": "TC_01",
+                          "case_name": "Dữ liệu cơ bản",
+                          "is_hidden": false,
+                          "weight_ratio": 0.80,
+                          "setup_dependency_id": "",
+                          "setup_custom_script": "",
+                          "expected_result": {
+                            "expected_row_count": 1,
+                            "columns_config": [
+                              {"column_name": "TenCongTrinh", "data_type": "nvarchar"},
+                              {"column_name": "TongChiPhi", "data_type": "numeric"}
+                            ],
+                            "rows": [
+                              ["Toà nhà văn phòng ABC Buildings", 1200]
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                  $RUBRIC_Q5$
+                  ELSE grading_rubric
+                END
+                WHERE exam_id = v_exam_id
+                  AND order_index BETWEEN 1 AND 5;
+              END $$;

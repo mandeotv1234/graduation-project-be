@@ -12,11 +12,12 @@ public record ExamQuestionResponse(
         BigDecimal points,
         Integer orderIndex,
         String questionType,
-        String verifyScript) {
+        String verifyScript,
+        String gradingRubric) {
     public static ExamQuestionResponse fromModel(ExamQuestion q) {
         return new ExamQuestionResponse(
                 q.getId(), q.getExamId(), q.getContent(), q.getCorrectQuery(),
                 q.getDifficultyLevel(), q.getPoints(), q.getOrderIndex(),
-                q.getQuestionType().name(), q.getVerifyScript());
+                q.getQuestionType().name(), q.getVerifyScript(), q.getGradingRubric());
     }
 }

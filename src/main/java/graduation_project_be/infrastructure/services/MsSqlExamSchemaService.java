@@ -287,6 +287,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 // Format data type for UI readability
                 String formattedDataType = formatDataType(dataType, maxLength);
+                String rawDataType = buildRawDataType(dataType, maxLength);
 
                 graduation_project_be.domain.models.TableMetadata table = tableMap.computeIfAbsent(tableName,
                         k -> graduation_project_be.domain.models.TableMetadata.builder()
@@ -297,6 +298,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 graduation_project_be.domain.models.TableMetadata.ColumnMetadata column = graduation_project_be.domain.models.TableMetadata.ColumnMetadata.builder()
                         .columnName(columnName)
                         .dataType(formattedDataType)
+                        .rawDataType(rawDataType)
                         .isPrimaryKey(isPrimaryKey)
                         .isForeignKey(isForeignKey)
                         .referencesTable(referencedTable)
@@ -345,6 +347,17 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             default:
                 return dataType;
         }
+    }
+
+    private String buildRawDataType(String dataType, int maxLength) {
+        if (dataType == null) return "UNKNOWN";
+        String upper = dataType.toUpperCase();
+        if (maxLength > 0 && (upper.contains("CHAR") || upper.contains("BINARY"))) {
+            return upper + "(" + maxLength + ")";
+        } else if (maxLength == -1 && (upper.contains("CHAR") || upper.contains("BINARY"))) {
+            return upper + "(MAX)";
+        }
+        return upper;
     }
 
     @Override

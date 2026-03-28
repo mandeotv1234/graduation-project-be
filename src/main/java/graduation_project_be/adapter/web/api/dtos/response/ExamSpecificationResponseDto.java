@@ -10,6 +10,8 @@ public record ExamSpecificationResponseDto(
         String name,
         String ddlScript,
         boolean ddlVisibleToStudent,
+        String schemaDiagram,
+        boolean schemaDiagramVisibleToStudent,
         String description,
         List<SpecEntityResponseDto> entities,
         List<SpecDatasetResponseDto> datasets,
@@ -40,6 +42,7 @@ public record ExamSpecificationResponseDto(
             Long id,
             String name,
             String dataScript,
+            String tableData,
             int orderIndex,
             boolean isActive,
             boolean visibleToStudent) {
@@ -59,13 +62,15 @@ public record ExamSpecificationResponseDto(
 
         List<SpecDatasetResponseDto> datasets = r.datasets() == null ? List.of()
                 : r.datasets().stream().map(d -> new SpecDatasetResponseDto(
-                        d.id(), d.name(), d.dataScript(), d.orderIndex(), d.isActive(), d.visibleToStudent())).toList();
+                        d.id(), d.name(), d.dataScript(), d.tableData(), d.orderIndex(), d.isActive(), d.visibleToStudent())).toList();
 
         return new ExamSpecificationResponseDto(
                 r.id(),
                 r.name(),
                 r.ddlScript(),
                 r.ddlVisibleToStudent(),
+                r.schemaDiagram(),
+                r.schemaDiagramVisibleToStudent(),
                 r.description(),
                 entities,
                 datasets,

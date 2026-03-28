@@ -16,6 +16,7 @@ public class SpecDataset {
     private Long specificationId;
     private String name;
     private String dataScript;
+    private String tableData;
     private int orderIndex;
     private boolean isActive;
     private boolean visibleToStudent;

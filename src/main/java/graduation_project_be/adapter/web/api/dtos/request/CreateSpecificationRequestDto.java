@@ -17,6 +17,7 @@ public record CreateSpecificationRequestDto(
             Long id,
             @NotBlank(message = "Dataset name is required") String name,
             @NotBlank(message = "Dataset script is required") String dataScript,
+            String tableData,
             int orderIndex,
             Boolean isActive,
             Boolean visibleToStudent) {
@@ -28,6 +29,7 @@ public record CreateSpecificationRequestDto(
                         dataset.id(),
                         dataset.name(),
                         dataset.dataScript(),
+                        dataset.tableData(),
                         dataset.orderIndex(),
                         dataset.isActive(),
                         dataset.visibleToStudent())).toList();

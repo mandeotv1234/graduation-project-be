@@ -31,6 +31,9 @@ public class SpecDatasetEntity {
     @Column(name = "data_script", nullable = false, columnDefinition = "TEXT")
     private String dataScript;
 
+    @Column(name = "table_data", columnDefinition = "NVARCHAR(MAX)")
+    private String tableData;
+
     @Column(name = "order_index")
     private int orderIndex;
 
@@ -52,6 +55,7 @@ public class SpecDatasetEntity {
                 .specificationId(specification != null ? specification.getId() : null)
                 .name(name)
                 .dataScript(dataScript)
+                .tableData(tableData)
                 .orderIndex(orderIndex)
                 .isActive(isActive)
                 .visibleToStudent(visibleToStudent)
@@ -66,6 +70,7 @@ public class SpecDatasetEntity {
                 .specification(specificationEntity)
                 .name(model.getName())
                 .dataScript(model.getDataScript())
+                .tableData(model.getTableData())
                 .orderIndex(model.getOrderIndex())
                 .isActive(model.isActive())
                 .visibleToStudent(model.isVisibleToStudent())

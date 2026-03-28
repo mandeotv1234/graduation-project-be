@@ -1,7 +1,9 @@
 package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.BadRequestException;
+import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -11,46 +13,91 @@ import graduation_project_be.application.usecases.request.ExecuteSqlRequest;
 import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.TableMetadata;
+import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Locale;
+import java.util.Optional;
 
 @RequiredArgsConstructor
 public class ExecuteSqlUsecase {
 
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d";
+    private static final String TEACHER_SCHEMA_FORMAT = "exam_%d_teacher_%d";
+
     private final ExamRepository examRepository;
+    private final ClassRepository classRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
 
     public ExecuteSqlResponse execute(ExecuteSqlRequest request) {
-        Long studentId = currentUserService.getCurrentUserId();
+        Long currentUserId = currentUserService.getCurrentUserId();
+        Role currentRole = currentUserService.getCurrentUser().getRole();
+        ExecutionContext context = resolveExecutionContext(request, currentUserId, currentRole);
 
+        return executeInSchema(request.sql(), context.schemaName());
+    }
+
+    private ExecutionContext resolveExecutionContext(ExecuteSqlRequest request, Long currentUserId, Role currentRole) {
+        if (currentRole == Role.STUDENT) {
+            return resolveStudentExecutionContext(request, currentUserId);
+        }
+
+        if (currentRole == Role.TEACHER) {
+            return resolveTeacherExecutionContext(request, currentUserId);
+        }
+
+        throw new UnauthorizedException("You do not have permission to execute SQL for this exam");
+    }
+
+    private ExecutionContext resolveStudentExecutionContext(ExecuteSqlRequest request, Long currentUserId) {
         Exam exam = examRepository.findByIdAndIsPublished(request.examId(), true)
-                .orElseThrow(() -> new IllegalArgumentException("Exam not found or not published"));
+                .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", request.examId()));
 
         boolean isEnrolled = classEnrollmentRepository.existsByClassIdAndStudentId(
-                exam.getClassId(), studentId);
+                exam.getClassId(), currentUserId);
         if (!isEnrolled) {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
 
-        // Backend time validation — prevent executing SQL after time expires
-        validateExamTime(request.examId(), studentId, exam);
+        validateExamTime(request.examId(), currentUserId, exam);
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId);
+        return new ExecutionContext(schemaName);
+    }
 
-        String schemaName = String.format("exam_%d_student_%d", request.examId(), studentId);
+    private ExecutionContext resolveTeacherExecutionContext(ExecuteSqlRequest request, Long currentUserId) {
+        Exam exam = examRepository.findById(request.examId())
+                .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", request.examId()));
 
+        boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
+        if (!hasAccess) {
+            throw new UnauthorizedException("You do not have access to this exam");
+        }
+
+        String schemaName = String.format(TEACHER_SCHEMA_FORMAT, request.examId(), currentUserId);
+
+        // Authoring flow is frequently rerun with CREATE scripts.
+        // Reset teacher sandbox schema to avoid "object already exists" on rerun.
+        // TODO: Teacher sandbox schemas are never dropped. Add a scheduled cleanup job
+        //       or drop them when the teacher saves the specification.
+        if (shouldResetTeacherSchemaBeforeExecute(request.sql())) {
+            examSchemaService.resetSchema(schemaName);
+        }
+
+        return new ExecutionContext(schemaName);
+    }
+
+    private ExecuteSqlResponse executeInSchema(String sql, String schemaName) {
         long startTime = System.currentTimeMillis();
         try {
-            List<Map<String, Object>> resultSet = examSchemaService.executeSql(schemaName, request.sql());
+            List<Map<String, Object>> resultSet = examSchemaService.executeSql(schemaName, sql);
             List<TableMetadata> schema = null;
-            if (affectsSchema(request.sql())) {
+            if (affectsSchema(sql)) {
                 schema = examSchemaService.extractMetadata(schemaName);
             }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
@@ -61,13 +108,37 @@ public class ExecuteSqlUsecase {
     }
 
     private boolean affectsSchema(String sql) {
-        if (sql == null) return false;
-        String upper = sql.trim().toUpperCase(Locale.ROOT);
-        // Most common DDL statements students write in this system
-        return upper.startsWith("CREATE ")
-                || upper.startsWith("ALTER ")
-                || upper.startsWith("DROP ")
-                || upper.startsWith("TRUNCATE ");
+        if (sql == null) {
+            return false;
+        }
+
+        // Remove comments to properly detect DDL keywords at the start
+        String cleanSql = removeSqlComments(sql)
+                .trim()
+                .toUpperCase(Locale.ROOT);
+
+        return cleanSql.startsWith("CREATE ")
+                || cleanSql.startsWith("ALTER ")
+                || cleanSql.startsWith("DROP ")
+                || cleanSql.startsWith("TRUNCATE ");
+    }
+
+    private boolean shouldResetTeacherSchemaBeforeExecute(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return false;
+        }
+
+        String upper = removeSqlComments(sql).toUpperCase(Locale.ROOT);
+        return upper.contains("CREATE TABLE")
+                || upper.contains("CREATE VIEW")
+                || upper.contains("CREATE PROCEDURE")
+                || upper.contains("CREATE FUNCTION")
+                || upper.contains("CREATE TRIGGER");
+    }
+
+    private String removeSqlComments(String sql) {
+        return sql.replaceAll("(?m)--.*$", "")
+                .replaceAll("(?s)/\\*.*?\\*/", "");
     }
 
     private void validateExamTime(Long examId, Long studentId, Exam exam) {
@@ -86,5 +157,8 @@ public class ExecuteSqlUsecase {
                 throw new BadRequestException("Exam time has expired. You can no longer execute SQL.");
             }
         }
+    }
+
+    private record ExecutionContext(String schemaName) {
     }
 }

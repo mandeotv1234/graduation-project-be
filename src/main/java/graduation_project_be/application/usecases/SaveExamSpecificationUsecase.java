@@ -13,6 +13,7 @@ import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.SpecEntity;
+import graduation_project_be.application.port.services.ExamSchemaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +28,9 @@ public class SaveExamSpecificationUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSchemaService examSchemaService;
+
+    private static final String TEACHER_SCHEMA_FORMAT = "exam_%d_teacher_%d";
 
     @Transactional
     public ExamSpecificationResponse execute(SaveExamSpecificationRequest request) {
@@ -48,30 +52,91 @@ public class SaveExamSpecificationUsecase {
         ExamSpecification current = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        List<SpecEntity> entities = request.entities() == null ? List.of()
-                : request.entities().stream().map(e -> {
-                    List<SpecAttribute> attributes = e.attributes() == null ? List.of()
-                            : e.attributes().stream().map(a -> SpecAttribute.builder()
-                                    .attributeName(a.attributeName())
-                                    .dataType(a.dataType())
-                                    .description(a.description())
-                                    .isPrimaryKey(a.isPrimaryKey())
-                                    .isNullable(a.isNullable())
-                                    .orderIndex(a.orderIndex())
-                                    .build()).toList();
+        LocalDateTime now = LocalDateTime.now();
+        List<SpecEntity> entities = toEntities(request);
+        List<SpecDataset> datasets = toDatasets(request, current, specificationId, now);
+        boolean ddlVisibleToStudent = resolveVisibility(
+                request.ddlVisibleToStudent(),
+                current.isDdlVisibleToStudent());
+        boolean schemaDiagramVisibleToStudent = resolveVisibility(
+                request.schemaDiagramVisibleToStudent(),
+                current.isSchemaDiagramVisibleToStudent());
+
+        ExamSpecification specification = ExamSpecification.builder()
+                .id(specificationId)
+                .name(request.name())
+                .ddlScript(request.ddlScript())
+                .ddlVisibleToStudent(ddlVisibleToStudent)
+                .schemaDiagram(request.schemaDiagram())
+                .schemaDiagramVisibleToStudent(schemaDiagramVisibleToStudent)
+                .description(request.description())
+                .entities(entities)
+                .datasets(datasets)
+                .createdBy(current.getCreatedBy())
+                .createdAt(current.getCreatedAt())
+                .updatedAt(now)
+                .build();
+
+        ExamSpecification saved = examSpecificationRepository.save(specification);
+
+        // TODO Feature request from User: Clean up the teacher's sandbox schema (from ExecuteSql)
+        // after they finally save the exam, so the DB isn't littered with schemas.
+        try {
+            String teacherSchemaName = String.format(TEACHER_SCHEMA_FORMAT, request.examId(), currentUserId);
+            examSchemaService.dropSchema(teacherSchemaName);
+        } catch (Exception e) {
+            // Log but don't fail the save transaction if schema drop fails
+        }
+
+        return ExamSpecificationResponse.fromModel(saved);
+    }
+
+    private List<SpecEntity> toEntities(SaveExamSpecificationRequest request) {
+        if (request.entities() == null) {
+            return List.of();
+        }
+
+        return request.entities().stream()
+                .map(entity -> {
+                    List<SpecAttribute> attributes = toAttributes(entity.attributes());
+
                     return SpecEntity.builder()
-                            .entityName(e.entityName())
-                            .displayName(e.displayName())
-                            .description(e.description())
-                            .orderIndex(e.orderIndex())
+                            .entityName(entity.entityName())
+                            .displayName(entity.displayName())
+                            .description(entity.description())
+                            .orderIndex(entity.orderIndex())
                             .attributes(attributes)
                             .build();
-                }).toList();
+                })
+                .toList();
+    }
 
-        LocalDateTime now = LocalDateTime.now();
+    private List<SpecAttribute> toAttributes(List<SaveExamSpecificationRequest.SpecAttributeRequest> attributes) {
+        if (attributes == null) {
+            return List.of();
+        }
+
+        return attributes.stream()
+                .map(attribute -> SpecAttribute.builder()
+                        .attributeName(attribute.attributeName())
+                        .dataType(attribute.dataType())
+                        .description(attribute.description())
+                        .isPrimaryKey(attribute.isPrimaryKey())
+                        .isNullable(attribute.isNullable())
+                        .orderIndex(attribute.orderIndex())
+                        .build())
+                .toList();
+    }
+
+    private List<SpecDataset> toDatasets(
+            SaveExamSpecificationRequest request,
+            ExamSpecification current,
+            Long specificationId,
+            LocalDateTime now) {
         List<SaveExamSpecificationRequest.SpecDatasetRequest> requestDatasets =
                 request.datasets() == null ? List.of() : request.datasets();
-        List<SpecDataset> datasets = IntStream.range(0, requestDatasets.size())
+
+        return IntStream.range(0, requestDatasets.size())
                 .mapToObj(index -> {
                     SaveExamSpecificationRequest.SpecDatasetRequest datasetRequest = requestDatasets.get(index);
                     SpecDataset currentDataset = findMatchingDataset(datasetRequest, current.getDatasets());
@@ -89,6 +154,7 @@ public class SaveExamSpecificationUsecase {
                             .specificationId(specificationId)
                             .name(datasetRequest.name())
                             .dataScript(datasetRequest.dataScript())
+                            .tableData(datasetRequest.tableData())
                             .orderIndex(datasetRequest.orderIndex() <= 0 ? index + 1 : datasetRequest.orderIndex())
                             .isActive(isActive)
                             .visibleToStudent(visibleToStudent)
@@ -97,26 +163,10 @@ public class SaveExamSpecificationUsecase {
                             .build();
                 })
                 .toList();
+    }
 
-        boolean ddlVisibleToStudent = request.ddlVisibleToStudent() == null
-                ? current.isDdlVisibleToStudent()
-                : request.ddlVisibleToStudent();
-
-        ExamSpecification specification = ExamSpecification.builder()
-                .id(specificationId)
-                .name(request.name())
-                .ddlScript(request.ddlScript())
-                .ddlVisibleToStudent(ddlVisibleToStudent)
-                .description(request.description())
-                .entities(entities)
-                .datasets(datasets)
-                .createdBy(current.getCreatedBy())
-                .createdAt(current.getCreatedAt())
-                .updatedAt(now)
-                .build();
-
-        ExamSpecification saved = examSpecificationRepository.save(specification);
-        return ExamSpecificationResponse.fromModel(saved);
+    private boolean resolveVisibility(Boolean requestedValue, boolean currentValue) {
+        return requestedValue == null ? currentValue : requestedValue;
     }
 
     private SpecDataset findMatchingDataset(

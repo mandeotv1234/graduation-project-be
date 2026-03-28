@@ -91,6 +91,7 @@ public class UpdateSpecificationUsecase {
                             .id(currentDataset == null ? null : currentDataset.getId())
                             .name(datasetRequest.name())
                             .dataScript(datasetRequest.dataScript())
+                            .tableData(datasetRequest.tableData())
                             .orderIndex(datasetRequest.orderIndex() <= 0 ? datasetIndex + 1 : datasetRequest.orderIndex())
                             .isActive(isActive)
                             .visibleToStudent(visibleToStudent)

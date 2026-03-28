@@ -12,6 +12,7 @@ public record ExamSpecificationResponse(
         Long id,
         String name,
         String ddlScript,
+        boolean ddlVisibleToStudent,
         String description,
         List<SpecEntityResponse> entities,
         List<SpecDatasetResponse> datasets,
@@ -43,7 +44,8 @@ public record ExamSpecificationResponse(
             String name,
             String dataScript,
             int orderIndex,
-            boolean isActive) {
+            boolean isActive,
+            boolean visibleToStudent) {
     }
 
     public static ExamSpecificationResponse fromModel(ExamSpecification model) {
@@ -56,6 +58,7 @@ public record ExamSpecificationResponse(
                 model.getId(),
                 model.getName(),
                 model.getDdlScript(),
+                model.isDdlVisibleToStudent(),
                 model.getDescription(),
                 entityResponses,
                 datasetResponses,
@@ -93,6 +96,7 @@ public record ExamSpecificationResponse(
                 dataset.getName(),
                 dataset.getDataScript(),
                 dataset.getOrderIndex(),
-                dataset.isActive());
+                dataset.isActive(),
+                dataset.isVisibleToStudent());
     }
 }

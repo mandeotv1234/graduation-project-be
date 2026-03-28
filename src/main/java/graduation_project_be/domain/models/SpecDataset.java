@@ -18,6 +18,7 @@ public class SpecDataset {
     private String dataScript;
     private int orderIndex;
     private boolean isActive;
+    private boolean visibleToStudent;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -5,14 +5,17 @@ import java.util.List;
 public record CreateSpecificationRequest(
         String name,
         String ddlScript,
+        Boolean ddlVisibleToStudent,
         String description,
         List<SpecDatasetRequest> datasets,
         List<SpecEntityRequest> entities) {
     public record SpecDatasetRequest(
+                        Long id,
             String name,
             String dataScript,
             int orderIndex,
-            Boolean isActive) {
+            Boolean isActive,
+            Boolean visibleToStudent) {
     }
 
     public record SpecEntityRequest(

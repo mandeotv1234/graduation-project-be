@@ -10,6 +10,7 @@ import java.util.List;
 public record CreateSpecificationV2RequestDto(
         @JsonAlias({"title", "name"}) @NotBlank(message = "Title is required") String title,
         String ddlScript,
+        Boolean ddlVisibleToStudent,
         String description,
         @Valid List<SpecEntityRequestDto> entities,
         @Valid List<SpecDatasetRequestDto> datasets) {
@@ -32,10 +33,12 @@ public record CreateSpecificationV2RequestDto(
     }
 
     public record SpecDatasetRequestDto(
+            Long id,
             @NotBlank(message = "Dataset name is required") String name,
             @NotBlank(message = "Dataset script is required") String dataScript,
             int orderIndex,
-            Boolean isActive) {
+            Boolean isActive,
+            Boolean visibleToStudent) {
     }
 
     public CreateSpecificationRequest toRequest() {
@@ -57,11 +60,13 @@ public record CreateSpecificationV2RequestDto(
 
         List<CreateSpecificationRequest.SpecDatasetRequest> datasetRequests = datasets == null ? List.of()
                 : datasets.stream().map(dataset -> new CreateSpecificationRequest.SpecDatasetRequest(
+                        dataset.id(),
                         dataset.name(),
                         dataset.dataScript(),
                         dataset.orderIndex(),
-                        dataset.isActive())).toList();
+                        dataset.isActive(),
+                        dataset.visibleToStudent())).toList();
 
-        return new CreateSpecificationRequest(title, ddlScript, description, datasetRequests, entityRequests);
+        return new CreateSpecificationRequest(title, ddlScript, ddlVisibleToStudent, description, datasetRequests, entityRequests);
     }
 }

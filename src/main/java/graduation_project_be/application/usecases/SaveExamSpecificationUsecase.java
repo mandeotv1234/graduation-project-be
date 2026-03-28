@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.IntStream;
 
 @RequiredArgsConstructor
 public class SaveExamSpecificationUsecase {
@@ -67,19 +68,45 @@ public class SaveExamSpecificationUsecase {
                             .build();
                 }).toList();
 
-        List<SpecDataset> datasets = request.datasets() == null ? List.of()
-                : request.datasets().stream().map(d -> SpecDataset.builder()
-                        .name(d.name())
-                        .dataScript(d.dataScript())
-                        .orderIndex(d.orderIndex())
-                        .isActive(d.isActive())
-                        .build()).toList();
-
         LocalDateTime now = LocalDateTime.now();
+        List<SaveExamSpecificationRequest.SpecDatasetRequest> requestDatasets =
+                request.datasets() == null ? List.of() : request.datasets();
+        List<SpecDataset> datasets = IntStream.range(0, requestDatasets.size())
+                .mapToObj(index -> {
+                    SaveExamSpecificationRequest.SpecDatasetRequest datasetRequest = requestDatasets.get(index);
+                    SpecDataset currentDataset = findMatchingDataset(datasetRequest, current.getDatasets());
+
+                    boolean isActive = datasetRequest.isActive() != null
+                            ? datasetRequest.isActive()
+                            : currentDataset == null || currentDataset.isActive();
+
+                    boolean visibleToStudent = datasetRequest.visibleToStudent() != null
+                            ? datasetRequest.visibleToStudent()
+                            : currentDataset != null && currentDataset.isVisibleToStudent();
+
+                    return SpecDataset.builder()
+                            .id(currentDataset == null ? null : currentDataset.getId())
+                            .specificationId(specificationId)
+                            .name(datasetRequest.name())
+                            .dataScript(datasetRequest.dataScript())
+                            .orderIndex(datasetRequest.orderIndex() <= 0 ? index + 1 : datasetRequest.orderIndex())
+                            .isActive(isActive)
+                            .visibleToStudent(visibleToStudent)
+                            .createdAt(currentDataset == null ? now : currentDataset.getCreatedAt())
+                            .updatedAt(now)
+                            .build();
+                })
+                .toList();
+
+        boolean ddlVisibleToStudent = request.ddlVisibleToStudent() == null
+                ? current.isDdlVisibleToStudent()
+                : request.ddlVisibleToStudent();
+
         ExamSpecification specification = ExamSpecification.builder()
                 .id(specificationId)
                 .name(request.name())
                 .ddlScript(request.ddlScript())
+                .ddlVisibleToStudent(ddlVisibleToStudent)
                 .description(request.description())
                 .entities(entities)
                 .datasets(datasets)
@@ -90,5 +117,32 @@ public class SaveExamSpecificationUsecase {
 
         ExamSpecification saved = examSpecificationRepository.save(specification);
         return ExamSpecificationResponse.fromModel(saved);
+    }
+
+    private SpecDataset findMatchingDataset(
+            SaveExamSpecificationRequest.SpecDatasetRequest requestDataset,
+            List<SpecDataset> currentDatasets) {
+        if (currentDatasets == null || currentDatasets.isEmpty()) {
+            return null;
+        }
+
+        if (requestDataset.id() != null) {
+            return currentDatasets.stream()
+                    .filter(dataset -> requestDataset.id().equals(dataset.getId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        String name = requestDataset.name() == null ? "" : requestDataset.name().trim();
+        if (name.isEmpty()) {
+            return null;
+        }
+
+        return currentDatasets.stream()
+                .filter(dataset -> dataset.getName() != null
+                        && name.equalsIgnoreCase(dataset.getName().trim())
+                        && (requestDataset.orderIndex() <= 0 || requestDataset.orderIndex() == dataset.getOrderIndex()))
+                .findFirst()
+                .orElse(null);
     }
 }

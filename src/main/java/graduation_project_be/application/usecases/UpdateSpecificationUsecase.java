@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -39,13 +40,16 @@ public class UpdateSpecificationUsecase {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        List<SpecDataset> datasets = buildDatasets(request.datasets(), now);
+        List<SpecDataset> datasets = buildDatasets(request.datasets(), current.getDatasets(), now);
         List<SpecEntity> entities = buildEntities(request.entities());
 
         ExamSpecification specification = ExamSpecification.builder()
                 .id(current.getId())
                 .name(request.name())
                 .ddlScript(request.ddlScript())
+                .ddlVisibleToStudent(request.ddlVisibleToStudent() == null
+                        ? current.isDdlVisibleToStudent()
+                        : request.ddlVisibleToStudent())
                 .description(request.description())
                 .entities(entities)
                 .datasets(datasets)
@@ -64,24 +68,64 @@ public class UpdateSpecificationUsecase {
 
     private List<SpecDataset> buildDatasets(
             List<CreateSpecificationRequest.SpecDatasetRequest> datasetRequests,
+            List<SpecDataset> currentDatasets,
             LocalDateTime now) {
         if (datasetRequests == null || datasetRequests.isEmpty()) {
             return List.of();
         }
 
-        List<SpecDataset> datasets = new ArrayList<>();
-        for (int datasetIndex = 0; datasetIndex < datasetRequests.size(); datasetIndex++) {
-            CreateSpecificationRequest.SpecDatasetRequest dataset = datasetRequests.get(datasetIndex);
-            datasets.add(SpecDataset.builder()
-                    .name(dataset.name())
-                    .dataScript(dataset.dataScript())
-                    .orderIndex(dataset.orderIndex() <= 0 ? datasetIndex + 1 : dataset.orderIndex())
-                    .isActive(dataset.isActive() == null || dataset.isActive())
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build());
+        return IntStream.range(0, datasetRequests.size())
+                .mapToObj(datasetIndex -> {
+                    CreateSpecificationRequest.SpecDatasetRequest datasetRequest = datasetRequests.get(datasetIndex);
+                    SpecDataset currentDataset = findMatchingDataset(datasetRequest, currentDatasets);
+
+                    boolean isActive = datasetRequest.isActive() != null
+                            ? datasetRequest.isActive()
+                            : currentDataset == null || currentDataset.isActive();
+
+                    boolean visibleToStudent = datasetRequest.visibleToStudent() != null
+                            ? datasetRequest.visibleToStudent()
+                            : currentDataset != null && currentDataset.isVisibleToStudent();
+
+                    return SpecDataset.builder()
+                            .id(currentDataset == null ? null : currentDataset.getId())
+                            .name(datasetRequest.name())
+                            .dataScript(datasetRequest.dataScript())
+                            .orderIndex(datasetRequest.orderIndex() <= 0 ? datasetIndex + 1 : datasetRequest.orderIndex())
+                            .isActive(isActive)
+                            .visibleToStudent(visibleToStudent)
+                            .createdAt(currentDataset == null ? now : currentDataset.getCreatedAt())
+                            .updatedAt(now)
+                            .build();
+                })
+                .toList();
+    }
+
+    private SpecDataset findMatchingDataset(
+            CreateSpecificationRequest.SpecDatasetRequest requestDataset,
+            List<SpecDataset> currentDatasets) {
+        if (currentDatasets == null || currentDatasets.isEmpty()) {
+            return null;
         }
-        return datasets;
+
+        if (requestDataset.id() != null) {
+            return currentDatasets.stream()
+                    .filter(dataset -> requestDataset.id().equals(dataset.getId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        String name = requestDataset.name() == null ? "" : requestDataset.name().trim();
+        if (name.isEmpty()) {
+            return null;
+        }
+
+        return currentDatasets.stream()
+                .filter(dataset -> dataset.getName() != null
+                        && name.equalsIgnoreCase(dataset.getName().trim())
+                        && (requestDataset.orderIndex() <= 0 || requestDataset.orderIndex() == dataset.getOrderIndex()))
+                .findFirst()
+                .orElse(null);
     }
 
     private List<SpecEntity> buildEntities(List<CreateSpecificationRequest.SpecEntityRequest> entityRequests) {
@@ -164,6 +208,7 @@ public class UpdateSpecificationUsecase {
                     .id(specification.getId())
                     .name(specification.getName())
                     .ddlScript(specification.getDdlScript())
+                    .ddlVisibleToStudent(specification.isDdlVisibleToStudent())
                     .description(specification.getDescription())
                     .createdBy(specification.getCreatedBy())
                     .entities(entities)

@@ -1,0 +1,230 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2803260001"
+      author: PhanPhuc
+      comment: "GRAD-83: Add visible_to_student to spec_datasets for student visibility control"
+      changes:
+        - addColumn:
+            tableName: spec_datasets
+            columns:
+              - column:
+                  name: visible_to_student
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+        - sql:
+            comment: "Backfill from current behavior where inactive datasets were treated as hidden"
+            sql: |
+              UPDATE spec_datasets
+              SET visible_to_student = COALESCE(is_active, TRUE)
+              WHERE visible_to_student IS NULL OR visible_to_student = TRUE;
+
+  - changeSet:
+      id: "2803260002"
+      author: PhanPhuc
+      comment: "GRAD-83: Add ddl_visible_to_student for specification visibility control"
+      changes:
+        - addColumn:
+            tableName: specifications
+            columns:
+              - column:
+                  name: ddl_visible_to_student
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: "2803260003"
+      author: PhanPhuc
+      comment: "GRAD-83: Remove exams that depend on empty specification and delete empty specification"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_empty_spec_ids BIGINT[];
+              BEGIN
+                SELECT COALESCE(array_agg(id), ARRAY[]::BIGINT[])
+                INTO v_empty_spec_ids
+                FROM specifications
+                WHERE name ILIKE '%Empty Schema%'
+                   OR ddl_script ILIKE '-- Schema rong,%'
+                   OR ddl_script ILIKE '-- Schema rong%';
+
+                IF array_length(v_empty_spec_ids, 1) IS NULL THEN
+                  RETURN;
+                END IF;
+
+                DELETE FROM exams
+                WHERE specification_id = ANY (v_empty_spec_ids);
+
+                DELETE FROM specifications
+                WHERE id = ANY (v_empty_spec_ids);
+              END $$;
+
+  - changeSet:
+      id: "2803260004"
+      author: PhanPhuc
+      comment: "GRAD-83: Exam 1010 student sees only general description and entities"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+              BEGIN
+                SELECT specification_id
+                INTO v_spec_id
+                FROM exams
+                WHERE id = 1010
+                   OR title = 'De 1010 - Mon Co so du lieu'
+                ORDER BY CASE WHEN id = 1010 THEN 0 ELSE 1 END
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  RETURN;
+                END IF;
+
+                UPDATE specifications
+                SET ddl_visible_to_student = FALSE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = v_spec_id;
+
+                UPDATE spec_datasets
+                SET visible_to_student = FALSE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE specification_id = v_spec_id;
+              END $$;
+
+  - changeSet:
+      id: "2803260005"
+      author: PhanPhuc
+      comment: "GRAD-83: Exam 1010 all specification attributes are nullable"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+              BEGIN
+                SELECT specification_id
+                INTO v_spec_id
+                FROM exams
+                WHERE id = 1010
+                   OR title = 'De 1010 - Mon Co so du lieu'
+                ORDER BY CASE WHEN id = 1010 THEN 0 ELSE 1 END
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  RETURN;
+                END IF;
+
+                UPDATE spec_attributes sa
+                SET is_nullable = TRUE
+                FROM spec_entities se
+                WHERE sa.entity_id = se.id
+                  AND se.specification_id = v_spec_id;
+              END $$;
+
+  - changeSet:
+      id: "2803260006"
+      author: PhanPhuc
+      comment: "GRAD-83: Rename exam 1010 title with Vietnamese diacritics"
+      changes:
+        - sql:
+            sql: |
+              UPDATE exams
+              SET title = 'Đề 1010 – Môn Cơ sở dữ liệu'
+              WHERE id = 1010
+                 OR title = 'De 1010 - Mon Co so du lieu';
+
+  - changeSet:
+      id: "2803260007"
+      author: PhanPhuc
+      comment: "GRAD-83: Update exam 1010 entity descriptions for CONGTY, CONGTRINH, HANGMUC"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+              BEGIN
+                SELECT specification_id
+                INTO v_spec_id
+                FROM exams
+                WHERE id = 1010
+                   OR title = 'Đề 1010 – Môn Cơ sở dữ liệu'
+                   OR title = 'De 1010 - Mon Co so du lieu'
+                ORDER BY CASE
+                  WHEN id = 1010 THEN 0
+                  WHEN title = 'Đề 1010 – Môn Cơ sở dữ liệu' THEN 1
+                  ELSE 2
+                END
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  RETURN;
+                END IF;
+
+                UPDATE spec_entities
+                SET description = 'Tân từ: Mỗi công ty có một mã công ty là duy nhất. Công ty có tên công ty, thuộc về một quốc gia, có trụ sở chính và công trình tiêu biểu.'
+                WHERE specification_id = v_spec_id
+                  AND entity_name = 'CONGTY';
+
+                UPDATE spec_entities
+                SET description = 'Tân từ: Mỗi công trình có một mã để phân biệt với các công trình khác cùng công ty. Mỗi công trình có tên, năm hoàn công, được xây ở một địa điểm. Năm hoàn công không được sau năm hiện tại và có giá trị mặc định là năm hiện tại.'
+                WHERE specification_id = v_spec_id
+                  AND entity_name = 'CONGTRINH';
+
+                UPDATE spec_entities
+                SET description = 'Tân từ: Mỗi hạng mục thuộc về một công trình do một công ty chịu trách nhiệm thi công, có STT để phân biệt với các hạng mục khác thuộc cùng công trình. Hạng mục có tên hạng mục, chi phí và số nhân công.'
+                WHERE specification_id = v_spec_id
+                  AND entity_name = 'HANGMUC';
+              END $$;
+
+  - changeSet:
+      id: "2803260008"
+      author: PhanPhuc
+      comment: "GRAD-83: Disable all PK flags for exam 1010 entities"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+              BEGIN
+                SELECT specification_id
+                INTO v_spec_id
+                FROM exams
+                WHERE id = 1010
+                   OR title = 'Đề 1010 – Môn Cơ sở dữ liệu'
+                   OR title = 'De 1010 - Mon Co so du lieu'
+                ORDER BY CASE
+                  WHEN id = 1010 THEN 0
+                  WHEN title = 'Đề 1010 – Môn Cơ sở dữ liệu' THEN 1
+                  ELSE 2
+                END
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  RETURN;
+                END IF;
+
+                UPDATE spec_attributes sa
+                SET is_primary_key = FALSE
+                FROM spec_entities se
+                WHERE sa.entity_id = se.id
+                  AND se.specification_id = v_spec_id;
+              END $$;

@@ -29,6 +29,9 @@ public class ExamSpecificationEntity {
     @Column(name = "ddl_script", nullable = false, columnDefinition = "TEXT")
     private String ddlScript;
 
+    @Column(name = "ddl_visible_to_student", nullable = false)
+    private boolean ddlVisibleToStudent;
+
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
@@ -56,6 +59,7 @@ public class ExamSpecificationEntity {
                 .id(id)
                 .name(name)
                 .ddlScript(ddlScript)
+            .ddlVisibleToStudent(ddlVisibleToStudent)
                 .description(description)
                 .entities(entityModels)
                 .datasets(datasets == null ? List.of() : datasets.stream().map(SpecDatasetEntity::toModel).toList())
@@ -70,6 +74,7 @@ public class ExamSpecificationEntity {
                 .id(model.getId())
                 .name(model.getName())
                 .ddlScript(model.getDdlScript())
+            .ddlVisibleToStudent(model.isDdlVisibleToStudent())
                 .description(model.getDescription())
                 .createdBy(model.getCreatedBy())
                 .createdAt(model.getCreatedAt())

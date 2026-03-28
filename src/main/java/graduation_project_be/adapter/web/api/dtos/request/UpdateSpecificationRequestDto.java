@@ -9,6 +9,7 @@ import java.util.List;
 public record UpdateSpecificationRequestDto(
         @NotBlank(message = "Name is required") String name,
         @NotBlank(message = "DDL script is required") String ddlScript,
+        Boolean ddlVisibleToStudent,
         String description,
         @Valid List<SpecEntityRequestDto> entities,
         @Valid List<SpecDatasetRequestDto> datasets) {
@@ -31,10 +32,12 @@ public record UpdateSpecificationRequestDto(
     }
 
     public record SpecDatasetRequestDto(
+            Long id,
             @NotBlank(message = "Dataset name is required") String name,
             @NotBlank(message = "Dataset script is required") String dataScript,
             Integer orderIndex,
-            Boolean isActive) {
+            Boolean isActive,
+            Boolean visibleToStudent) {
     }
 
     public CreateSpecificationRequest toRequest() {
@@ -56,11 +59,13 @@ public record UpdateSpecificationRequestDto(
 
         List<CreateSpecificationRequest.SpecDatasetRequest> datasetRequests = datasets == null ? List.of()
                 : datasets.stream().map(dataset -> new CreateSpecificationRequest.SpecDatasetRequest(
+                        dataset.id(),
                         dataset.name(),
                         dataset.dataScript(),
                         dataset.orderIndex() == null ? 0 : dataset.orderIndex(),
-                        dataset.isActive())).toList();
+                        dataset.isActive(),
+                        dataset.visibleToStudent())).toList();
 
-        return new CreateSpecificationRequest(name, ddlScript, description, datasetRequests, entityRequests);
+        return new CreateSpecificationRequest(name, ddlScript, ddlVisibleToStudent, description, datasetRequests, entityRequests);
     }
 }

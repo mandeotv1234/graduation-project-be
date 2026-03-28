@@ -3,7 +3,7 @@ name: CD - Backend Deploy
 on:
   push:
     branches:
-      - develop
+      - release/GRAD-79-Prepare-release-v1.2.0-for-backend
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

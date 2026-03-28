@@ -406,6 +406,22 @@ public class UsecasesConfiguration {
                 classRepository, classEnrollmentRepository, currentUserService);
     }
 
+    @Bean
+    GetTeacherExamSettingsUsecase getTeacherExamSettingsUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new GetTeacherExamSettingsUsecase(examRepository, classRepository, currentUserService);
+    }
+
+    @Bean
+    UpdateTeacherExamSettingsUsecase updateTeacherExamSettingsUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateTeacherExamSettingsUsecase(examRepository, classRepository, currentUserService);
+    }
+
     // ===== AI USECASES =====
 
     @Bean
@@ -454,6 +470,103 @@ public class UsecasesConfiguration {
         return new RemoveTeacherFromClassUsecase(
                 classRepository,
                 teacherClassRepository,
+                currentUserService);
+    }
+
+    // ===== LIBRARY USECASES =====
+
+    @Bean
+    ShareExamAsTemplateUsecase shareExamAsTemplateUsecase(
+            ExamRepository examRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamTemplateRepository examTemplateRepository,
+            ExamTemplateQuestionRepository examTemplateQuestionRepository,
+            CurrentUserService currentUserService) {
+        return new ShareExamAsTemplateUsecase(
+                examRepository,
+                examQuestionRepository,
+                examSpecificationRepository,
+                examTemplateRepository,
+                examTemplateQuestionRepository,
+                currentUserService);
+    }
+
+    @Bean
+    GetExamTemplatesUsecase getExamTemplatesUsecase(
+            ExamTemplateRepository examTemplateRepository,
+            ExamTemplateQuestionRepository examTemplateQuestionRepository,
+            UserRepository userRepository) {
+        return new GetExamTemplatesUsecase(examTemplateRepository, examTemplateQuestionRepository, userRepository);
+    }
+
+    @Bean
+    GetExamTemplateVersionsUsecase getExamTemplateVersionsUsecase(
+            ExamTemplateRepository examTemplateRepository,
+            ExamTemplateQuestionRepository examTemplateQuestionRepository,
+            UserRepository userRepository) {
+        return new GetExamTemplateVersionsUsecase(examTemplateRepository, examTemplateQuestionRepository,
+                userRepository);
+    }
+
+    @Bean
+    GetTeacherExamTemplateVersionsUsecase getTeacherExamTemplateVersionsUsecase(
+            ExamRepository examRepository,
+            ExamTemplateRepository examTemplateRepository,
+            ExamTemplateQuestionRepository examTemplateQuestionRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            UserRepository userRepository) {
+        return new GetTeacherExamTemplateVersionsUsecase(
+                examRepository,
+                examTemplateRepository,
+                examTemplateQuestionRepository,
+                classRepository,
+                currentUserService,
+                userRepository);
+    }
+
+    @Bean
+    CloneExamTemplateUsecase cloneExamTemplateUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ExamTemplateRepository examTemplateRepository,
+            ExamTemplateQuestionRepository examTemplateQuestionRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamSchemaService examSchemaService) {
+        return new CloneExamTemplateUsecase(
+                examTemplateRepository,
+                examTemplateQuestionRepository,
+                classRepository,
+                classEnrollmentRepository, currentUserService,
+                examSpecificationRepository,
+                examRepository,
+                examQuestionRepository,
+                examSchemaService);
+    }
+
+    @Bean
+    UpdateExamTemplateVisibilityUsecase updateExamTemplateVisibilityUsecase(
+            ExamTemplateRepository examTemplateRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateExamTemplateVisibilityUsecase(
+                examTemplateRepository,
+                examRepository,
+                currentUserService);
+    }
+
+    @Bean
+    HideExamTemplateLineageUsecase hideExamTemplateLineageUsecase(
+            ExamTemplateRepository examTemplateRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService) {
+        return new HideExamTemplateLineageUsecase(
+                examTemplateRepository,
+                examRepository,
                 currentUserService);
     }
 

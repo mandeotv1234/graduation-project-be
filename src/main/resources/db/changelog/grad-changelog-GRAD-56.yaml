@@ -1,0 +1,197 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2103260001
+      author: donald-mun
+      comment: "GRAD-56: Create exam_templates table for versioned exam library snapshots"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: exam_templates
+      changes:
+        - createTable:
+            tableName: exam_templates
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: source_exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: shared_by
+                  type: BIGINT
+              - column:
+                  name: title
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: specification_snapshot
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_visible
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: exam_templates
+            baseColumnNames: source_exam_id
+            referencedTableName: exams
+            referencedColumnNames: id
+            constraintName: fk_exam_templates_source_exam
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_templates
+            baseColumnNames: shared_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_exam_templates_shared_by
+            onDelete: SET NULL
+            onUpdate: CASCADE
+        - addUniqueConstraint:
+            tableName: exam_templates
+            columnNames: source_exam_id, version
+            constraintName: uq_exam_templates_source_exam_version
+
+  - changeSet:
+      id: 2103260002
+      author: donald-mun
+      comment: "GRAD-56: Create indexes for exam_templates version and visibility queries"
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: exam_templates
+      changes:
+        - createIndex:
+            tableName: exam_templates
+            indexName: idx_exam_templates_source_exam_version
+            columns:
+              - column:
+                  name: source_exam_id
+              - column:
+                  name: version
+        - createIndex:
+            tableName: exam_templates
+            indexName: idx_exam_templates_source_exam_visibility_version
+            columns:
+              - column:
+                  name: source_exam_id
+              - column:
+                  name: is_visible
+              - column:
+                  name: version
+                  descending: true
+
+  - changeSet:
+      id: 2103260003
+      author: donald-mun
+      comment: "GRAD-56: Create exam_template_questions table"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: exam_template_questions
+      changes:
+        - createTable:
+            tableName: exam_template_questions
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: template_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: correct_query
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: verify_script
+                  type: TEXT
+              - column:
+                  name: question_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: difficulty_level
+                  type: INT
+              - column:
+                  name: points
+                  type: DECIMAL(5,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_index
+                  type: INT
+        - addForeignKeyConstraint:
+            baseTableName: exam_template_questions
+            baseColumnNames: template_id
+            referencedTableName: exam_templates
+            referencedColumnNames: id
+            constraintName: fk_exam_template_questions_template
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - sql:
+            sql: >
+              ALTER TABLE exam_template_questions
+              ADD CONSTRAINT chk_exam_template_questions_type
+              CHECK (question_type IN ('CREATE_TABLE','INSERT_DATA','SELECT_QUERY','TRIGGER','FUNCTION','STORED_PROCEDURE'))
+        - sql:
+            sql: >
+              ALTER TABLE exam_template_questions
+              ADD CONSTRAINT chk_exam_template_questions_difficulty
+              CHECK (difficulty_level IS NULL OR difficulty_level BETWEEN 1 AND 5)
+
+  - changeSet:
+      id: 2103260004
+      author: donald-mun
+      comment: "GRAD-56: Create index for exam_template_questions template lookup"
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: exam_template_questions
+      changes:
+        - createIndex:
+            tableName: exam_template_questions
+            indexName: idx_exam_template_questions_template_id
+            columns:
+              - column:
+                  name: template_id

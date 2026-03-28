@@ -36,8 +36,9 @@ public class GetExamSpecificationUsecase {
 
         // TEACHER: phải có quyền access class của exam
         // STUDENT: phải được enroll vào class của exam
-        if (currentUser.getRole() == Role.TEACHER) {
-            boolean hasAccess = classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
+        if ("TEACHER".equals(currentRole)) {
+            boolean hasAccess = currentUserId.equals(exam.getCreatorId())
+                    || classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
             if (!hasAccess) {
             throw new UnauthorizedException("You do not have access to this exam");
             }

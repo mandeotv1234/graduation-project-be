@@ -1,0 +1,84 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2803260001"
+      author: manhuynh
+      comment: "Delete all data related to Exam 1 (Quan Ly Thue Xe) and its template"
+      changes:
+        - sql:
+            sql: |
+              -- Delete from leaf to parent
+              DELETE FROM exam_results WHERE exam_id = 1;
+              DELETE FROM exam_submissions WHERE exam_id = 1;
+              DELETE FROM exam_questions WHERE exam_id = 1;
+              DELETE FROM exams WHERE id = 1;
+              DELETE FROM specifications WHERE id = 1;
+
+  - changeSet:
+      id: "2803260002"
+      author: manhuynh
+      comment: "Rename Exam 'De 1010 - Mon Co so du lieu' to Vietnamese title"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: title
+                  value: "Đề thi giữa kì môn Cơ sở dữ liệu- Đề 1010"
+            where: "title = 'De 1010 - Mon Co so du lieu'"
+
+  - changeSet:
+      id: "2803260003"
+      author: manhuynh
+      comment: "Rename teachers to Vietnamese names"
+      changes:
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: full_name
+                  value: "Trần Duy Hoàng"
+            where: "email = 'tdhoang@fit.hcmus.edu.vn'"
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: full_name
+                  value: "Trần Duy Thảo"
+            where: "email = 'tdthao@fit.hcmus.edu.vn'"
+
+  - changeSet:
+      id: "2803260004"
+      author: manhuynh
+      comment: "Reset Class 1 students: Clear existing and add 6 new students"
+      changes:
+        - delete:
+            tableName: class_enrollments
+            where: "class_id = 1"
+        - sql:
+            splitStatements: true
+            sql: |
+              -- Insert or update users for students
+              INSERT INTO users (email, password, full_name, role, is_active)
+              VALUES 
+                ('22120106@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Võ Phi Hổ', 'STUDENT', true),
+                ('22120185@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Võ Văn Lĩnh', 'STUDENT', true),
+                ('22120201@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Huỳnh Mẫn', 'STUDENT', true),
+                ('22120208@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Hoàng Hồ Nhật Minh', 'STUDENT', true),
+                ('22120216@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Bùi Tấn Thành Nam', 'STUDENT', true),
+                ('22120280@student.hcmus.edu.vn', '$2b$12$JgfLlPsRtac1T8kI7zy6DODWvIv9282ym1Y9/eceKUhBbL9i5noCy', 'Phan Hồng Phúc', 'STUDENT', true)
+              ON CONFLICT (email) DO UPDATE SET 
+                full_name = EXCLUDED.full_name,
+                role = 'STUDENT',
+                is_active = true;
+
+              -- Enroll students into Class 1
+              INSERT INTO class_enrollments (class_id, student_id)
+              SELECT 1, id FROM users WHERE email IN (
+                '22120106@student.hcmus.edu.vn',
+                '22120185@student.hcmus.edu.vn',
+                '22120201@student.hcmus.edu.vn',
+                '22120208@student.hcmus.edu.vn',
+                '22120216@student.hcmus.edu.vn',
+                '22120280@student.hcmus.edu.vn'
+              )
+              ON CONFLICT (class_id, student_id) DO NOTHING;

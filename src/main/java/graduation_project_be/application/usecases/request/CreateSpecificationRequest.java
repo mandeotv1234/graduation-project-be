@@ -13,6 +13,7 @@ public record CreateSpecificationRequest(
                         Long id,
             String name,
             String dataScript,
+            String tableData,
             int orderIndex,
             Boolean isActive,
             Boolean visibleToStudent) {

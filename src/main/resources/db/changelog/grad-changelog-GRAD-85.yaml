@@ -1,0 +1,247 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2803260001"
+      author: "PhanPhuc"
+      changes:
+        - addColumn:
+            tableName: "specifications"
+            columns:
+              - column:
+                  name: "schema_diagram"
+                  type: "TEXT"
+              - column:
+                  name: "schema_diagram_visible_to_student"
+                  type: "boolean"
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+  - changeSet:
+      id: "2803260002"
+      author: "PhanPhuc"
+      changes:
+        - insert:
+            tableName: "spec_datasets"
+            columns:
+              - column:
+                  name: "specification_id"
+                  valueNumeric: 2
+              - column:
+                  name: "name"
+                  value: "Dataset mẫu 1010"
+              - column:
+                  name: "data_script"
+                  value: |
+                    -- Bước 2: Chèn dữ liệu vào CONGTY trước, để cột CongTrinhTB là NULL
+                    INSERT INTO CONGTY (MaCT, TenCT, QuocGia, TruSo, CongTrinhTB) VALUES
+                    (N'CTY01', N'Vinaconex', N'Việt Nam', N'Hà Nội', NULL),
+                    (N'CTY02', N'Coteccons', N'Việt Nam', N'TP.HCM', NULL),
+                    (N'CTY03', N'Lotte E&C', N'Hàn Quốc', N'Seoul', NULL);
+
+                    -- Bước 3: Chèn dữ liệu vào CONGTRINH
+                    -- Bây giờ đã có MaCT để thỏa mãn khóa ngoại của CONGTRINH
+                    INSERT INTO CONGTRINH (MaCongTrinh, MaCongTy, TenCongTrinh, DiaDiem, Nam) VALUES
+                    (N'001', N'CTY01', N'Toà nhà văn phòng ABC Buildings', N'Hà Nội, Việt Nam', 2023),
+                    (N'002', N'CTY02', N'Trung tâm thương mại CoCo', N'TP.HCM, Việt Nam', 2022),
+                    (N'001', N'CTY03', N'Chung cư cao cấp Star', N'Đà Nẵng, Việt Nam', 2024),
+                    (N'001', N'CTY02', N'Khách sạn 5 sao Seoul', N'Seoul, Hàn Quốc', 2021);
+
+                    -- Bước 4: Cập nhật lại cột CongTrinhTB cho bảng CONGTY
+                    -- Bây giờ MaCongTrinh và MaCongTy đã tồn tại trong bảng CONGTRINH
+                    UPDATE CONGTY SET CongTrinhTB = '001' WHERE MaCT = 'CTY01';
+                    UPDATE CONGTY SET CongTrinhTB = '002' WHERE MaCT = 'CTY02';
+                    UPDATE CONGTY SET CongTrinhTB = '001' WHERE MaCT = 'CTY03';
+
+                    -- Bước 5: Chèn dữ liệu vào HANGMUC (Thực hiện cuối cùng)
+                    INSERT INTO HANGMUC (STT, MaCongTrinh, MaCongTy, TenHangMuc, ChiPhi, NhanCong) VALUES
+                    (1, N'001', N'CTY01', N'Móng nền', 500, 100),
+                    (2, N'001', N'CTY01', N'Kết cấu', 700, 80),
+                    (1, N'002', N'CTY02', N'Nội thất', 300, 50),
+                    (2, N'002', N'CTY02', N'Hệ thống điện', 200, 90),
+                    (1, N'001', N'CTY03', N'Sàn bê tông', 400, 100);
+              - column:
+                  name: "order_index"
+                  valueNumeric: 1
+              - column:
+                  name: "is_active"
+                  valueBoolean: true
+              - column:
+                  name: "visible_to_student"
+                  valueBoolean: false
+              - column:
+                  name: "created_at"
+                  valueComputed: "CURRENT_TIMESTAMP"
+              - column:
+                  name: "updated_at"
+                  valueComputed: "CURRENT_TIMESTAMP"
+  - changeSet:
+      id: "2803260003"
+      author: "PhanPhuc"
+      comment: "Giữ duy nhất Dataset mẫu 1010 cho đề 1010 và làm sạch ddl_script chỉ còn cấu trúc bảng"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DELETE FROM spec_datasets
+              WHERE specification_id IN (
+                SELECT id
+                FROM specifications
+                WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%'
+              )
+              AND name <> 'Dataset mẫu 1010';
+
+              UPDATE spec_datasets
+              SET order_index = 1,
+                  is_active = true,
+                  visible_to_student = false,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE specification_id IN (
+                SELECT id
+                FROM specifications
+                WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%'
+              )
+              AND name = 'Dataset mẫu 1010';
+
+              UPDATE specifications
+              SET ddl_script = $DDL$
+              -- 1. Tạo bảng CONGTY
+              CREATE TABLE CONGTY (
+                  MaCT VARCHAR(5) PRIMARY KEY,
+                  TenCT NVARCHAR(50),
+                  QuocGia NVARCHAR(50),
+                  TruSo NVARCHAR(50),
+                  CongTrinhTB VARCHAR(5)
+              );
+
+              -- 2. Tạo bảng CONGTRINH
+              CREATE TABLE CONGTRINH (
+                  MaCongTrinh VARCHAR(5),
+                  MaCongTy VARCHAR(5),
+                  TenCongTrinh NVARCHAR(100),
+                  Nam INT DEFAULT YEAR(GETDATE()) CHECK (Nam <= YEAR(GETDATE())),
+                  DiaDiem NVARCHAR(100),
+                  PRIMARY KEY (MaCongTrinh, MaCongTy),
+                  FOREIGN KEY (MaCongTy) REFERENCES CONGTY(MaCT)
+              );
+
+              -- 3. Thêm ràng buộc khóa ngoại cho bảng CONGTY
+              ALTER TABLE CONGTY
+              ADD CONSTRAINT FK_CONGTY_CONGTRINH
+              FOREIGN KEY (CongTrinhTB, MaCT) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy);
+
+              -- 4. Tạo bảng HANGMUC
+              CREATE TABLE HANGMUC (
+                  STT INT,
+                  MaCongTrinh VARCHAR(5),
+                  MaCongTy VARCHAR(5),
+                  TenHangMuc NVARCHAR(100),
+                  ChiPhi FLOAT,
+                  NhanCong INT,
+                  PRIMARY KEY (STT, MaCongTrinh, MaCongTy),
+                  FOREIGN KEY (MaCongTrinh, MaCongTy) REFERENCES CONGTRINH(MaCongTrinh, MaCongTy)
+              );
+              $DDL$
+              WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%';
+  - changeSet:
+      id: "2803260004"
+      author: "PhanPhuc"
+      comment: "Đề 1010: đặt toàn bộ thuộc tính entity về nullable và bỏ cờ primary key trong metadata"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE spec_attributes
+              SET is_nullable = true,
+                  is_primary_key = false
+              WHERE entity_id IN (
+                SELECT se.id
+                FROM spec_entities se
+                JOIN specifications s ON s.id = se.specification_id
+                WHERE s.name LIKE 'Quản Lý Công Ty Xây Dựng%'
+              );
+  - changeSet:
+      id: "2803260005"
+      author: "PhanPhuc"
+      comment: "Đề 1010: ẩn script cấu trúc với sinh viên, hiển thị dataset cho sinh viên"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE specifications
+              SET ddl_visible_to_student = false,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%';
+
+              UPDATE spec_datasets
+              SET visible_to_student = true,
+                  is_active = true,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE specification_id IN (
+                SELECT id
+                FROM specifications
+                WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%'
+              )
+              AND name = 'Dataset mẫu 1010';
+  - changeSet:
+        id: "2803260006"
+        author: antigravity
+        comment: "Add table_data column to spec_datasets to store JSON data natively instead of relying on frontend SQL parsing"
+        changes:
+          - addColumn:
+              tableName: spec_datasets
+              columns:
+                - column:
+                    name: table_data
+                    type: TEXT
+                    remarks: "JSON payload containing the actual data fetched from real DB"
+  - changeSet:
+      id: "2803260007"
+      author: "PhanPhuc"
+      comment: "Add data for table_data"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE spec_datasets
+              SET table_data = $TABLE_DATA$[
+                {
+                  "tableName": "CONGTY",
+                  "columns": ["MaCT", "TenCT", "QuocGia", "TruSo", "CongTrinhTB"],
+                  "rows": [
+                    ["CTY01", "Vinaconex", "Việt Nam", "Hà Nội", "001"],
+                    ["CTY02", "Coteccons", "Việt Nam", "TP.HCM", "002"],
+                    ["CTY03", "Lotte E&C", "Hàn Quốc", "Seoul", "001"]
+                  ]
+                },
+                {
+                  "tableName": "CONGTRINH",
+                  "columns": ["MaCongTrinh", "MaCongTy", "TenCongTrinh", "DiaDiem", "Nam"],
+                  "rows": [
+                    ["001", "CTY01", "Toà nhà văn phòng ABC Buildings", "Hà Nội, Việt Nam", "2023"],
+                    ["002", "CTY02", "Trung tâm thương mại CoCo", "TP.HCM, Việt Nam", "2022"],
+                    ["001", "CTY03", "Chung cư cao cấp Star", "Đà Nẵng, Việt Nam", "2024"],
+                    ["001", "CTY02", "Khách sạn 5 sao Seoul", "Seoul, Hàn Quốc", "2021"]
+                  ]
+                },
+                {
+                  "tableName": "HANGMUC",
+                  "columns": ["STT", "MaCongTrinh", "MaCongTy", "TenHangMuc", "ChiPhi", "NhanCong"],
+                  "rows": [
+                    ["1", "001", "CTY01", "Móng nền", "500", "100"],
+                    ["2", "001", "CTY01", "Kết cấu", "700", "80"],
+                    ["1", "002", "CTY02", "Nội thất", "300", "50"],
+                    ["2", "002", "CTY02", "Hệ thống điện", "200", "90"],
+                    ["1", "001", "CTY03", "Sàn bê tông", "400", "100"]
+                  ]
+                }
+              ]$TABLE_DATA$
+              WHERE specification_id IN (
+                SELECT id
+                FROM specifications
+                WHERE name LIKE 'Quản Lý Công Ty Xây Dựng%'
+              ) AND name = 'Dataset mẫu 1010';
+              
+      

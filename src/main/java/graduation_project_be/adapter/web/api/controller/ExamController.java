@@ -223,7 +223,7 @@ public class ExamController {
         }
 
         @PostMapping("/{examId}/execute-sql")
-        @PreAuthorize("hasRole('STUDENT')")
+        @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> executeSql(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid ExecuteSqlRequestDto requestDto) {

@@ -201,11 +201,12 @@ public class UsecasesConfiguration {
     @Bean
     ExecuteSqlUsecase executeSqlUsecase(
             ExamRepository examRepository,
+            ClassRepository classRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
             ExamSessionService examSessionService) {
-        return new ExecuteSqlUsecase(examRepository, classEnrollmentRepository,
+        return new ExecuteSqlUsecase(examRepository, classRepository, classEnrollmentRepository,
                 currentUserService, examSchemaService, examSessionService);
     }
 
@@ -388,9 +389,10 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             ExamSpecificationRepository examSpecificationRepository,
             ExamRepository examRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
         return new SaveExamSpecificationUsecase(classRepository, examSpecificationRepository, examRepository,
-                currentUserService);
+                currentUserService, examSchemaService);
     }
 
     @Bean

@@ -32,6 +32,12 @@ public class ExamSpecificationEntity {
     @Column(name = "ddl_visible_to_student", nullable = false)
     private boolean ddlVisibleToStudent;
 
+    @Column(name = "schema_diagram", columnDefinition = "TEXT")
+    private String schemaDiagram;
+
+    @Column(name = "schema_diagram_visible_to_student", columnDefinition = "boolean default true")
+    private boolean schemaDiagramVisibleToStudent = true;
+
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
@@ -59,7 +65,9 @@ public class ExamSpecificationEntity {
                 .id(id)
                 .name(name)
                 .ddlScript(ddlScript)
-            .ddlVisibleToStudent(ddlVisibleToStudent)
+                .ddlVisibleToStudent(ddlVisibleToStudent)
+                .schemaDiagram(schemaDiagram)
+                .schemaDiagramVisibleToStudent(schemaDiagramVisibleToStudent)
                 .description(description)
                 .entities(entityModels)
                 .datasets(datasets == null ? List.of() : datasets.stream().map(SpecDatasetEntity::toModel).toList())
@@ -74,7 +82,9 @@ public class ExamSpecificationEntity {
                 .id(model.getId())
                 .name(model.getName())
                 .ddlScript(model.getDdlScript())
-            .ddlVisibleToStudent(model.isDdlVisibleToStudent())
+                .ddlVisibleToStudent(model.isDdlVisibleToStudent())
+                .schemaDiagram(model.getSchemaDiagram())
+                .schemaDiagramVisibleToStudent(model.isSchemaDiagramVisibleToStudent())
                 .description(model.getDescription())
                 .createdBy(model.getCreatedBy())
                 .createdAt(model.getCreatedAt())

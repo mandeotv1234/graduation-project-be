@@ -7,6 +7,8 @@ public record SaveExamSpecificationRequest(
         String name,
         String ddlScript,
         Boolean ddlVisibleToStudent,
+        String schemaDiagram,
+        Boolean schemaDiagramVisibleToStudent,
         String description,
         List<SpecEntityRequest> entities,
         List<SpecDatasetRequest> datasets) {
@@ -32,6 +34,7 @@ public record SaveExamSpecificationRequest(
             Long id,
             String name,
             String dataScript,
+            String tableData,
             int orderIndex,
             Boolean isActive,
             Boolean visibleToStudent) {

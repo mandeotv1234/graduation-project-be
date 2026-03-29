@@ -43,6 +43,7 @@ public class CreateSpecificationUsecase {
                 .map(dataset -> SpecDataset.builder()
                         .name(dataset.name())
                         .dataScript(dataset.dataScript())
+                        .tableData(dataset.tableData())
                         .orderIndex(dataset.orderIndex())
                         .isActive(dataset.isActive() == null || dataset.isActive())
                 .visibleToStudent(dataset.visibleToStudent() != null && dataset.visibleToStudent())

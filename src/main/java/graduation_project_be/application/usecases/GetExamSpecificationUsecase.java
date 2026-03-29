@@ -29,6 +29,7 @@ public class GetExamSpecificationUsecase {
     public ExamSpecificationResponse execute(Long examId) {
         User currentUser = currentUserService.getCurrentUser();
         Long currentUserId = currentUser.getId();
+        Role currentRole = currentUser.getRole();
 
         // Verify exam exists
         Exam exam = examRepository.findById(examId)
@@ -36,17 +37,17 @@ public class GetExamSpecificationUsecase {
 
         // TEACHER: phải có quyền access class của exam
         // STUDENT: phải được enroll vào class của exam
-        if ("TEACHER".equals(currentRole)) {
+        if (currentRole == Role.TEACHER) {
             boolean hasAccess = currentUserId.equals(exam.getCreatorId())
                     || classRepository.existsTeacherAccess(exam.getClassId(), currentUserId);
             if (!hasAccess) {
-            throw new UnauthorizedException("You do not have access to this exam");
+                throw new UnauthorizedException("You do not have access to this exam");
             }
-        } else if (currentUser.getRole() == Role.STUDENT) {
+        } else if (currentRole == Role.STUDENT) {
             boolean enrolled = classEnrollmentRepository
                     .existsByClassIdAndStudentId(exam.getClassId(), currentUserId);
             if (!enrolled) {
-            throw new UnauthorizedException("You are not enrolled in this exam's class");
+                throw new UnauthorizedException("You are not enrolled in this exam's class");
             }
         } else {
             throw new UnauthorizedException("Access denied");
@@ -59,24 +60,28 @@ public class GetExamSpecificationUsecase {
         ExamSpecification specification = examSpecificationRepository.findById(exam.getSpecificationId())
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", exam.getSpecificationId()));
 
-        if (currentUser.getRole() == Role.STUDENT) {
+        if (currentRole == Role.STUDENT) {
             List<SpecDataset> visibleDatasets = (specification.getDatasets() == null ? List.<SpecDataset>of()
-                : specification.getDatasets().stream()
+                    : specification.getDatasets().stream()
                     .filter(SpecDataset::isVisibleToStudent)
                     .toList());
 
             specification = ExamSpecification.builder()
-                .id(specification.getId())
-                .name(specification.getName())
+                    .id(specification.getId())
+                    .name(specification.getName())
                     .ddlScript(specification.isDdlVisibleToStudent() ? specification.getDdlScript() : null)
                     .ddlVisibleToStudent(specification.isDdlVisibleToStudent())
-                .description(specification.getDescription())
-                .entities(specification.getEntities())
-                .datasets(visibleDatasets)
-                .createdBy(specification.getCreatedBy())
-                .createdAt(specification.getCreatedAt())
-                .updatedAt(specification.getUpdatedAt())
-                .build();
+                    .schemaDiagram(specification.isSchemaDiagramVisibleToStudent()
+                            ? specification.getSchemaDiagram()
+                            : null)
+                    .schemaDiagramVisibleToStudent(specification.isSchemaDiagramVisibleToStudent())
+                    .description(specification.getDescription())
+                    .entities(specification.getEntities())
+                    .datasets(visibleDatasets)
+                    .createdBy(specification.getCreatedBy())
+                    .createdAt(specification.getCreatedAt())
+                    .updatedAt(specification.getUpdatedAt())
+                    .build();
         }
 
         return ExamSpecificationResponse.fromModel(specification);

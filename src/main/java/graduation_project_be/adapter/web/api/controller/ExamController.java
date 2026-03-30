@@ -1,20 +1,6 @@
 package graduation_project_be.adapter.web.api.controller;
 
-import graduation_project_be.adapter.web.api.dtos.request.CreateExamQuestionsRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.CreateExamRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.ExecuteSqlRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.GenerateGradingRubricRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.GetExamMonitorRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.GetStudentExamDetailRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.GetTeacherExamDetailRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.ReportViolationRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.SaveExamSpecificationRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.StartExamSessionRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.SubmitExamRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.TestGradeCreateTableRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.TestGradeInsertRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.TestGradeSelectRequestDto;
-import graduation_project_be.adapter.web.api.dtos.request.UpdateExamRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.*;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
@@ -29,7 +15,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -42,7 +35,6 @@ public class ExamController {
 
         private final CreateExamUsecase createExamUsecase;
         private final GetStudentExamUsecase getStudentExamUsecase;
-        private final CreateExamQuestionUsecase createExamQuestionUsecase;
         private final CreateExamQuestionsUsecase createExamQuestionsUsecase;
         private final GetExamQuestionsUsecase getExamQuestionsUsecase;
         private final GetStudentExamsUsecase getStudentExamsUsecase;
@@ -60,6 +52,9 @@ public class ExamController {
         private final GetExamMonitorUsecase getExamMonitorUsecase;
         private final RubricTestingUsecase rubricTestingUsecase;
         private final ObjectMapper objectMapper;
+        private final GetTeacherExamSettingsUsecase getTeacherExamSettingsUsecase;
+        private final GetTeacherExamTemplateVersionsUsecase getTeacherExamTemplateVersionsUsecase;
+        private final UpdateTeacherExamSettingsUsecase updateTeacherExamSettingsUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -153,6 +148,43 @@ public class ExamController {
                                                 ExamSpecificationResponseDto.fromResponse(response),
                                                 "OK",
                                                 "Exam specification retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/settings")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getTeacherExamSettings(
+                        @PathVariable("examId") @Positive Long examId) {
+                CreateExamResponse response = getTeacherExamSettingsUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                CreateExamResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam settings retrieved successfully"));
+        }
+
+        @PutMapping("/{examId}/settings")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateTeacherExamSettings(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid UpdateTeacherExamSettingsRequestDto requestDto) {
+                CreateExamResponse response = updateTeacherExamSettingsUsecase.execute(examId, requestDto.toRequest());
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                CreateExamResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam settings updated successfully"));
+        }
+
+        @GetMapping("/{examId}/template-versions")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getTeacherExamTemplateVersions(
+                        @PathVariable("examId") @Positive Long examId) {
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                TeacherExamTemplateVersionsResponseDto.fromResponse(
+                                                                getTeacherExamTemplateVersionsUsecase.execute(examId)),
+                                                "OK",
+                                                "Exam template history retrieved successfully"));
         }
 
         @GetMapping("/{examId}/questions")

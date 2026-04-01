@@ -3,7 +3,6 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamTemplateQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamTemplateRepository;

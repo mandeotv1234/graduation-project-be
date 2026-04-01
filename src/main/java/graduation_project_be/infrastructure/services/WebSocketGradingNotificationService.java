@@ -1,12 +1,14 @@
 package graduation_project_be.infrastructure.services;
 
 import graduation_project_be.application.port.services.GradingNotificationService;
+import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -25,6 +27,7 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
     public void notifyGradingCompleted(Long examId, Long studentId,
                                         BigDecimal totalScore, BigDecimal maxScore,
                                         int correctCount, int totalQuestions,
+                                        List<SubmitExamResponse.QuestionResultItem> questionResults,
                                         LocalDateTime gradedAt) {
         String destination = String.format("/topic/exam/%d/grading-result", examId);
 
@@ -35,13 +38,14 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
                 "maxScore", maxScore,
                 "correctCount", correctCount,
                 "totalQuestions", totalQuestions,
+                "questionResults", questionResults,
                 "status", "COMPLETED",
                 "gradedAt", gradedAt.toString());
 
         messagingTemplate.convertAndSend(destination, payload);
 
-        log.info("Grading result sent via WebSocket: exam={}, student={}, score={}/{}",
-                examId, studentId, totalScore, maxScore);
+        log.info("Grading result sent via WebSocket: exam={}, student={}, score={}/{}, resultsCount={}",
+                examId, studentId, totalScore, maxScore, questionResults.size());
     }
 
     @Override

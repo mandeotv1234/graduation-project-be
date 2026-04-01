@@ -11,7 +11,6 @@ import graduation_project_be.application.usecases.request.CreateExamQuestionsReq
 import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
-import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

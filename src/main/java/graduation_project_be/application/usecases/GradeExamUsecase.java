@@ -1,5 +1,7 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.usecases.response.SubmitExamResponse;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.domain.models.TableMetadata;
@@ -217,6 +219,24 @@ public class GradeExamUsecase {
             existingResult.setStatus(GradingStatus.COMPLETED);
             examResultRepository.save(existingResult);
 
+            // Collect results for the notification
+            List<SubmitExamResponse.QuestionResultItem> questionResults = sortedQuestions.stream()
+                .map(q -> {
+                    ExamSubmission s = submissionByQuestionId.get(q.getId());
+                    return new SubmitExamResponse.QuestionResultItem(
+                        s != null ? s.getId() : null,
+                        q.getId(),
+                        q.getOrderIndex(),
+                        s != null ? s.getStudentQuery() : "",
+                        s != null && Boolean.TRUE.equals(s.getIsCorrect()),
+                        s != null ? s.getScoreEarned() : BigDecimal.ZERO,
+                        q.getPoints(),
+                        s != null ? s.getErrorMessage() : "No submission",
+                        s != null ? s.getExecutionTimeMs() : 0
+                    );
+                })
+                .collect(Collectors.toList());
+
             // 9. Cleanup — drop schemas after grading
             try {
                 examSchemaService.dropSchema(schemaName);
@@ -234,7 +254,8 @@ public class GradeExamUsecase {
 
             // 11. Notify student via WebSocket
             gradingNotificationService.notifyGradingCompleted(
-                    examId, studentId, totalScore, maxScore, correctCount, totalQuestions, LocalDateTime.now());
+                    examId, studentId, totalScore, maxScore, correctCount, totalQuestions, 
+                    questionResults, LocalDateTime.now());
 
             log.info("Grading completed: exam={}, student={}, score={}/{}", examId, studentId, totalScore, maxScore);
 

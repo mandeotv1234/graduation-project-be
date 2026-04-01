@@ -16,6 +16,12 @@ public interface ExamSessionService {
     Optional<String> getActiveSession(Long examId, Long studentId);
 
     /**
+     * Completely clear the session and start time for the student+exam.
+     * Used when the exam is submitted or the attempt is finished.
+     */
+    void clearSession(Long examId, Long studentId);
+
+    /**
      * End (release) the session for the student+exam.
      */
     void endSession(Long examId, Long studentId);

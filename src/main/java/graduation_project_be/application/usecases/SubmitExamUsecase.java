@@ -145,9 +145,25 @@ public class SubmitExamUsecase {
         gradingQueueService.enqueue(examId, studentId, attemptNumber);
         log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
 
-        // 10. Return immediately — student sees "Đang chấm điểm..."
+        // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
+        examSessionService.clearSession(examId, studentId);
+
+        // 10. Check if we need to return detailed answers
+        List<SubmitExamResponse.SubmissionDetail> details = null;
+        if (exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getShowResultAfterSubmit())) {
+            details = allQuestions.stream().map(q -> new SubmitExamResponse.SubmissionDetail(
+                    q.getId(),
+                    q.getContent(),
+                    q.getPoints(),
+                    answerMap.getOrDefault(q.getId(), "")
+            )).collect(Collectors.toList());
+        }
+
+        // 11. Return immediately — student sees "Đang chấm điểm..."
         return new SubmitExamResponse(
-                examId, studentId, submittedAt, GradingStatus.PENDING);
+                examId, studentId, submittedAt, GradingStatus.PENDING,
+                null, null, 0, 0,
+                details, null);
     }
 
     // ========== Backend time validation ==========

@@ -1,5 +1,20 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import java.util.List;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationV2RequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateSpecificationRequestDto;
@@ -7,6 +22,7 @@ import graduation_project_be.adapter.web.api.dtos.response.ExamSpecificationResp
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SpecificationResponseDto;
 import graduation_project_be.application.usecases.CreateSpecificationUsecase;
+import graduation_project_be.application.usecases.DeleteSpecificationUsecase;
 import graduation_project_be.application.usecases.GetSpecificationByIdUsecase;
 import graduation_project_be.application.usecases.GetSpecificationsUsecase;
 import graduation_project_be.application.usecases.UpdateSpecificationUsecase;
@@ -15,13 +31,6 @@ import graduation_project_be.application.usecases.response.SpecificationResponse
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/specifications")
@@ -33,6 +42,7 @@ public class SpecificationController {
     private final UpdateSpecificationUsecase updateSpecificationUsecase;
     private final GetSpecificationsUsecase getSpecificationsUsecase;
     private final GetSpecificationByIdUsecase getSpecificationByIdUsecase;
+    private final DeleteSpecificationUsecase deleteSpecificationUsecase;
 
     @PostMapping
     @PreAuthorize("hasRole('TEACHER')")
@@ -92,5 +102,17 @@ public class SpecificationController {
                         ExamSpecificationResponseDto.fromResponse(response),
                         "OK",
                         "Exam specification retrieved successfully"));
+    }
+
+    @DeleteMapping("/{specificationId}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> deleteSpecification(
+            @PathVariable("specificationId") @Positive Long specificationId) {
+        deleteSpecificationUsecase.execute(specificationId);
+        return ResponseEntity.ok(
+                ResponseDto.of(
+                        null,
+                        "SUCCESS",
+                        "Specification deleted successfully"));
     }
 }

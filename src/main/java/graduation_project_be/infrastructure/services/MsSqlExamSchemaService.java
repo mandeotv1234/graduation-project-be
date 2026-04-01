@@ -1,7 +1,14 @@
 package graduation_project_be.infrastructure.services;
 
-import graduation_project_be.application.port.services.ExamSchemaService;
-import lombok.extern.slf4j.Slf4j;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -9,8 +16,10 @@ import org.springframework.stereotype.Service;
 import java.sql.*;
 import java.util.*;
 
+import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TriggerMetadata;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -219,6 +228,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     if (ddlScript != null && !ddlScript.isBlank()) {
                         try (Statement stmt = conn.createStatement()) {
                             stmt.execute(ddlScript);
+                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {}
                         }
                         log.info("Loaded DDL into schema: {}", schemaName);
                     }
@@ -226,6 +236,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
                         try (Statement stmt = conn.createStatement()) {
                             stmt.execute(defaultDataScript);
+                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {}
                         }
                         log.info("Loaded default data into schema: {}", schemaName);
                     }

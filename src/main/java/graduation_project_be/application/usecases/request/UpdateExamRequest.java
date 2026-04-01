@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record UpdateExamRequest(
         Long examId,
         String title,
+        Long specificationId,
         Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,

@@ -9,7 +9,6 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import graduation_project_be.infrastructure.persistence.entities.SpecEntityEntity;
 
 @Table(name = "specifications")
 @Entity
@@ -29,14 +28,8 @@ public class ExamSpecificationEntity {
     @Column(name = "ddl_script", nullable = false, columnDefinition = "TEXT")
     private String ddlScript;
 
-    @Column(name = "ddl_visible_to_student", nullable = false)
-    private boolean ddlVisibleToStudent;
-
-    @Column(name = "schema_diagram", columnDefinition = "TEXT")
-    private String schemaDiagram;
-
-    @Column(name = "schema_diagram_visible_to_student", columnDefinition = "boolean default true")
-    private boolean schemaDiagramVisibleToStudent = true;
+    @Column(name = "schema_json", columnDefinition = "TEXT")
+    private String schemaJson;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
@@ -65,9 +58,7 @@ public class ExamSpecificationEntity {
                 .id(id)
                 .name(name)
                 .ddlScript(ddlScript)
-                .ddlVisibleToStudent(ddlVisibleToStudent)
-                .schemaDiagram(schemaDiagram)
-                .schemaDiagramVisibleToStudent(schemaDiagramVisibleToStudent)
+                .schemaJson(schemaJson)
                 .description(description)
                 .entities(entityModels)
                 .datasets(datasets == null ? List.of() : datasets.stream().map(SpecDatasetEntity::toModel).toList())
@@ -82,9 +73,7 @@ public class ExamSpecificationEntity {
                 .id(model.getId())
                 .name(model.getName())
                 .ddlScript(model.getDdlScript())
-                .ddlVisibleToStudent(model.isDdlVisibleToStudent())
-                .schemaDiagram(model.getSchemaDiagram())
-                .schemaDiagramVisibleToStudent(model.isSchemaDiagramVisibleToStudent())
+                .schemaJson(model.getSchemaJson())
                 .description(model.getDescription())
                 .createdBy(model.getCreatedBy())
                 .createdAt(model.getCreatedAt())

@@ -16,9 +16,7 @@ public class ExamSpecification {
     private Long id;
     private String name;
     private String ddlScript;
-    private boolean ddlVisibleToStudent;
-    private String schemaDiagram;
-    private boolean schemaDiagramVisibleToStudent;
+    private String schemaJson;
     private String description;
     private List<SpecEntity> entities;
     private List<SpecDataset> datasets;

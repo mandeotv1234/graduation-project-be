@@ -55,20 +55,12 @@ public class SaveExamSpecificationUsecase {
         LocalDateTime now = LocalDateTime.now();
         List<SpecEntity> entities = toEntities(request);
         List<SpecDataset> datasets = toDatasets(request, current, specificationId, now);
-        boolean ddlVisibleToStudent = resolveVisibility(
-                request.ddlVisibleToStudent(),
-                current.isDdlVisibleToStudent());
-        boolean schemaDiagramVisibleToStudent = resolveVisibility(
-                request.schemaDiagramVisibleToStudent(),
-                current.isSchemaDiagramVisibleToStudent());
 
         ExamSpecification specification = ExamSpecification.builder()
                 .id(specificationId)
                 .name(request.name())
                 .ddlScript(request.ddlScript())
-                .ddlVisibleToStudent(ddlVisibleToStudent)
-                .schemaDiagram(request.schemaDiagram())
-                .schemaDiagramVisibleToStudent(schemaDiagramVisibleToStudent)
+                .schemaJson(request.schemaJson())
                 .description(request.description())
                 .entities(entities)
                 .datasets(datasets)
@@ -145,10 +137,6 @@ public class SaveExamSpecificationUsecase {
                             ? datasetRequest.isActive()
                             : currentDataset == null || currentDataset.isActive();
 
-                    boolean visibleToStudent = datasetRequest.visibleToStudent() != null
-                            ? datasetRequest.visibleToStudent()
-                            : currentDataset != null && currentDataset.isVisibleToStudent();
-
                     return SpecDataset.builder()
                             .id(currentDataset == null ? null : currentDataset.getId())
                             .specificationId(specificationId)
@@ -157,7 +145,6 @@ public class SaveExamSpecificationUsecase {
                             .tableData(datasetRequest.tableData())
                             .orderIndex(datasetRequest.orderIndex() <= 0 ? index + 1 : datasetRequest.orderIndex())
                             .isActive(isActive)
-                            .visibleToStudent(visibleToStudent)
                             .createdAt(currentDataset == null ? now : currentDataset.getCreatedAt())
                             .updatedAt(now)
                             .build();

@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record UpdateExamRequestDto(
         String title,
+        @Positive(message = "Specification id must be positive") Long specificationId,
         @Positive(message = "Duration must be positive") Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,
@@ -20,6 +21,7 @@ public record UpdateExamRequestDto(
         return new UpdateExamRequest(
                 examId,
                 title,
+                specificationId,
                 durationMinutes,
                 startTime,
                 endTime,

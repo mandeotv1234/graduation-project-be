@@ -9,9 +9,7 @@ import java.util.List;
 public record SaveExamSpecificationRequestDto(
         @NotBlank(message = "Name is required") String name,
         @NotBlank(message = "DDL script is required") String ddlScript,
-        Boolean ddlVisibleToStudent,
         String schemaDiagram,
-        Boolean schemaDiagramVisibleToStudent,
         String description,
         @Valid List<SpecEntityRequestDto> entities,
         @Valid List<SpecDatasetRequestDto> datasets) {
@@ -39,8 +37,7 @@ public record SaveExamSpecificationRequestDto(
             @NotBlank(message = "Dataset script is required") String dataScript,
             String tableData,
             int orderIndex,
-            Boolean isActive,
-            Boolean visibleToStudent) {
+            Boolean isActive) {
     }
 
     public SaveExamSpecificationRequest toRequest(Long examId) {
@@ -58,15 +55,13 @@ public record SaveExamSpecificationRequestDto(
 
         List<SaveExamSpecificationRequest.SpecDatasetRequest> datasetRequests = datasets == null ? List.of()
                 : datasets.stream().map(d -> new SaveExamSpecificationRequest.SpecDatasetRequest(
-                        d.id(), d.name(), d.dataScript(), d.tableData(), d.orderIndex(), d.isActive(), d.visibleToStudent())).toList();
+                        d.id(), d.name(), d.dataScript(), d.tableData(), d.orderIndex(), d.isActive())).toList();
 
         return new SaveExamSpecificationRequest(
                 examId,
                 name,
                 ddlScript,
-                ddlVisibleToStudent,
                 schemaDiagram,
-                schemaDiagramVisibleToStudent,
                 description,
                 entityRequests,
                 datasetRequests);

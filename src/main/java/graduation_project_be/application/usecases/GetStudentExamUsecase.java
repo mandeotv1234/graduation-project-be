@@ -6,11 +6,15 @@ import graduation_project_be.application.port.repositories.ClassEnrollmentReposi
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.usecases.response.GetStudentExamResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.Class;
+import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.application.usecases.request.GetStudentExamDetailRequest;
 import lombok.RequiredArgsConstructor;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 public class GetStudentExamUsecase {
@@ -19,6 +23,7 @@ public class GetStudentExamUsecase {
     private final ClassRepository classRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSchemaService examSchemaService;
 
     public GetStudentExamResponse execute(GetStudentExamDetailRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -40,6 +45,8 @@ public class GetStudentExamUsecase {
             }
         }
 
-        return GetStudentExamResponse.fromModel(exam, className);
+        String schemaName = String.format("exam_%d_student_%d", examId, studentId);
+        List<TableMetadata> schema = examSchemaService.extractMetadata(schemaName);
+        return GetStudentExamResponse.fromModel(exam, className, schema);
     }
 }

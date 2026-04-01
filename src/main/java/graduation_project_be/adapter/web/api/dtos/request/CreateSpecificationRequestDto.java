@@ -1,5 +1,6 @@
 package graduation_project_be.adapter.web.api.dtos.request;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import graduation_project_be.application.usecases.request.CreateSpecificationRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -9,7 +10,7 @@ import java.util.List;
 public record CreateSpecificationRequestDto(
         @NotBlank(message = "Name is required") String name,
         @NotBlank(message = "DDL script is required") String ddlScript,
-        Boolean ddlVisibleToStudent,
+        JsonNode schemaJson,
         String description,
         @Valid List<SpecDatasetRequestDto> datasets) {
 
@@ -19,8 +20,7 @@ public record CreateSpecificationRequestDto(
             @NotBlank(message = "Dataset script is required") String dataScript,
             String tableData,
             int orderIndex,
-            Boolean isActive,
-            Boolean visibleToStudent) {
+            Boolean isActive) {
     }
 
     public CreateSpecificationRequest toRequest() {
@@ -31,9 +31,14 @@ public record CreateSpecificationRequestDto(
                         dataset.dataScript(),
                         dataset.tableData(),
                         dataset.orderIndex(),
-                        dataset.isActive(),
-                        dataset.visibleToStudent())).toList();
+                        dataset.isActive())).toList();
 
-        return new CreateSpecificationRequest(name, ddlScript, ddlVisibleToStudent, description, datasetRequests, List.of());
+        return new CreateSpecificationRequest(
+                name,
+                ddlScript,
+                schemaJson,
+                description,
+                datasetRequests,
+                List.of());
     }
 }

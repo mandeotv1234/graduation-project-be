@@ -1,5 +1,7 @@
 package graduation_project_be.application.usecases;
 
+import java.util.List;
+
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
@@ -14,8 +16,6 @@ import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
-
-import java.util.List;
 
 @RequiredArgsConstructor
 public class GetExamSpecificationUsecase {
@@ -63,20 +63,16 @@ public class GetExamSpecificationUsecase {
         if (currentRole == Role.STUDENT) {
             List<SpecDataset> visibleDatasets = (specification.getDatasets() == null ? List.<SpecDataset>of()
                     : specification.getDatasets().stream()
-                    .filter(SpecDataset::isVisibleToStudent)
+                    .filter(dataset -> dataset.isActive())
                     .toList());
 
             specification = ExamSpecification.builder()
                     .id(specification.getId())
                     .name(specification.getName())
-                    .ddlScript(specification.isDdlVisibleToStudent() ? specification.getDdlScript() : null)
-                    .ddlVisibleToStudent(specification.isDdlVisibleToStudent())
-                    .schemaDiagram(specification.isSchemaDiagramVisibleToStudent()
-                            ? specification.getSchemaDiagram()
-                            : null)
-                    .schemaDiagramVisibleToStudent(specification.isSchemaDiagramVisibleToStudent())
+                    .ddlScript(specification.getDdlScript())
+                    .schemaJson(specification.getSchemaJson())
                     .description(specification.getDescription())
-                    .entities(specification.getEntities())
+                    .entities(specification.getEntities()) // Preserving entities!
                     .datasets(visibleDatasets)
                     .createdBy(specification.getCreatedBy())
                     .createdAt(specification.getCreatedAt())

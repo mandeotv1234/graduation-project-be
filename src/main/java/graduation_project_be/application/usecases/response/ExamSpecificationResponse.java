@@ -1,26 +1,29 @@
 package graduation_project_be.application.usecases.response;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.SpecEntity;
 
-import java.time.LocalDateTime;
-import java.util.List;
-
 public record ExamSpecificationResponse(
         Long id,
         String name,
         String ddlScript,
-        boolean ddlVisibleToStudent,
-        String schemaDiagram,
-        boolean schemaDiagramVisibleToStudent,
+        JsonNode schemaJson,
         String description,
         List<SpecEntityResponse> entities,
         List<SpecDatasetResponse> datasets,
         Long createdBy,
         LocalDateTime createdAt,
         LocalDateTime updatedAt) {
+
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     public record SpecEntityResponse(
             Long id,
@@ -47,8 +50,7 @@ public record ExamSpecificationResponse(
             String dataScript,
             String tableData,
             int orderIndex,
-            boolean isActive,
-            boolean visibleToStudent) {
+            boolean isActive) {
     }
 
     public static ExamSpecificationResponse fromModel(ExamSpecification model) {
@@ -56,14 +58,21 @@ public record ExamSpecificationResponse(
                 : model.getEntities().stream().map(ExamSpecificationResponse::toEntityResponse).toList();
         List<SpecDatasetResponse> datasetResponses = model.getDatasets() == null ? List.of()
                 : model.getDatasets().stream().map(ExamSpecificationResponse::toDatasetResponse).toList();
+        
+        JsonNode jsonNode = null;
+        if (model.getSchemaJson() != null && !model.getSchemaJson().isBlank()) {
+            try {
+                jsonNode = mapper.readTree(model.getSchemaJson());
+            } catch (Exception e) {
+                // ignore or fallback
+            }
+        }
 
         return new ExamSpecificationResponse(
                 model.getId(),
                 model.getName(),
                 model.getDdlScript(),
-                model.isDdlVisibleToStudent(),
-                model.getSchemaDiagram(),
-                model.isSchemaDiagramVisibleToStudent(),
+                jsonNode,
                 model.getDescription(),
                 entityResponses,
                 datasetResponses,
@@ -102,7 +111,6 @@ public record ExamSpecificationResponse(
                 dataset.getDataScript(),
                 dataset.getTableData(),
                 dataset.getOrderIndex(),
-                dataset.isActive(),
-                dataset.isVisibleToStudent());
+                dataset.isActive());
     }
 }

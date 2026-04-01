@@ -2,29 +2,40 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ConflictException;
+import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.StartExamSessionRequest;
 import graduation_project_be.application.usecases.response.StartExamSessionResponse;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamSpecification;
+import graduation_project_be.domain.models.SpecDataset;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.Optional;
 
+@Slf4j
 @RequiredArgsConstructor
 public class StartExamSessionUsecase {
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d";
 
     private final ExamRepository examRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
     private final ExamResultRepository examResultRepository;
+    private final ExamSpecificationRepository examSpecificationRepository;
+    private final ExamSchemaService examSchemaService;
 
     public StartExamSessionResponse execute(StartExamSessionRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -88,15 +99,30 @@ public class StartExamSessionUsecase {
             boolean stillValid = Duration.between(now, candidateDeadline).getSeconds() > 0;
             if (stillValid) {
                 // Valid reconnect — preserve the original start time
-                examStartedAt = existingStartTime.get();
+                String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId);
+                boolean hasSchemaObjects = !examSchemaService.extractMetadata(schemaName).isEmpty();
+
+                if (hasSchemaObjects) {
+                    examStartedAt = existingStartTime.get();
+                } else {
+                    // A stale start-time key can survive while the schema has been dropped
+                    // (e.g. previous attempt finished). Re-initialize and reset timer.
+                    examStartedAt = now;
+                    initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
+                    examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
+                    log.info("Reinitialized empty student schema on start-session: exam={}, student={}",
+                            request.examId(), studentId);
+                }
             } else {
                 // Stale start-time key (exam had already expired) — reset to now
                 examStartedAt = now;
+                initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
                 examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
             }
         } else {
             // First time starting — record the backend start time
             examStartedAt = now;
+            initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
             examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
         }
 
@@ -115,5 +141,28 @@ public class StartExamSessionUsecase {
 
         return StartExamSessionResponse.success(
                 now, examStartedAt, examDeadline, remainingSeconds, exam.getDurationMinutes());
+    }
+
+    private void initializeStudentSchemaForFreshStart(Long examId, Long studentId, Exam exam) {
+        Long specificationId = exam.getSpecificationId();
+        if (specificationId == null) {
+            return;
+        }
+
+        ExamSpecification specification = examSpecificationRepository.findById(specificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
+
+        String defaultDatasetScript = specification.getDatasets() == null ? null
+                : specification.getDatasets().stream()
+                        .filter(SpecDataset::isActive)
+                        .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
+                        .map(SpecDataset::getDataScript)
+                        .filter(script -> script != null && !script.isBlank())
+                        .findFirst()
+                        .orElse(null);
+
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId);
+        examSchemaService.resetSchema(schemaName);
+        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), defaultDatasetScript);
     }
 }

@@ -18,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -141,9 +143,14 @@ public class SubmitExamUsecase {
                 .build();
         examResultRepository.save(examResult);
 
-        // 9. Enqueue grading job to Redis List → Worker will pick it up
-        gradingQueueService.enqueue(examId, studentId, attemptNumber);
-        log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+        // 9. Enqueue grading job to Redis List AFTER DB commit
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                gradingQueueService.enqueue(examId, studentId, attemptNumber);
+                log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+            }
+        });
 
         // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
         examSessionService.clearSession(examId, studentId);
@@ -162,7 +169,7 @@ public class SubmitExamUsecase {
         // 11. Return immediately — student sees "Đang chấm điểm..."
         return new SubmitExamResponse(
                 examId, studentId, submittedAt, GradingStatus.PENDING,
-                null, null, 0, 0,
+                BigDecimal.ZERO, maxScore, 0, totalQuestions,
                 details, null);
     }
 

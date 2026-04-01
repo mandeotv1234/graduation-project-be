@@ -1,6 +1,5 @@
 package graduation_project_be.application.usecases;
 
-import graduation_project_be.application.usecases.response.SubmitExamResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +36,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -90,8 +90,6 @@ public class GradeExamUsecase {
 
             // 4. Load all questions for this exam
             List<ExamQuestion> allQuestions = examQuestionRepository.findByExamId(examId);
-            Map<Long, ExamQuestion> questionMap = allQuestions.stream()
-                    .collect(Collectors.toMap(ExamQuestion::getId, Function.identity()));
 
             BigDecimal maxScore = allQuestions.stream()
                     .map(ExamQuestion::getPoints)
@@ -158,11 +156,11 @@ public class GradeExamUsecase {
                                             "SQL lỗi thực thi và rubric đang để FAIL_ALL nên câu này bị 0 điểm.");
                                 }
                                 isCorrect = false;
-                            } else {
+                            } else if (submission != null) {
                                 isCorrect = gradeAnswer(schemaName, teacherSchemaName, question, submission);
                             }
                             
-                            if (submission.getErrorMessage() != null && !submission.getErrorMessage().isBlank()) {
+                            if (submission != null && submission.getErrorMessage() != null && !submission.getErrorMessage().isBlank()) {
                                 if (errorMessage != null) {
                                     errorMessage = errorMessage + " | Lỗi cú pháp/Cấu trúc: " + submission.getErrorMessage();
                                 } else {
@@ -219,23 +217,30 @@ public class GradeExamUsecase {
             existingResult.setStatus(GradingStatus.COMPLETED);
             examResultRepository.save(existingResult);
 
-            // Collect results for the notification
-            List<SubmitExamResponse.QuestionResultItem> questionResults = sortedQuestions.stream()
+            // Collect results as a generic structure for notification
+            List<Map<String, Object>> resultsList = sortedQuestions.stream()
                 .map(q -> {
                     ExamSubmission s = submissionByQuestionId.get(q.getId());
-                    return new SubmitExamResponse.QuestionResultItem(
-                        s != null ? s.getId() : null,
-                        q.getId(),
-                        q.getOrderIndex(),
-                        s != null ? s.getStudentQuery() : "",
-                        s != null && Boolean.TRUE.equals(s.getIsCorrect()),
-                        s != null ? s.getScoreEarned() : BigDecimal.ZERO,
-                        q.getPoints(),
-                        s != null ? s.getErrorMessage() : "No submission",
-                        s != null ? s.getExecutionTimeMs() : 0
-                    );
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("submissionId", s != null ? s.getId() : null);
+                    map.put("questionId", q.getId());
+                    map.put("orderIndex", q.getOrderIndex());
+                    map.put("studentQuery", s != null ? s.getStudentQuery() : "");
+                    map.put("isCorrect", s != null && Boolean.TRUE.equals(s.getIsCorrect()));
+                    map.put("scoreEarned", s != null ? s.getScoreEarned() : BigDecimal.ZERO);
+                    map.put("maxPoints", q.getPoints());
+                    map.put("errorMessage", s != null ? s.getErrorMessage() : "No submission");
+                    map.put("executionTimeMs", s != null ? s.getExecutionTimeMs() : null);
+                    return map;
                 })
                 .collect(Collectors.toList());
+
+            String questionResultsJson = "";
+            try {
+                questionResultsJson = objectMapper.writeValueAsString(resultsList);
+            } catch (Exception e) {
+                log.warn("Failed to serialize question results to JSON for notification: {}", e.getMessage());
+            }
 
             // 9. Cleanup — drop schemas after grading
             try {
@@ -255,7 +260,7 @@ public class GradeExamUsecase {
             // 11. Notify student via WebSocket
             gradingNotificationService.notifyGradingCompleted(
                     examId, studentId, totalScore, maxScore, correctCount, totalQuestions, 
-                    questionResults, LocalDateTime.now());
+                    questionResultsJson, LocalDateTime.now());
 
             log.info("Grading completed: exam={}, student={}, score={}/{}", examId, studentId, totalScore, maxScore);
 
@@ -729,7 +734,6 @@ public class GradeExamUsecase {
 
         JsonNode payload = rubric.path("grading_payload");
         JsonNode settings = payload.path("grading_settings");
-        boolean ignoreColumnOrder = readBooleanSetting(settings.path("ignore_column_order"), true);
         boolean trimSpaces = readBooleanSetting(settings.path("trim_string_spaces"), true);
         boolean caseInsensitive = readBooleanSetting(settings.path("case_insensitive_data"), false);
         boolean allowExtraRows = readBooleanSetting(settings.path("allow_extra_rows"), false);
@@ -781,7 +785,6 @@ public class GradeExamUsecase {
             }
 
             double earnedTable = 0;
-            int matchedRows = 0;
             boolean[] usedActualRows = new boolean[actualRows.size()];
 
             for (int j = 0; j < expectedRows.size(); j++) {
@@ -844,7 +847,6 @@ public class GradeExamUsecase {
 
                 if (rowMatch) {
                     earnedTable += pointsPerRow;
-                    matchedRows++;
                 } else {
                     allPassed = false;
                     List<String> pkVals = primaryKeys.stream()
@@ -1141,30 +1143,6 @@ public class GradeExamUsecase {
         }
     }
 
-    private boolean gradeByVerifyScript(String schemaName, ExamQuestion question) {
-        String verifyScript = question.getVerifyScript();
-        if (verifyScript == null || verifyScript.isBlank()) {
-            log.warn("No verify_script for Q{}", question.getId());
-            return false;
-        }
-
-        try {
-            String resolvedScript = verifyScript.replace("{SCHEMA}", schemaName);
-
-            List<Map<String, Object>> actual = examSchemaService.executeSql(
-                    schemaName, resolvedScript);
-            List<Map<String, Object>> expected = examSchemaService.executeSql(
-                    schemaName, question.getCorrectQuery());
-
-            boolean requireStrictOrder = question.getCorrectQuery() != null 
-                    && question.getCorrectQuery().toUpperCase().contains("ORDER BY");
-
-            return compareResultSetsStrict(actual, expected, requireStrictOrder);
-        } catch (Exception e) {
-            log.warn("Verify script failed for Q{}: {}", question.getId(), e.getMessage());
-            return false;
-        }
-    }
 
     private boolean compareResultSetsStrict(List<Map<String, Object>> actual,
             List<Map<String, Object>> expected, boolean requireStrictOrder) {

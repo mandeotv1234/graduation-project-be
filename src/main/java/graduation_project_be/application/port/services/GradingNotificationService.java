@@ -1,10 +1,7 @@
 package graduation_project_be.application.port.services;
 
-import graduation_project_be.application.usecases.response.SubmitExamResponse;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * Port interface to notify students about grading completion.
@@ -18,7 +15,7 @@ public interface GradingNotificationService {
     void notifyGradingCompleted(Long examId, Long studentId,
                                  BigDecimal totalScore, BigDecimal maxScore,
                                  int correctCount, int totalQuestions,
-                                 List<SubmitExamResponse.QuestionResultItem> questionResults,
+                                 String questionResultsJson,
                                  LocalDateTime gradedAt);
 
     /**

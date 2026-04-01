@@ -1,14 +1,14 @@
 package graduation_project_be.infrastructure.services;
 
 import graduation_project_be.application.port.services.GradingNotificationService;
-import graduation_project_be.application.usecases.response.SubmitExamResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -22,30 +22,39 @@ import java.util.Map;
 public class WebSocketGradingNotificationService implements GradingNotificationService {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final ObjectMapper objectMapper;
 
     @Override
     public void notifyGradingCompleted(Long examId, Long studentId,
                                         BigDecimal totalScore, BigDecimal maxScore,
                                         int correctCount, int totalQuestions,
-                                        List<SubmitExamResponse.QuestionResultItem> questionResults,
+                                        String questionResultsJson,
                                         LocalDateTime gradedAt) {
         String destination = String.format("/topic/exam/%d/grading-result", examId);
 
-        Map<String, Object> payload = Map.of(
-                "examId", examId,
-                "studentId", studentId,
-                "totalScore", totalScore,
-                "maxScore", maxScore,
-                "correctCount", correctCount,
-                "totalQuestions", totalQuestions,
-                "questionResults", questionResults,
-                "status", "COMPLETED",
-                "gradedAt", gradedAt.toString());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("examId", examId);
+        payload.put("studentId", studentId);
+        payload.put("totalScore", totalScore);
+        payload.put("maxScore", maxScore);
+        payload.put("correctCount", correctCount);
+        payload.put("totalQuestions", totalQuestions);
+        payload.put("status", "COMPLETED");
+        payload.put("gradedAt", gradedAt.toString());
+
+        try {
+            // Parse the JSON string back into an object structure (List/Map) 
+            // so it remains a nested JSON array in the final message.
+            payload.put("questionResults", objectMapper.readTree(questionResultsJson));
+        } catch (Exception e) {
+            log.warn("Failed to parse questionResultsJson in notification service: {}", e.getMessage());
+            payload.put("questionResults", questionResultsJson);
+        }
 
         messagingTemplate.convertAndSend(destination, payload);
 
-        log.info("Grading result sent via WebSocket: exam={}, student={}, score={}/{}, resultsCount={}",
-                examId, studentId, totalScore, maxScore, questionResults.size());
+        log.info("Grading result sent via WebSocket: exam={}, student={}, score={}/{}",
+                examId, studentId, totalScore, maxScore);
     }
 
     @Override

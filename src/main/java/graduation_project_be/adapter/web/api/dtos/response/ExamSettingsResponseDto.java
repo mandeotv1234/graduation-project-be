@@ -10,7 +10,9 @@ public record ExamSettingsResponseDto(
         Boolean allowReview,
         String scoreDisplayMode,
         Boolean allowOvertime,
-        String gradingMethod) {
+        String gradingMethod,
+        Integer maxViolations,
+        Boolean showResultAfterSubmit) {
 
     public static ExamSettingsResponseDto fromModel(ExamSettings settings) {
         if (settings == null) return null;
@@ -22,6 +24,8 @@ public record ExamSettingsResponseDto(
                 settings.getAllowReview(),
                 settings.getScoreDisplayMode(),
                 settings.getAllowOvertime(),
-                settings.getGradingMethod());
+                settings.getGradingMethod(),
+                settings.getMaxViolations(),
+                settings.getShowResultAfterSubmit());
     }
 }

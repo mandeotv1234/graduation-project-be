@@ -18,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -141,13 +143,34 @@ public class SubmitExamUsecase {
                 .build();
         examResultRepository.save(examResult);
 
-        // 9. Enqueue grading job to Redis List → Worker will pick it up
-        gradingQueueService.enqueue(examId, studentId, attemptNumber);
-        log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+        // 9. Enqueue grading job to Redis List AFTER DB commit
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                gradingQueueService.enqueue(examId, studentId, attemptNumber);
+                log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+            }
+        });
 
-        // 10. Return immediately — student sees "Đang chấm điểm..."
+        // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
+        examSessionService.clearSession(examId, studentId);
+
+        // 10. Check if we need to return detailed answers
+        List<SubmitExamResponse.SubmissionDetail> details = null;
+        if (exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getShowResultAfterSubmit())) {
+            details = allQuestions.stream().map(q -> new SubmitExamResponse.SubmissionDetail(
+                    q.getId(),
+                    q.getContent(),
+                    q.getPoints(),
+                    answerMap.getOrDefault(q.getId(), "")
+            )).collect(Collectors.toList());
+        }
+
+        // 11. Return immediately — student sees "Đang chấm điểm..."
         return new SubmitExamResponse(
-                examId, studentId, submittedAt, GradingStatus.PENDING);
+                examId, studentId, submittedAt, GradingStatus.PENDING,
+                BigDecimal.ZERO, maxScore, 0, totalQuestions,
+                details, null);
     }
 
     // ========== Backend time validation ==========

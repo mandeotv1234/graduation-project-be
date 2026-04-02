@@ -7,7 +7,6 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
 import graduation_project_be.application.usecases.request.ReportViolationRequest;
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
@@ -33,7 +32,6 @@ public class ReportViolationUsecase {
     private final CurrentUserService currentUserService;
     private final ViolationNotificationService violationNotificationService;
     private final SubmitExamUsecase submitExamUsecase;
-    private final ExamSessionService examSessionService;
 
     public ReportViolationResponse execute(ReportViolationRequest request) {
         User currentUser = currentUserService.getCurrentUser();
@@ -56,7 +54,9 @@ public class ReportViolationUsecase {
         int currentAttempt = (int) previousAttempts + 1;
 
         // Determine max violations limit
-        int maxViolationsLimit = DEFAULT_MAX_VIOLATIONS;
+        int maxViolationsLimit = exam.getSettings() != null && exam.getSettings().getMaxViolations() != null
+                ? exam.getSettings().getMaxViolations()
+                : DEFAULT_MAX_VIOLATIONS;
         boolean enableAutoSubmit = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getAutoSubmitOnViolation());
 
         // Check if already auto-submitted (prevent further violations only if auto-submit is enabled)

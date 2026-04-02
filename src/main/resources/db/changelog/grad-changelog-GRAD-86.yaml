@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: "3103260001"
+      author: "manhuynh"
+      comment: "Update end_time for exam id 2 to 2026-04-30"
+      changes:
+        - update:
+            tableName: "exams"
+            columns:
+              - column:
+                  name: "end_time"
+                  valueDate: "2026-04-30T23:59:59"
+            where: "id = 2"

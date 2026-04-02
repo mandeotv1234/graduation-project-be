@@ -309,13 +309,11 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ViolationNotificationService violationNotificationService,
-            SubmitExamUsecase submitExamUsecase,
-            ExamSessionService examSessionService) {
+            SubmitExamUsecase submitExamUsecase) {
         return new ReportViolationUsecase(
                 examViolationRepository, examResultRepository, examRepository,
                 classEnrollmentRepository, currentUserService,
-                violationNotificationService, submitExamUsecase,
-                examSessionService);
+                violationNotificationService, submitExamUsecase);
     }
 
     @Bean

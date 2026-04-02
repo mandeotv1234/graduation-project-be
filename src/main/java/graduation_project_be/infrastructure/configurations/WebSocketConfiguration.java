@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.configurations;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
@@ -50,7 +51,8 @@ public class WebSocketConfiguration implements WebSocketMessageBrokerConfigurer 
 
     @Bean
     public GradingNotificationService gradingNotificationService(
-            SimpMessagingTemplate messagingTemplate) {
-        return new WebSocketGradingNotificationService(messagingTemplate);
+            SimpMessagingTemplate messagingTemplate,
+            ObjectMapper objectMapper) {
+        return new WebSocketGradingNotificationService(messagingTemplate, objectMapper);
     }
 }

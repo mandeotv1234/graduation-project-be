@@ -1,7 +1,6 @@
 package graduation_project_be.domain.models;
 
 import graduation_project_be.domain.models.enums.Role;
-import graduation_project_be.domain.models.enums.Status;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

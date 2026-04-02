@@ -18,4 +18,6 @@ public class ExamSettings {
     private String scoreDisplayMode;
     private Boolean allowOvertime;
     private String gradingMethod;
+    private Integer maxViolations;
+    private Boolean showResultAfterSubmit;
 }

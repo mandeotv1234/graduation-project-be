@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 import java.sql.*;
 import java.util.*;
 
-import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TriggerMetadata;
 

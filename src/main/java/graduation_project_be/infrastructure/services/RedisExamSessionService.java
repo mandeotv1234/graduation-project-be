@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -69,6 +70,14 @@ public class RedisExamSessionService implements ExamSessionService {
         String key = buildKey(examId, studentId);
         String value = redisTemplate.opsForValue().get(key);
         return Optional.ofNullable(value);
+    }
+
+    @Override
+    public void clearSession(Long examId, Long studentId) {
+        String sessionKey = buildKey(examId, studentId);
+        String startTimeKey = buildStartTimeKey(examId, studentId);
+        redisTemplate.delete(List.of(sessionKey, startTimeKey));
+        log.info("Exam session and start-time cleared: exam={}, student={}", examId, studentId);
     }
 
     @Override

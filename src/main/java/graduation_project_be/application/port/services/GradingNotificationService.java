@@ -11,18 +11,11 @@ public interface GradingNotificationService {
 
     /**
      * Notify a student that their exam has been graded.
-     *
-     * @param examId       the exam ID
-     * @param studentId    the student ID
-     * @param totalScore   the total score earned
-     * @param maxScore     the maximum possible score
-     * @param correctCount number of correct answers
-     * @param totalQuestions total number of questions
-     * @param gradedAt     timestamp of grading completion
      */
     void notifyGradingCompleted(Long examId, Long studentId,
                                  BigDecimal totalScore, BigDecimal maxScore,
                                  int correctCount, int totalQuestions,
+                                 String questionResultsJson,
                                  LocalDateTime gradedAt);
 
     /**

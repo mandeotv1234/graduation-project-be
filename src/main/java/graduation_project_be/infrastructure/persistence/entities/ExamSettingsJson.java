@@ -22,6 +22,8 @@ public class ExamSettingsJson {
     private String scoreDisplayMode;
     private Boolean allowOvertime;
     private String gradingMethod;
+    private Integer maxViolations;
+    private Boolean showResultAfterSubmit;
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -33,6 +35,8 @@ public class ExamSettingsJson {
                 .scoreDisplayMode(scoreDisplayMode)
                 .allowOvertime(allowOvertime)
                 .gradingMethod(gradingMethod)
+                .maxViolations(maxViolations)
+                .showResultAfterSubmit(showResultAfterSubmit)
                 .build();
     }
 
@@ -47,6 +51,8 @@ public class ExamSettingsJson {
                 .scoreDisplayMode(model.getScoreDisplayMode())
                 .allowOvertime(model.getAllowOvertime())
                 .gradingMethod(model.getGradingMethod())
+                .maxViolations(model.getMaxViolations())
+                .showResultAfterSubmit(model.getShowResultAfterSubmit())
                 .build();
     }
 }

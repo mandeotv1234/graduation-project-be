@@ -34,6 +34,7 @@ public class UpdateExamUsecase {
 
         // Update fields if provided
         if (request.title() != null) exam.setTitle(request.title());
+        if (request.specificationId() != null) exam.setSpecificationId(request.specificationId());
         if (request.durationMinutes() != null) exam.setDurationMinutes(request.durationMinutes());
         if (request.startTime() != null) exam.setStartTime(request.startTime());
         if (request.endTime() != null) exam.setEndTime(request.endTime());

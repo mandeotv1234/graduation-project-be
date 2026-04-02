@@ -2,9 +2,11 @@ package graduation_project_be.application.usecases.response;
 
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSettings;
+import graduation_project_be.domain.models.TableMetadata;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record GetStudentExamResponse(
         Long examId,
@@ -20,7 +22,8 @@ public record GetStudentExamResponse(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettings settings
+        ExamSettings settings,
+        List<TableMetadata> schema
 ) {
     /**
      * Status values:
@@ -28,7 +31,7 @@ public record GetStudentExamResponse(
      * - IN_PROGRESS: exam is currently active (startTime <= now <= endTime)
      * - ENDED: exam has ended (now > endTime)
      */
-    public static GetStudentExamResponse fromModel(Exam exam, String className) {
+    public static GetStudentExamResponse fromModel(Exam exam, String className, List<TableMetadata> schema) {
         LocalDateTime now = LocalDateTime.now();
         String status;
         long secondsUntilStart = 0;
@@ -56,7 +59,8 @@ public record GetStudentExamResponse(
                 exam.getDescription(),
                 exam.getMaxAttempts(),
                 exam.getLateThreshold(),
-                exam.getSettings()
+                exam.getSettings(),
+                schema
         );
     }
 }

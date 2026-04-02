@@ -107,8 +107,14 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ClassRepository classRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
-            CurrentUserService currentUserService) {
-        return new GetStudentExamUsecase(examRepository, classRepository, classEnrollmentRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new GetStudentExamUsecase(
+                examRepository,
+                classRepository,
+                classEnrollmentRepository,
+                currentUserService,
+                examSchemaService);
     }
 
     @Bean
@@ -332,11 +338,15 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSessionService examSessionService,
-            ExamResultRepository examResultRepository) {
+            ExamResultRepository examResultRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            ExamSchemaService examSchemaService) {
         return new StartExamSessionUsecase(
                 examRepository, classEnrollmentRepository,
                 currentUserService, examSessionService,
-                examResultRepository);
+                examResultRepository,
+                examSpecificationRepository,
+                examSchemaService);
     }
 
     @Bean

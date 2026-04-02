@@ -40,9 +40,6 @@ public class SpecDatasetEntity {
     @Column(name = "is_active")
     private boolean isActive;
 
-    @Column(name = "visible_to_student", nullable = false)
-    private boolean visibleToStudent;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -58,7 +55,6 @@ public class SpecDatasetEntity {
                 .tableData(tableData)
                 .orderIndex(orderIndex)
                 .isActive(isActive)
-                .visibleToStudent(visibleToStudent)
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -73,7 +69,6 @@ public class SpecDatasetEntity {
                 .tableData(model.getTableData())
                 .orderIndex(model.getOrderIndex())
                 .isActive(model.isActive())
-                .visibleToStudent(model.isVisibleToStudent())
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();

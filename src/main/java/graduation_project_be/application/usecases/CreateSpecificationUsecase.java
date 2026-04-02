@@ -1,5 +1,10 @@
 package graduation_project_be.application.usecases;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.transaction.annotation.Transactional;
+
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -7,18 +12,9 @@ import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.usecases.request.CreateSpecificationRequest;
 import graduation_project_be.application.usecases.response.SpecificationResponse;
 import graduation_project_be.domain.models.ExamSpecification;
-import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SpecDataset;
-import graduation_project_be.domain.models.SpecEntity;
-import graduation_project_be.domain.models.TableMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -27,17 +23,17 @@ public class CreateSpecificationUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
-
     @Transactional
     public SpecificationResponse execute(CreateSpecificationRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
         LocalDateTime now = LocalDateTime.now();
-        boolean hasEntitiesFromRequest = request.entities() != null && !request.entities().isEmpty();
         boolean hasDdlScript = request.ddlScript() != null && !request.ddlScript().isBlank();
 
-        if (!hasEntitiesFromRequest && !hasDdlScript) {
-            throw new BadRequestException("Either entities or ddlScript must be provided");
+        if (!hasDdlScript) {
+            throw new BadRequestException("ddlScript must be provided");
         }
+
+        validateSpecificationSchema(request, currentUserId);
 
         List<SpecDataset> datasets = request.datasets() == null ? List.of() : request.datasets().stream()
                 .map(dataset -> SpecDataset.builder()
@@ -46,135 +42,56 @@ public class CreateSpecificationUsecase {
                         .tableData(dataset.tableData())
                         .orderIndex(dataset.orderIndex())
                         .isActive(dataset.isActive() == null || dataset.isActive())
-                .visibleToStudent(dataset.visibleToStudent() != null && dataset.visibleToStudent())
                         .createdAt(now)
                         .updatedAt(now)
                         .build())
                 .toList();
 
-        List<SpecEntity> entities = buildEntitiesFromRequest(request.entities());
-
         ExamSpecification specification = ExamSpecification.builder()
                 .name(request.name())
                 .ddlScript(request.ddlScript())
-                .ddlVisibleToStudent(request.ddlVisibleToStudent() != null && request.ddlVisibleToStudent())
+                .schemaJson(request.schemaJson() == null ? null : request.schemaJson().toString())
                 .description(request.description())
                 .createdBy(currentUserId)
-                .entities(entities)
                 .datasets(datasets)
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
 
         ExamSpecification saved = examSpecificationRepository.save(specification);
-
-        if (!hasEntitiesFromRequest && hasDdlScript) {
-            saved = generateEntitiesFromDdl(saved);
-        }
-
         return SpecificationResponse.fromModel(saved);
     }
 
-    private ExamSpecification generateEntitiesFromDdl(ExamSpecification specification) {
-        String tempSchemaName = "TEMP_SPEC_" + specification.getId() + "_" + System.currentTimeMillis();
-
-        try {
-            examSchemaService.loadTemplateIntoSchema(tempSchemaName, specification.getDdlScript(), null);
-            List<TableMetadata> tables = examSchemaService.extractMetadata(tempSchemaName);
-
-            List<SpecEntity> entities = tables.stream()
-                    .map(table -> {
-                        List<SpecAttribute> attributes = table.getColumns().stream()
-                                .map(col -> SpecAttribute.builder()
-                                        .attributeName(col.getColumnName())
-                                        .dataType(col.getDataType())
-                                        .isNullable(col.isNullable())
-                                        .isPrimaryKey(col.isPrimaryKey())
-                                        .build())
-                                .collect(Collectors.toList());
-
-                        return SpecEntity.builder()
-                                .entityName(table.getTableName())
-                                .displayName(table.getTableName())
-                                .attributes(attributes)
-                                .build();
-                    })
-                    .collect(Collectors.toList());
-
-            ExamSpecification updated = ExamSpecification.builder()
-                    .id(specification.getId())
-                    .name(specification.getName())
-                    .ddlScript(specification.getDdlScript())
-                    .ddlVisibleToStudent(specification.isDdlVisibleToStudent())
-                    .description(specification.getDescription())
-                    .createdBy(specification.getCreatedBy())
-                    .entities(entities)
-                    .datasets(specification.getDatasets())
-                    .createdAt(specification.getCreatedAt())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-
-            return examSpecificationRepository.save(updated);
-        } catch (Exception e) {
-            log.error("Failed to auto-generate entities for specification ID: {}. Error: {}",
-                    specification.getId(), e.getMessage());
-            return specification;
-        } finally {
+    private void validateSpecificationSchema(CreateSpecificationRequest request, Long currentUserId) {
+        if (request.datasets() == null || request.datasets().isEmpty()) {
+            String schemaName = String.format("spec_validation_%d_%d", currentUserId, System.currentTimeMillis());
             try {
-                examSchemaService.dropSchema(tempSchemaName);
+                // Load DDL into temporary schema to validate it
+                examSchemaService.loadTemplateIntoSchema(schemaName, request.ddlScript(), null);
             } catch (Exception e) {
-                log.error("Failed to drop temporary schema: {}", tempSchemaName, e);
+                throw new BadRequestException("Invalid specification DDL: " + e.getMessage());
+            } finally {
+                try {
+                    examSchemaService.dropSchema(schemaName);
+                } catch (Exception ignored) {}
             }
-        }
-    }
-
-    private List<SpecEntity> buildEntitiesFromRequest(List<CreateSpecificationRequest.SpecEntityRequest> entityRequests) {
-        if (entityRequests == null || entityRequests.isEmpty()) {
-            return List.of();
-        }
-
-        List<SpecEntity> entities = new ArrayList<>();
-        for (int entityIndex = 0; entityIndex < entityRequests.size(); entityIndex++) {
-            CreateSpecificationRequest.SpecEntityRequest entityRequest = entityRequests.get(entityIndex);
-            if (entityRequest.entityName() == null || entityRequest.entityName().isBlank()) {
-                throw new BadRequestException("Entity name is required");
-            }
-
-            List<SpecAttribute> attributes = new ArrayList<>();
-            List<CreateSpecificationRequest.SpecAttributeRequest> attributeRequests = entityRequest.attributes();
-            if (attributeRequests != null) {
-                for (int attributeIndex = 0; attributeIndex < attributeRequests.size(); attributeIndex++) {
-                    CreateSpecificationRequest.SpecAttributeRequest attributeRequest = attributeRequests.get(attributeIndex);
-                    if (attributeRequest.attributeName() == null || attributeRequest.attributeName().isBlank()) {
-                        throw new BadRequestException("Attribute name is required");
-                    }
-                    if (attributeRequest.dataType() == null || attributeRequest.dataType().isBlank()) {
-                        throw new BadRequestException("Attribute dataType is required");
-                    }
-
-                    attributes.add(SpecAttribute.builder()
-                            .attributeName(attributeRequest.attributeName())
-                            .dataType(attributeRequest.dataType())
-                            .description(attributeRequest.description())
-                            .isPrimaryKey(attributeRequest.isPrimaryKey() != null && attributeRequest.isPrimaryKey())
-                            .isNullable(attributeRequest.isNullable() == null || attributeRequest.isNullable())
-                            .orderIndex(attributeRequest.orderIndex() == null ? attributeIndex + 1
-                                    : attributeRequest.orderIndex())
-                            .build());
-                }
-            }
-
-            entities.add(SpecEntity.builder()
-                    .entityName(entityRequest.entityName())
-                    .displayName(entityRequest.displayName() == null || entityRequest.displayName().isBlank()
-                            ? entityRequest.entityName()
-                            : entityRequest.displayName())
-                    .description(entityRequest.description())
-                    .orderIndex(entityRequest.orderIndex() == null ? entityIndex + 1 : entityRequest.orderIndex())
-                    .attributes(attributes)
-                    .build());
+            return;
         }
 
-        return entities;
+        // Validate each dataset independently in its own separate schema
+        for (int i = 0; i < request.datasets().size(); i++) {
+            CreateSpecificationRequest.SpecDatasetRequest dataset = request.datasets().get(i);
+            String schemaName = String.format("spec_valid_%d_%d_%d", currentUserId, System.currentTimeMillis(), i);
+            try {
+                // Load DDL and then the dataset's DML to verify FK/PK/data validity for THIS dataset
+                examSchemaService.loadTemplateIntoSchema(schemaName, request.ddlScript(), dataset.dataScript());
+            } catch (Exception e) {
+                throw new BadRequestException("Invalid specification DML in dataset '" + dataset.name() + "': " + e.getMessage());
+            } finally {
+                try {
+                    examSchemaService.dropSchema(schemaName);
+                } catch (Exception ignored) {}
+            }
+        }
     }
 }

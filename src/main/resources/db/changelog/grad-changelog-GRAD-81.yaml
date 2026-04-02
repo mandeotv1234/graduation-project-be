@@ -1,0 +1,294 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2803260009"
+      author: "PhiHo"
+      comment: "Remove visible_to_student, ddl_visible_to_student, schema_diagram_visible_to_student, schema_diagram from spec_datasets (always visible to students)"
+      changes:
+        - dropColumn:
+            tableName: spec_datasets
+            columnName: visible_to_student
+        - dropColumn:
+            tableName: specifications
+            columnName: ddl_visible_to_student
+        - dropColumn:
+            tableName: specifications
+            columnName: schema_diagram_visible_to_student
+  - changeSet:
+      id: "2803260011"
+      author: "PhiHo"
+      comment: "Add schema_json to specifications"
+      changes:
+        - dropColumn:
+            tableName: specifications
+            columnName: schema_diagram
+        - addColumn:
+            tableName: specifications
+            columns:
+              - column:
+                  name: schema_json
+                  type: TEXT
+  - changeSet:
+      id: "2803260013"
+      author: "PhiHo"
+      comment: "Seed one premium specification with multiple datasets"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+              BEGIN
+                SELECT id
+                INTO v_spec_id
+                FROM specifications
+                WHERE name = 'Quản lý bán hàng đa kho (Mẫu xịn)'
+                LIMIT 1;
+
+                IF v_spec_id IS NULL THEN
+                  INSERT INTO specifications (
+                    name,
+                    ddl_script,
+                    description,
+                    created_by,
+                    created_at,
+                    updated_at,
+                    schema_json
+                  )
+                  VALUES (
+                    'Quản lý bán hàng đa kho (Mẫu xịn)',
+                    $DDL$
+                    CREATE TABLE [customers] (
+                      [id] INT IDENTITY(1,1),
+                      [fullName] NVARCHAR(255) NOT NULL,
+                      [email] NVARCHAR(255) NOT NULL,
+                      [city] NVARCHAR(120),
+                      PRIMARY KEY ([id])
+                    );
+
+                    CREATE TABLE [warehouses] (
+                      [id] INT IDENTITY(1,1),
+                      [name] NVARCHAR(255) NOT NULL,
+                      [region] NVARCHAR(100) NOT NULL,
+                      PRIMARY KEY ([id])
+                    );
+
+                    CREATE TABLE [products] (
+                      [id] INT IDENTITY(1,1),
+                      [sku] NVARCHAR(64) NOT NULL,
+                      [productName] NVARCHAR(255) NOT NULL,
+                      [category] NVARCHAR(120),
+                      [unitPrice] DECIMAL(12,2) NOT NULL,
+                      PRIMARY KEY ([id])
+                    );
+
+                    CREATE TABLE [orders] (
+                      [id] INT IDENTITY(1,1),
+                      [customerId] INT NOT NULL,
+                      [warehouseId] INT NOT NULL,
+                      [orderDate] DATETIME2 NOT NULL,
+                      [status] NVARCHAR(40) NOT NULL,
+                      PRIMARY KEY ([id]),
+                      FOREIGN KEY ([customerId]) REFERENCES [customers]([id]),
+                      FOREIGN KEY ([warehouseId]) REFERENCES [warehouses]([id])
+                    );
+
+                    CREATE TABLE [order_items] (
+                      [id] INT IDENTITY(1,1),
+                      [orderId] INT NOT NULL,
+                      [productId] INT NOT NULL,
+                      [quantity] INT NOT NULL,
+                      [unitPrice] DECIMAL(12,2) NOT NULL,
+                      PRIMARY KEY ([id]),
+                      FOREIGN KEY ([orderId]) REFERENCES [orders]([id]),
+                      FOREIGN KEY ([productId]) REFERENCES [products]([id])
+                    );
+                    $DDL$,
+                    'Đặc tả quản lý đơn hàng đa kho với dữ liệu test đa dạng để luyện truy vấn JOIN, GROUP BY, doanh thu, tồn kho.',
+                    2,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP,
+                    '[{"tableName":"customers","columns":[{"columnName":"id","dataType":"INT","autoIncrement":true,"primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"fullName","dataType":"NVARCHAR(255)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"email","dataType":"NVARCHAR(255)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"city","dataType":"NVARCHAR(120)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]},{"tableName":"warehouses","columns":[{"columnName":"id","dataType":"INT","autoIncrement":true,"primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"name","dataType":"NVARCHAR(255)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"region","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false}]},{"tableName":"products","columns":[{"columnName":"id","dataType":"INT","autoIncrement":true,"primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"sku","dataType":"NVARCHAR(64)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"productName","dataType":"NVARCHAR(255)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"category","dataType":"NVARCHAR(120)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"unitPrice","dataType":"DECIMAL(12,2)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false}]},{"tableName":"orders","columns":[{"columnName":"id","dataType":"INT","autoIncrement":true,"primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"customerId","dataType":"INT","primaryKey":false,"foreignKey":true,"referencesTable":"customers","referencesColumn":"id","nullable":false},{"columnName":"warehouseId","dataType":"INT","primaryKey":false,"foreignKey":true,"referencesTable":"warehouses","referencesColumn":"id","nullable":false},{"columnName":"orderDate","dataType":"DATETIME2","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"status","dataType":"NVARCHAR(40)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false}]},{"tableName":"order_items","columns":[{"columnName":"id","dataType":"INT","autoIncrement":true,"primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"orderId","dataType":"INT","primaryKey":false,"foreignKey":true,"referencesTable":"orders","referencesColumn":"id","nullable":false},{"columnName":"productId","dataType":"INT","primaryKey":false,"foreignKey":true,"referencesTable":"products","referencesColumn":"id","nullable":false},{"columnName":"quantity","dataType":"INT","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"unitPrice","dataType":"DECIMAL(12,2)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false}]}]'
+                  )
+                  RETURNING id INTO v_spec_id;
+                END IF;
+
+                IF NOT EXISTS (
+                  SELECT 1 FROM spec_datasets
+                  WHERE specification_id = v_spec_id AND name = 'Default Dataset'
+                ) THEN
+                  INSERT INTO spec_datasets (
+                    specification_id, name, data_script, table_data, order_index, is_active, created_at, updated_at
+                  ) VALUES (
+                    v_spec_id,
+                    'Default Dataset',
+                    $DATA1$
+                    SET IDENTITY_INSERT [customers] ON;
+                    INSERT INTO [customers] ([id], [fullName], [email], [city]) VALUES
+                    (1, N'Nguyễn An', N'an.nguyen@example.com', N'Hồ Chí Minh'),
+                    (2, N'Trần Bình', N'binh.tran@example.com', N'Hà Nội'),
+                    (3, N'Lê Cường', N'cuong.le@example.com', N'Đà Nẵng'),
+                    (4, N'Phạm Dung', N'dung.pham@example.com', N'Cần Thơ');
+                    SET IDENTITY_INSERT [customers] OFF;
+
+                    SET IDENTITY_INSERT [warehouses] ON;
+                    INSERT INTO [warehouses] ([id], [name], [region]) VALUES
+                    (1, N'Kho Thủ Đức', N'Miền Nam'),
+                    (2, N'Kho Long Biên', N'Miền Bắc'),
+                    (3, N'Kho Đà Nẵng', N'Miền Trung');
+                    SET IDENTITY_INSERT [warehouses] OFF;
+
+                    SET IDENTITY_INSERT [products] ON;
+                    INSERT INTO [products] ([id], [sku], [productName], [category], [unitPrice]) VALUES
+                    (1, N'SKU-001', N'Xi măng PCB40', N'Vật liệu thô', 95000),
+                    (2, N'SKU-002', N'Sắt phi 16', N'Kim loại', 210000),
+                    (3, N'SKU-003', N'Gạch block', N'Vật liệu hoàn thiện', 8500),
+                    (4, N'SKU-004', N'Sơn ngoại thất', N'Hóa chất', 320000);
+                    SET IDENTITY_INSERT [products] OFF;
+
+                    SET IDENTITY_INSERT [orders] ON;
+                    INSERT INTO [orders] ([id], [customerId], [warehouseId], [orderDate], [status]) VALUES
+                    (1, 1, 1, '2026-01-05T08:00:00', N'PAID'),
+                    (2, 2, 2, '2026-01-06T10:15:00', N'SHIPPED'),
+                    (3, 3, 3, '2026-01-07T14:20:00', N'PAID'),
+                    (4, 4, 1, '2026-01-08T16:00:00', N'PROCESSING');
+                    SET IDENTITY_INSERT [orders] OFF;
+
+                    SET IDENTITY_INSERT [order_items] ON;
+                    INSERT INTO [order_items] ([id], [orderId], [productId], [quantity], [unitPrice]) VALUES
+                    (1, 1, 1, 30, 95000),
+                    (2, 1, 3, 200, 8500),
+                    (3, 2, 2, 12, 210000),
+                    (4, 3, 4, 8, 320000),
+                    (5, 4, 1, 15, 95000),
+                    (6, 4, 2, 10, 210000);
+                    SET IDENTITY_INSERT [order_items] OFF;
+                    $DATA1$,
+                    '[{"tableName":"customers","columns":["id","fullName","email","city"],"rows":[["1","Nguyễn An","an.nguyen@example.com","Hồ Chí Minh"],["2","Trần Bình","binh.tran@example.com","Hà Nội"],["3","Lê Cường","cuong.le@example.com","Đà Nẵng"],["4","Phạm Dung","dung.pham@example.com","Cần Thơ"]]},{"tableName":"warehouses","columns":["id","name","region"],"rows":[["1","Kho Thủ Đức","Miền Nam"],["2","Kho Long Biên","Miền Bắc"],["3","Kho Đà Nẵng","Miền Trung"]]},{"tableName":"products","columns":["id","sku","productName","category","unitPrice"],"rows":[["1","SKU-001","Xi măng PCB40","Vật liệu thô","95000"],["2","SKU-002","Sắt phi 16","Kim loại","210000"],["3","SKU-003","Gạch block","Vật liệu hoàn thiện","8500"],["4","SKU-004","Sơn ngoại thất","Hóa chất","320000"]]},{"tableName":"orders","columns":["id","customerId","warehouseId","orderDate","status"],"rows":[["1","1","1","2026-01-05T08:00:00","PAID"],["2","2","2","2026-01-06T10:15:00","SHIPPED"],["3","3","3","2026-01-07T14:20:00","PAID"],["4","4","1","2026-01-08T16:00:00","PROCESSING"]]},{"tableName":"order_items","columns":["id","orderId","productId","quantity","unitPrice"],"rows":[["1","1","1","30","95000"],["2","1","3","200","8500"],["3","2","2","12","210000"],["4","3","4","8","320000"],["5","4","1","15","95000"],["6","4","2","10","210000"]]}]',
+                    1,
+                    true,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                  );
+                END IF;
+
+                IF NOT EXISTS (
+                  SELECT 1 FROM spec_datasets
+                  WHERE specification_id = v_spec_id AND name = 'Dataset Q1'
+                ) THEN
+                  INSERT INTO spec_datasets (
+                    specification_id, name, data_script, table_data, order_index, is_active, created_at, updated_at
+                  ) VALUES (
+                    v_spec_id,
+                    'Dataset Q1',
+                    $DATA2$
+                    SET IDENTITY_INSERT [customers] ON;
+                    INSERT INTO [customers] ([id], [fullName], [email], [city]) VALUES
+                    (1, N'Võ Huy', N'huy.vo@example.com', N'Hà Nội'),
+                    (2, N'Đặng Mai', N'mai.dang@example.com', N'Hồ Chí Minh'),
+                    (3, N'Bùi Nam', N'nam.bui@example.com', N'Đà Nẵng');
+                    SET IDENTITY_INSERT [customers] OFF;
+
+                    SET IDENTITY_INSERT [warehouses] ON;
+                    INSERT INTO [warehouses] ([id], [name], [region]) VALUES
+                    (1, N'Kho Bắc Ninh', N'Miền Bắc'),
+                    (2, N'Kho Bình Dương', N'Miền Nam');
+                    SET IDENTITY_INSERT [warehouses] OFF;
+
+                    SET IDENTITY_INSERT [products] ON;
+                    INSERT INTO [products] ([id], [sku], [productName], [category], [unitPrice]) VALUES
+                    (1, N'SKU-101', N'Ống thép mạ kẽm', N'Kim loại', 180000),
+                    (2, N'SKU-102', N'Kính cường lực', N'Vật liệu hoàn thiện', 560000),
+                    (3, N'SKU-103', N'Dây cáp điện', N'Điện', 120000);
+                    SET IDENTITY_INSERT [products] OFF;
+
+                    SET IDENTITY_INSERT [orders] ON;
+                    INSERT INTO [orders] ([id], [customerId], [warehouseId], [orderDate], [status]) VALUES
+                    (1, 1, 1, '2026-02-10T08:00:00', N'PAID'),
+                    (2, 2, 2, '2026-02-11T09:15:00', N'SHIPPED'),
+                    (3, 3, 1, '2026-02-12T10:45:00', N'PAID');
+                    SET IDENTITY_INSERT [orders] OFF;
+
+                    SET IDENTITY_INSERT [order_items] ON;
+                    INSERT INTO [order_items] ([id], [orderId], [productId], [quantity], [unitPrice]) VALUES
+                    (1, 1, 1, 30, 95000),
+                    (2, 1, 2, 10, 210000),
+                    (3, 2, 2, 15, 210000),
+                    (4, 2, 3, 40, 120000),
+                    (5, 3, 1, 20, 180000),
+                    (6, 3, 3, 25, 120000);
+                    SET IDENTITY_INSERT [order_items] OFF;
+                    $DATA2$,
+                    '[{"tableName":"customers","columns":["id","fullName","email","city"],"rows":[["1","Võ Huy","huy.vo@example.com","Hà Nội"],["2","Đặng Mai","mai.dang@example.com","Hồ Chí Minh"],["3","Bùi Nam","nam.bui@example.com","Đà Nẵng"]]},{"tableName":"warehouses","columns":["id","name","region"],"rows":[["1","Kho Bắc Ninh","Miền Bắc"],["2","Kho Bình Dương","Miền Nam"]]},{"tableName":"products","columns":["id","sku","productName","category","unitPrice"],"rows":[["1","SKU-101","Ống thép mạ kẽm","Kim loại","180000"],["2","SKU-102","Kính cường lực","Vật liệu hoàn thiện","560000"],["3","SKU-103","Dây cáp điện","Điện","120000"]]},{"tableName":"orders","columns":["id","customerId","warehouseId","orderDate","status"],"rows":[["1","1","1","2026-02-10T08:00:00","PAID"],["2","2","2","2026-02-11T09:15:00","SHIPPED"],["3","3","1","2026-02-12T10:45:00","PAID"]]},{"tableName":"order_items","columns":["id","orderId","productId","quantity","unitPrice"],"rows":[["1","1","1","30","95000"],["2","1","2","10","210000"],["3","2","2","15","210000"],["4","2","3","40","120000"],["5","3","1","20","180000"],["6","3","3","25","120000"]]}]',
+                    2,
+                    true,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                  );
+                END IF;
+
+                IF NOT EXISTS (
+                  SELECT 1 FROM spec_datasets
+                  WHERE specification_id = v_spec_id AND name = 'Dataset Stress'
+                ) THEN
+                  INSERT INTO spec_datasets (
+                    specification_id, name, data_script, table_data, order_index, is_active, created_at, updated_at
+                  ) VALUES (
+                    v_spec_id,
+                    'Dataset Stress',
+                    $DATA3$
+                    SET IDENTITY_INSERT [customers] ON;
+                    INSERT INTO [customers] ([id], [fullName], [email], [city]) VALUES
+                    (1, N'Ngô Phương', N'phuong.ngo@example.com', N'Hải Phòng'),
+                    (2, N'Tạ Long', N'long.ta@example.com', N'Nha Trang'),
+                    (3, N'Hoàng Yến', N'yen.hoang@example.com', N'Huế'),
+                    (4, N'Nguyễn Khoa', N'khoa.nguyen@example.com', N'Cần Thơ'),
+                    (5, N'Phan Linh', N'linh.phan@example.com', N'Hà Nội');
+                    SET IDENTITY_INSERT [customers] OFF;
+
+                    SET IDENTITY_INSERT [warehouses] ON;
+                    INSERT INTO [warehouses] ([id], [name], [region]) VALUES
+                    (1, N'Kho Quận 9', N'Miền Nam'),
+                    (2, N'Kho Gia Lâm', N'Miền Bắc'),
+                    (3, N'Kho Hòa Khánh', N'Miền Trung');
+                    SET IDENTITY_INSERT [warehouses] OFF;
+
+                    SET IDENTITY_INSERT [products] ON;
+                    INSERT INTO [products] ([id], [sku], [productName], [category], [unitPrice]) VALUES
+                    (1, N'SKU-201', N'Bê tông tươi M300', N'Vật liệu thô', 1450000),
+                    (2, N'SKU-202', N'Gạch men 60x60', N'Hoàn thiện', 185000),
+                    (3, N'SKU-203', N'Cáp điện CV 2.5', N'Điện', 420000),
+                    (4, N'SKU-204', N'Sơn chống thấm', N'Hóa chất', 510000);
+                    SET IDENTITY_INSERT [products] OFF;
+
+                    SET IDENTITY_INSERT [orders] ON;
+                    INSERT INTO [orders] ([id], [customerId], [warehouseId], [orderDate], [status]) VALUES
+                    (1, 1, 2, '2026-03-01T10:00:00', N'CANCELLED'),
+                    (2, 2, 1, '2026-03-02T11:30:00', N'PAID'),
+                    (3, 3, 3, '2026-03-03T12:15:00', N'PAID'),
+                    (4, 4, 2, '2026-03-04T15:45:00', N'SHIPPED'),
+                    (5, 5, 1, '2026-03-05T16:10:00', N'PROCESSING');
+                    SET IDENTITY_INSERT [orders] OFF;
+
+                    SET IDENTITY_INSERT [order_items] ON;
+                    INSERT INTO [order_items] ([id], [orderId], [productId], [quantity], [unitPrice]) VALUES
+                    (1, 3, 1, 100, 94000),
+                    (2, 4, 2, 80, 205000),
+                    (3, 1, 2, 5, 185000),
+                    (4, 2, 1, 2, 1450000),
+                    (5, 2, 3, 40, 420000),
+                    (6, 3, 4, 12, 510000),
+                    (7, 4, 1, 3, 1450000),
+                    (8, 5, 2, 60, 185000),
+                    (9, 5, 3, 25, 420000);
+                    SET IDENTITY_INSERT [order_items] OFF;
+                    $DATA3$,
+                    '[{"tableName":"customers","columns":["id","fullName","email","city"],"rows":[["1","Ngô Phương","phuong.ngo@example.com","Hải Phòng"],["2","Tạ Long","long.ta@example.com","Nha Trang"],["3","Hoàng Yến","yen.hoang@example.com","Huế"],["4","Nguyễn Khoa","khoa.nguyen@example.com","Cần Thơ"],["5","Phan Linh","linh.phan@example.com","Hà Nội"]]},{"tableName":"warehouses","columns":["id","name","region"],"rows":[["1","Kho Quận 9","Miền Nam"],["2","Kho Gia Lâm","Miền Bắc"],["3","Kho Hòa Khánh","Miền Trung"]]},{"tableName":"products","columns":["id","sku","productName","category","unitPrice"],"rows":[["1","SKU-201","Bê tông tươi M300","Vật liệu thô","1450000"],["2","SKU-202","Gạch men 60x60","Hoàn thiện","185000"],["3","SKU-203","Cáp điện CV 2.5","Điện","420000"],["4","SKU-204","Sơn chống thấm","Hóa chất","510000"]]},{"tableName":"orders","columns":["id","customerId","warehouseId","orderDate","status"],"rows":[["1","1","2","2026-03-01T10:00:00","CANCELLED"],["2","2","1","2026-03-02T11:30:00","PAID"],["3","3","3","2026-03-03T12:15:00","PAID"],["4","4","2","2026-03-04T15:45:00","SHIPPED"],["5","5","1","2026-03-05T16:10:00","PROCESSING"]]},{"tableName":"order_items","columns":["id","orderId","productId","quantity","unitPrice"],"rows":[["1","3","1","100","94000"],["2","4","2","80","205000"],["3","1","2","5","185000"],["4","2","1","2","1450000"],["5","2","3","40","420000"],["6","3","4","12","510000"],["7","4","1","3","1450000"],["8","5","2","60","185000"],["9","5","3","25","420000"]]}]',
+                    3,
+                    true,
+                    CURRENT_TIMESTAMP,
+                    CURRENT_TIMESTAMP
+                  );
+                END IF;
+              END $$;

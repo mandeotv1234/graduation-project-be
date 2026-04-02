@@ -1,17 +1,17 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
-import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
-
 import java.time.LocalDateTime;
 import java.util.List;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
 
 public record ExamSpecificationResponseDto(
         Long id,
         String name,
         String ddlScript,
-        boolean ddlVisibleToStudent,
-        String schemaDiagram,
-        boolean schemaDiagramVisibleToStudent,
+        JsonNode schemaJson,
         String description,
         List<SpecEntityResponseDto> entities,
         List<SpecDatasetResponseDto> datasets,
@@ -44,8 +44,7 @@ public record ExamSpecificationResponseDto(
             String dataScript,
             String tableData,
             int orderIndex,
-            boolean isActive,
-            boolean visibleToStudent) {
+            boolean isActive) {
     }
 
     public static ExamSpecificationResponseDto fromResponse(ExamSpecificationResponse r) {
@@ -62,15 +61,13 @@ public record ExamSpecificationResponseDto(
 
         List<SpecDatasetResponseDto> datasets = r.datasets() == null ? List.of()
                 : r.datasets().stream().map(d -> new SpecDatasetResponseDto(
-                        d.id(), d.name(), d.dataScript(), d.tableData(), d.orderIndex(), d.isActive(), d.visibleToStudent())).toList();
+                        d.id(), d.name(), d.dataScript(), d.tableData(), d.orderIndex(), d.isActive())).toList();
 
         return new ExamSpecificationResponseDto(
                 r.id(),
                 r.name(),
                 r.ddlScript(),
-                r.ddlVisibleToStudent(),
-                r.schemaDiagram(),
-                r.schemaDiagramVisibleToStudent(),
+                r.schemaJson(),
                 r.description(),
                 entities,
                 datasets,

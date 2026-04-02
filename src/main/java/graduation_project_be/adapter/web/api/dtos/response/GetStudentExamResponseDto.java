@@ -1,7 +1,9 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
 import graduation_project_be.application.usecases.response.GetStudentExamResponse;
+import graduation_project_be.domain.models.TableMetadata;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record GetStudentExamResponseDto(
         Long examId,
@@ -17,7 +19,8 @@ public record GetStudentExamResponseDto(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettingsResponseDto settings) {
+        ExamSettingsResponseDto settings,
+        List<TableMetadata> schema) {
     public static GetStudentExamResponseDto fromResponse(GetStudentExamResponse response) {
         return new GetStudentExamResponseDto(
                 response.examId(),
@@ -33,6 +36,7 @@ public record GetStudentExamResponseDto(
                 response.description(),
                 response.maxAttempts(),
                 response.lateThreshold(),
-                ExamSettingsResponseDto.fromModel(response.settings()));
+                ExamSettingsResponseDto.fromModel(response.settings()),
+                response.schema());
     }
 }

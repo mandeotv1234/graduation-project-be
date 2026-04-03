@@ -1,10 +1,10 @@
 package graduation_project_be.application.port.services;
 
 import java.util.List;
-import java.util.Map;
 import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TriggerMetadata;
+import graduation_project_be.domain.models.SqlExecutionResult;
 
 public interface ExamSchemaService {
     void createExamSchemaForStudent(Long examId, Long studentId);
@@ -21,7 +21,7 @@ public interface ExamSchemaService {
 
     List<TriggerMetadata> extractTriggerMetadata(String schemaName);
 
-    List<Map<String, Object>> executeSql(String schemaName, String sql);
+    SqlExecutionResult executeSql(String schemaName, String sql);
 
-    List<Map<String, Object>> executeAdminSql(String sql);
+    SqlExecutionResult executeAdminSql(String sql);
 }

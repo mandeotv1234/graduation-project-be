@@ -53,23 +53,49 @@ public class GradingWorkerConfiguration {
             }
 
             try {
-                log.info("Processing grading job {}/{}: exam={}, student={}, attempt={}",
-                        processed + 1, MAX_JOBS_PER_CYCLE, job.examId(), job.studentId(), job.attemptNumber());
+                log.info("Processing grading job {}/{}: exam={}, student={}, attempt={}, retry={}",
+                        processed + 1, MAX_JOBS_PER_CYCLE, job.examId(), job.studentId(), job.attemptNumber(), job.retryCount());
 
                 gradeExamUsecase.execute(job.examId(), job.studentId(), job.attemptNumber());
+                
+                // Manual ACK upon successful processing
+                gradingQueueService.ack(job);
                 processed++;
 
             } catch (Exception e) {
-                log.error("Grading job failed: exam={}, student={}, attempt={}: {}",
+                log.error("Grading job crashed with exception: exam={}, student={}, attempt={}: {}",
                         job.examId(), job.studentId(), job.attemptNumber(), e.getMessage(), e);
+                
+                // NACK job and check if it went to DLQ
+                boolean sentToDlq = gradingQueueService.nack(job);
+                if (sentToDlq) {
+                    try {
+                        gradeExamUsecase.markSystemError(job.examId(), job.studentId(), job.attemptNumber());
+                    } catch (Exception ex) {
+                        log.error("Failed to mark system error on DB", ex);
+                    }
+                }
+                
                 processed++;
-                // Job is NOT re-queued — ExamResult status is set to FAILED by GradeExamUsecase
             }
         }
 
         if (processed > 0) {
             long remaining = gradingQueueService.size();
             log.info("Grading cycle completed: {} jobs processed, {} remaining in queue", processed, remaining);
+        }
+    }
+
+    /**
+     * Runs every 1 minute to check for jobs stuck in the processing queue
+     * (e.g. if the worker JVM was forcefully killed/OOM during processing)
+     */
+    @Scheduled(fixedRate = 60000)
+    public void recoverStaleJobs() {
+        try {
+            gradingQueueService.recoverStaleJobs();
+        } catch (Exception e) {
+            log.error("Error during stale grading job recovery", e);
         }
     }
 }

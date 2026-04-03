@@ -8,16 +8,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.sql.*;
-import java.util.*;
-
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TriggerMetadata;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,7 +33,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
      * Maximum time (in seconds) a student SQL query is allowed to run.
      * Prevents infinite loops, Cartesian products, and other long-running queries.
      */
-    private static final int QUERY_TIMEOUT_SECONDS = 5;
+    private static final int QUERY_TIMEOUT_SECONDS = 10;
 
     public MsSqlExamSchemaService(@Qualifier("examJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
@@ -228,7 +230,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     if (ddlScript != null && !ddlScript.isBlank()) {
                         try (Statement stmt = conn.createStatement()) {
                             stmt.execute(ddlScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {}
+                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                            }
                         }
                         log.info("Loaded DDL into schema: {}", schemaName);
                     }
@@ -236,7 +239,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
                         try (Statement stmt = conn.createStatement()) {
                             stmt.execute(defaultDataScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {}
+                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                            }
                         }
                         log.info("Loaded default data into schema: {}", schemaName);
                     }
@@ -261,10 +265,12 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "fk.REFERENCED_TABLE_NAME AS ReferencedTable, " +
                 "fk.REFERENCED_COLUMN_NAME AS ReferencedColumn " +
                 "FROM INFORMATION_SCHEMA.TABLES t " +
-                "JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA " +
+                "JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA "
+                +
                 // Primary key
                 "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_pk " +
-                "    ON tc_pk.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_pk.TABLE_NAME = t.TABLE_NAME AND tc_pk.CONSTRAINT_TYPE = 'PRIMARY KEY' " +
+                "    ON tc_pk.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_pk.TABLE_NAME = t.TABLE_NAME AND tc_pk.CONSTRAINT_TYPE = 'PRIMARY KEY' "
+                +
                 "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_pk " +
                 "    ON kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
                 // Foreign key (resolve referenced table/column)
@@ -275,9 +281,11 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
                 "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
                 "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION " +
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION "
+                +
                 "    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' " +
-                ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME " +
+                ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME "
+                +
                 "WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE' " +
                 "ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
 
@@ -305,7 +313,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 .columns(new ArrayList<>())
                                 .build());
 
-                graduation_project_be.domain.models.TableMetadata.ColumnMetadata column = graduation_project_be.domain.models.TableMetadata.ColumnMetadata.builder()
+                graduation_project_be.domain.models.TableMetadata.ColumnMetadata column = graduation_project_be.domain.models.TableMetadata.ColumnMetadata
+                        .builder()
                         .columnName(columnName)
                         .dataType(formattedDataType)
                         .rawDataType(rawDataType)
@@ -324,9 +333,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     private String formatDataType(String dataType, int maxLength) {
-        if (dataType == null) return "Unknown";
+        if (dataType == null)
+            return "Unknown";
         String lower = dataType.toLowerCase();
-        
+
         switch (lower) {
             case "int":
             case "bigint":
@@ -360,7 +370,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     private String buildRawDataType(String dataType, int maxLength) {
-        if (dataType == null) return "UNKNOWN";
+        if (dataType == null)
+            return "UNKNOWN";
         String upper = dataType.toUpperCase();
         if (maxLength > 0 && (upper.contains("CHAR") || upper.contains("BINARY"))) {
             return upper + "(" + maxLength + ")";
@@ -371,7 +382,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
-    public List<Map<String, Object>> executeSql(String schemaName, String sql) {
+    public SqlExecutionResult executeSql(String schemaName, String sql) {
         String userName = schemaName + "_user";
         // Ensure schema + user exist (handles seed-data exams where
         // createExamSchemaForStudent was never called)
@@ -383,6 +394,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
 
                 // Switch execution context to the student's user (uses their default schema)
                 try (Statement stmt = conn.createStatement()) {
@@ -392,16 +405,53 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 try {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                        boolean isResultSet = stmt.execute(sql);
+                        stmt.setMaxRows(1000);
+
+                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+
+                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return stmt.execute(sql);
+                            } catch (Exception e) {
+                                throw new CompletionException(e);
+                            }
+                        });
+
+                        boolean isResultSet;
+                        try {
+                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        } catch (TimeoutException e) {
+                            try {
+                                stmt.cancel();
+                            } catch (Exception ignore) {
+                            }
+                            throw new RuntimeException(
+                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                        } catch (Exception e) {
+                            Throwable cause = e.getCause() != null ? e.getCause() : e;
+                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                        }
 
                         // Walk through ALL results using correct JDBC pattern
                         // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
                         while (true) {
+                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                stmt.cancel();
+                                throw new RuntimeException("Query processing exceeded hard timeout of "
+                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                            }
+
                             if (isResultSet) {
                                 try (ResultSet rs = stmt.getResultSet()) {
                                     ResultSetMetaData meta = rs.getMetaData();
                                     int colCount = meta.getColumnCount();
                                     while (rs.next()) {
+                                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                            stmt.cancel();
+                                            throw new RuntimeException("Result set fetching exceeded hard timeout of "
+                                                    + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                        }
+
                                         Map<String, Object> row = new LinkedHashMap<>();
                                         for (int i = 1; i <= colCount; i++) {
                                             row.put(meta.getColumnLabel(i), rs.getObject(i));
@@ -416,24 +466,34 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                     // No more results of any kind
                                     break;
                                 }
+                                totalUpdateCount += updateCount;
+                                hasUpdateCount = true;
                             }
                             // Advance to next result (only call ONCE per iteration!)
                             isResultSet = stmt.getMoreResults();
                         }
                     }
 
-                    // If no result set was returned (pure DDL/DML), return a status
+                    String statusMessage = null;
                     if (results.isEmpty()) {
-                        results.add(Map.of("result", "Statement executed successfully"));
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Commands completed successfully.";
+                        }
                     }
+
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .build();
                 } finally {
                     // Always revert context back to original user
                     try (Statement stmt = conn.createStatement()) {
                         stmt.execute("REVERT");
                     }
                 }
-
-                return results;
             });
         } catch (Exception e) {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
@@ -469,6 +529,17 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "OPENDATASOURCE", // external data access
                 "XP_CMDSHELL", // OS command execution
                 "SP_CONFIGURE", // server configuration
+                "USE ", // database switching
+                "DROP DATABASE", // drop db
+                "ALTER DATABASE", // alter db
+                "BACKUP DATABASE", // backup
+                "RESTORE DATABASE", // restore
+                "DBCC ", // database console commands
+                "KILL ", // kill processes
+                "SHUTDOWN", // shutdown server
+                "SP_OACREATE", // COM objects execution
+                "MAXRECURSION 0", // infinite recursion
+                "WAITFOR DELAY" // artificial delay
         };
 
         for (String blocked : blockedPatterns) {
@@ -480,12 +551,14 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
-    public List<Map<String, Object>> executeAdminSql(String sql) {
+    public SqlExecutionResult executeAdminSql(String sql) {
         log.debug("Executing admin SQL: {}", sql);
 
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
 
                 try (Statement stmt = conn.createStatement()) {
                     boolean isResultSet = stmt.execute(sql);
@@ -510,16 +583,27 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             if (updateCount == -1) {
                                 break;
                             }
+                            totalUpdateCount += updateCount;
+                            hasUpdateCount = true;
                         }
                         isResultSet = stmt.getMoreResults();
                     }
 
+                    String statusMessage = null;
                     if (results.isEmpty()) {
-                        results.add(Map.of("result", "Admin statement executed successfully"));
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Admin statement executed successfully.";
+                        }
                     }
-                }
 
-                return results;
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .build();
+                }
             });
         } catch (Exception e) {
             log.error("Admin SQL execution error: {}", e.getMessage());
@@ -532,17 +616,18 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String sql = "SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE AS RET_TYPE, " +
                 "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE " +
                 "FROM INFORMATION_SCHEMA.ROUTINES r " +
-                "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p ON r.ROUTINE_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA " +
+                "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p ON r.ROUTINE_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA "
+                +
                 "WHERE r.ROUTINE_SCHEMA = ? " +
                 "ORDER BY r.ROUTINE_NAME, p.ORDINAL_POSITION";
-        
+
         return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
             Map<String, RoutineMetadata> routines = new LinkedHashMap<>();
             while (rs.next()) {
                 String routineName = rs.getString("ROUTINE_NAME");
                 String routineType = rs.getString("ROUTINE_TYPE");
                 String retType = rs.getString("RET_TYPE");
-                
+
                 RoutineMetadata routine = routines.computeIfAbsent(routineName,
                         k -> RoutineMetadata.builder()
                                 .routineName(routineName)
@@ -550,7 +635,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 .dataType(retType)
                                 .parameters(new ArrayList<>())
                                 .build());
-                
+
                 String paramName = rs.getString("PARAMETER_NAME");
                 if (paramName != null) {
                     RoutineMetadata.ParameterMetadata param = RoutineMetadata.ParameterMetadata.builder()
@@ -574,34 +659,38 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "JOIN sys.schemas s ON tbl.schema_id = s.schema_id " +
                 "JOIN sys.trigger_events te ON t.object_id = te.object_id " +
                 "WHERE s.name = ?";
-                
+
         return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
             Map<String, TriggerMetadata> triggers = new LinkedHashMap<>();
             while (rs.next()) {
                 String name = rs.getString("triggerName");
                 String typeDesc = rs.getString("type_desc"); // INSERT, UPDATE, DELETE
-                
-                TriggerMetadata tm = triggers.computeIfAbsent(name, 
-                    k -> { 
-                        try {
-                           return TriggerMetadata.builder()
-                                .triggerName(name)
-                                .tableName(rs.getString("tableName"))
-                                .isDisabled(rs.getBoolean("is_disabled"))
-                                .isInsteadOf(rs.getBoolean("is_instead_of_trigger"))
-                                .isAfter(!rs.getBoolean("is_instead_of_trigger"))
-                                .build();
-                        } catch(Exception e) { return null; }
-                    });
-                
+
+                TriggerMetadata tm = triggers.computeIfAbsent(name,
+                        k -> {
+                            try {
+                                return TriggerMetadata.builder()
+                                        .triggerName(name)
+                                        .tableName(rs.getString("tableName"))
+                                        .isDisabled(rs.getBoolean("is_disabled"))
+                                        .isInsteadOf(rs.getBoolean("is_instead_of_trigger"))
+                                        .isAfter(!rs.getBoolean("is_instead_of_trigger"))
+                                        .build();
+                            } catch (Exception e) {
+                                return null;
+                            }
+                        });
+
                 if (tm != null && typeDesc != null) {
-                    if (typeDesc.equalsIgnoreCase("INSERT")) tm.setInsert(true);
-                    if (typeDesc.equalsIgnoreCase("UPDATE")) tm.setUpdate(true);
-                    if (typeDesc.equalsIgnoreCase("DELETE")) tm.setDelete(true);
+                    if (typeDesc.equalsIgnoreCase("INSERT"))
+                        tm.setInsert(true);
+                    if (typeDesc.equalsIgnoreCase("UPDATE"))
+                        tm.setUpdate(true);
+                    if (typeDesc.equalsIgnoreCase("DELETE"))
+                        tm.setDelete(true);
                 }
             }
             return new ArrayList<>(triggers.values());
         });
     }
 }
-

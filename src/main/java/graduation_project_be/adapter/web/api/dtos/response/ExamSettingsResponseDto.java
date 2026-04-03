@@ -12,7 +12,8 @@ public record ExamSettingsResponseDto(
         Boolean allowOvertime,
         String gradingMethod,
         Integer maxViolations,
-        Boolean showResultAfterSubmit) {
+        Boolean showResultAfterSubmit,
+        Boolean isLoadDdl) {
 
     public static ExamSettingsResponseDto fromModel(ExamSettings settings) {
         if (settings == null) return null;
@@ -26,6 +27,7 @@ public record ExamSettingsResponseDto(
                 settings.getAllowOvertime(),
                 settings.getGradingMethod(),
                 settings.getMaxViolations(),
-                settings.getShowResultAfterSubmit());
+                settings.getShowResultAfterSubmit(),
+                settings.getIsLoadDdl());
     }
 }

@@ -14,6 +14,7 @@ import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.enums.Role;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDateTime;
@@ -95,13 +96,14 @@ public class ExecuteSqlUsecase {
     private ExecuteSqlResponse executeInSchema(String sql, String schemaName) {
         long startTime = System.currentTimeMillis();
         try {
-            List<Map<String, Object>> resultSet = examSchemaService.executeSql(schemaName, sql);
+            SqlExecutionResult result = examSchemaService.executeSql(schemaName, sql);
+            List<Map<String, Object>> resultSet = result.getResultSet();
             List<TableMetadata> schema = null;
             if (affectsSchema(sql)) {
                 schema = examSchemaService.extractMetadata(schemaName);
             }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-            return ExecuteSqlResponse.success(resultSet, executionTimeMs, schema);
+            return ExecuteSqlResponse.success(resultSet, result.getRowCount(), executionTimeMs, result.getStatusMessage(), schema);
         } catch (Exception e) {
             return ExecuteSqlResponse.error(e.getMessage());
         }

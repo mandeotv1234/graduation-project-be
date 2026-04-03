@@ -63,6 +63,16 @@ public class GradeExamUsecase {
     private final ObjectMapper objectMapper;
 
     @Transactional
+    public void markSystemError(Long examId, Long studentId, int attemptNumber) {
+        examResultRepository.findByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber)
+                .ifPresent(result -> {
+                    result.setStatus(GradingStatus.SYSTEM_ERROR);
+                    examResultRepository.save(result);
+                    log.error("Marked exam result as SYSTEM_ERROR for exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+                });
+    }
+
+    @Transactional
     public void execute(Long examId, Long studentId, int attemptNumber) {
         log.info("Starting grading: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
 
@@ -654,7 +664,7 @@ public class GradeExamUsecase {
             
             try {
                 // 1. teacher count
-                List<Map<String, Object>> tcRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + teacherSchemaName + "]." + tName);
+                List<Map<String, Object>> tcRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + teacherSchemaName + "]." + tName).getResultSet();
                 long tCount = ((Number) tcRes.get(0).values().iterator().next()).longValue();
                 
                 if (tCount == 0) {
@@ -665,7 +675,7 @@ public class GradeExamUsecase {
                 // 2. student count
                 long sCount = 0;
                 try {
-                    List<Map<String, Object>> scRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + schemaName + "]." + tName);
+                    List<Map<String, Object>> scRes = examSchemaService.executeAdminSql("SELECT COUNT(*) as cnt FROM [" + schemaName + "]." + tName).getResultSet();
                     sCount = ((Number) scRes.get(0).values().iterator().next()).longValue();
                 } catch (Exception e) {
                     allPassed = false;
@@ -677,7 +687,7 @@ public class GradeExamUsecase {
                 long missingCount = 0;
                 try {
                     String missingSql = "SELECT COUNT(*) FROM (SELECT * FROM [" + teacherSchemaName + "]." + tName + " EXCEPT SELECT * FROM [" + schemaName + "]." + tName + ") a";
-                    List<Map<String, Object>> mRes = examSchemaService.executeAdminSql(missingSql);
+                    List<Map<String, Object>> mRes = examSchemaService.executeAdminSql(missingSql).getResultSet();
                     missingCount = ((Number) mRes.get(0).values().iterator().next()).longValue();
                 } catch (Exception e) {
                     missingCount = tCount; // fallback
@@ -687,7 +697,7 @@ public class GradeExamUsecase {
                 long extraCount = 0;
                 try {
                     String extraSql = "SELECT COUNT(*) FROM (SELECT * FROM [" + schemaName + "]." + tName + " EXCEPT SELECT * FROM [" + teacherSchemaName + "]." + tName + ") b";
-                    List<Map<String, Object>> eRes = examSchemaService.executeAdminSql(extraSql);
+                    List<Map<String, Object>> eRes = examSchemaService.executeAdminSql(extraSql).getResultSet();
                     extraCount = ((Number) eRes.get(0).values().iterator().next()).longValue();
                 } catch (Exception e) {
                     extraCount = 0;
@@ -777,7 +787,7 @@ public class GradeExamUsecase {
             // Retrieve all rows from the student's schema for this table
             List<Map<String, Object>> actualRows = new ArrayList<>();
             try {
-                actualRows = examSchemaService.executeAdminSql("SELECT * FROM [" + schemaName + "]." + tableName);
+                actualRows = examSchemaService.executeAdminSql("SELECT * FROM [" + schemaName + "]." + tableName).getResultSet();
             } catch (Exception e) {
                 allPassed = false;
                 errorBuilder.append(String.format("Bảng %s bị lỗi hoặc không tồn tại. ", tableName));
@@ -1026,8 +1036,8 @@ public class GradeExamUsecase {
             examSchemaService.resetSchema(schemaName);
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
 
-            List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery);
-            List<Map<String, Object>> expected = examSchemaService.executeSql(schemaName, question.getCorrectQuery());
+            List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery).getResultSet();
+            List<Map<String, Object>> expected = examSchemaService.executeSql(schemaName, question.getCorrectQuery()).getResultSet();
 
             boolean requireStrictOrder = question.getCorrectQuery() != null 
                     && question.getCorrectQuery().toUpperCase().contains("ORDER BY");
@@ -1065,7 +1075,7 @@ public class GradeExamUsecase {
                                            .replace("{TEACHER_SCHEMA}", teacherSchemaName);
                 log.info("[gradeByTestCases] Q{} TC{} running query: {}", question.getId(), tc.getOrderIndex(), validationQuery);
                 
-                List<Map<String, Object>> actual = examSchemaService.executeAdminSql(validationQuery);
+                List<Map<String, Object>> actual = examSchemaService.executeAdminSql(validationQuery).getResultSet();
                 log.info("[gradeByTestCases] Q{} TC{} actual result: {}", question.getId(), tc.getOrderIndex(), actual);
                 
                 boolean isTcCorrect = false;
@@ -1122,7 +1132,7 @@ public class GradeExamUsecase {
     private boolean gradeByStrictComparison(String schemaName, ExamQuestion question) {
         try {
             List<Map<String, Object>> actual = examSchemaService.executeSql(
-                    schemaName, question.getCorrectQuery());
+                    schemaName, question.getCorrectQuery()).getResultSet();
 
             String verifyScript = question.getVerifyScript();
             if (verifyScript == null || verifyScript.isBlank()) {
@@ -1131,7 +1141,7 @@ public class GradeExamUsecase {
             }
 
             List<Map<String, Object>> expected = examSchemaService.executeSql(
-                    schemaName, verifyScript);
+                    schemaName, verifyScript).getResultSet();
 
             boolean requireStrictOrder = question.getCorrectQuery() != null 
                     && question.getCorrectQuery().toUpperCase().contains("ORDER BY");

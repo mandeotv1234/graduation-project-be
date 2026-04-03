@@ -152,17 +152,23 @@ public class StartExamSessionUsecase {
         ExamSpecification specification = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        String defaultDatasetScript = specification.getDatasets() == null ? null
-                : specification.getDatasets().stream()
+        boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+        
+        String ddlScript = isLoadDdl ? specification.getDdlScript() : null;
+
+        String defaultDatasetScript = (isLoadDdl && specification.getDatasets() != null)
+                ? specification.getDatasets().stream()
                         .filter(SpecDataset::isActive)
                         .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
                         .map(SpecDataset::getDataScript)
                         .filter(script -> script != null && !script.isBlank())
                         .findFirst()
-                        .orElse(null);
-
+                        .orElse(null)
+                : null;
+        
         String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId);
         examSchemaService.resetSchema(schemaName);
-        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), defaultDatasetScript);
+
+        examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
     }
 }

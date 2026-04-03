@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0204262330
+      author: manhuynh
+      comment: "GRAD-89: Set isLoadDdl to false for exam ID 2 to ensure empty schema by default for student."
+      changes:
+        - sql:
+            dbms: postgresql
+            splitStatements: true
+            stripComments: true
+            sql: |
+              UPDATE exams 
+              SET settings = (settings::jsonb || '{"is_load_ddl": false}'::jsonb)::json
+              WHERE id = 2;
+
+  - changeSet:
+      id: 0304262015
+      author: manhuynh
+      comment: "GRAD-89: Re-set settings for exam ID 2 with full default values and is_load_ddl: false (correction for potential overwrite in previous attempt)"
+      changes:
+        - update:
+            tableName: exams
+            columns:
+              - column:
+                  name: settings
+                  value: '{"allow_review": true, "allow_overtime": false, "grading_method": "highest_score", "force_fullscreen": true, "track_tab_switch": true, "prevent_copy_paste": true, "score_display_mode": "after_closed", "auto_submit_on_violation": false, "is_load_ddl": false}'
+            where: "id = 2"
+

@@ -12,7 +12,8 @@ public record ExamSettingsDto(
         Boolean allowOvertime,
         String gradingMethod,
         Integer maxViolations,
-        Boolean showResultAfterSubmit) {
+        Boolean showResultAfterSubmit,
+        Boolean isLoadDdl) {
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -26,6 +27,7 @@ public record ExamSettingsDto(
                 .gradingMethod(gradingMethod)
                 .maxViolations(maxViolations)
                 .showResultAfterSubmit(showResultAfterSubmit)
+                .isLoadDdl(isLoadDdl)
                 .build();
     }
 }

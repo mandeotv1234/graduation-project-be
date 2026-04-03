@@ -9,15 +9,18 @@ public record ExecuteSqlResponse(
         int rowCount,
         Integer executionTimeMs,
         String errorMessage,
+        String statusMessage,
         List<TableMetadata> schema) {
     public static ExecuteSqlResponse success(
             List<Map<String, Object>> resultSet,
+            int rowCount,
             int executionTimeMs,
+            String statusMessage,
             List<TableMetadata> schema) {
-        return new ExecuteSqlResponse(resultSet, resultSet.size(), executionTimeMs, null, schema);
+        return new ExecuteSqlResponse(resultSet, rowCount, executionTimeMs, null, statusMessage, schema);
     }
 
     public static ExecuteSqlResponse error(String errorMessage) {
-        return new ExecuteSqlResponse(List.of(), 0, null, errorMessage, null);
+        return new ExecuteSqlResponse(List.of(), 0, null, errorMessage, null, null);
     }
 }

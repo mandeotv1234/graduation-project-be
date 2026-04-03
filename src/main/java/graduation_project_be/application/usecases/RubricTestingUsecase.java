@@ -313,10 +313,10 @@ public class RubricTestingUsecase {
 
                     List<Map<String, Object>> expectedBaseline = examSchemaService.executeSql(
                             baselineSchema,
-                            correctQuery);
+                            correctQuery).getResultSet();
                     List<Map<String, Object>> actualBaseline = examSchemaService.executeSql(
                             baselineSchema,
-                            studentQuery);
+                            studentQuery).getResultSet();
 
                     List<String> baselineExpectedColumns = new ArrayList<>();
                     List<List<String>> baselineExpectedRows = new ArrayList<>();
@@ -435,13 +435,13 @@ public class RubricTestingUsecase {
                                 "points", 0));
                     }
 
-                    List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery);
+                    List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery).getResultSet();
                     int expectedRowCount;
                     List<String> expectedColumns = new ArrayList<>();
                     List<List<String>> expectedRows = new ArrayList<>();
 
                     if (!correctQuery.isBlank()) {
-                        List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery);
+                        List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
                         expectedRowCount = teacherRows.size();
 
                         if (!teacherRows.isEmpty()) {
@@ -596,7 +596,7 @@ public class RubricTestingUsecase {
                 "SELECT t.name AS TABLE_NAME "
                         + "FROM sys.tables t "
                         + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
-                        + "WHERE s.name = '" + safeSchema + "'");
+                        + "WHERE s.name = '" + safeSchema + "'").getResultSet();
 
         for (Map<String, Object> row : tables) {
             Object tableNameObj = row.get("TABLE_NAME");
@@ -760,7 +760,7 @@ public class RubricTestingUsecase {
                     "SELECT t.name AS TABLE_NAME "
                             + "FROM sys.tables t "
                             + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
-                            + "WHERE s.name = '" + safeSchema + "'");
+                            + "WHERE s.name = '" + safeSchema + "'").getResultSet();
 
             for (Map<String, Object> row : tables) {
                 Object tableNameObj = row.get("TABLE_NAME");

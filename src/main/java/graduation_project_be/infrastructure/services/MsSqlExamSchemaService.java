@@ -8,16 +8,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.sql.*;
-import java.util.*;
-
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TriggerMetadata;
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,7 +33,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
      * Maximum time (in seconds) a student SQL query is allowed to run.
      * Prevents infinite loops, Cartesian products, and other long-running queries.
      */
-    private static final int QUERY_TIMEOUT_SECONDS = 5;
+    private static final int QUERY_TIMEOUT_SECONDS = 10;
 
     public MsSqlExamSchemaService(@Qualifier("examJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
@@ -371,7 +373,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
-    public List<Map<String, Object>> executeSql(String schemaName, String sql) {
+    public SqlExecutionResult executeSql(String schemaName, String sql) {
         String userName = schemaName + "_user";
         // Ensure schema + user exist (handles seed-data exams where
         // createExamSchemaForStudent was never called)
@@ -383,6 +385,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
 
                 // Switch execution context to the student's user (uses their default schema)
                 try (Statement stmt = conn.createStatement()) {
@@ -392,16 +396,47 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 try {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                        boolean isResultSet = stmt.execute(sql);
+                        stmt.setMaxRows(1000); 
+                        
+                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+                        
+                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return stmt.execute(sql);
+                            } catch (Exception e) {
+                                throw new CompletionException(e);
+                            }
+                        });
+
+                        boolean isResultSet;
+                        try {
+                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        } catch (TimeoutException e) {
+                            try { stmt.cancel(); } catch (Exception ignore) {}
+                            throw new RuntimeException("Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                        } catch (Exception e) {
+                            Throwable cause = e.getCause() != null ? e.getCause() : e;
+                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                        }
 
                         // Walk through ALL results using correct JDBC pattern
                         // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
                         while (true) {
+                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                stmt.cancel();
+                                throw new RuntimeException("Query processing exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                            }
+
                             if (isResultSet) {
                                 try (ResultSet rs = stmt.getResultSet()) {
                                     ResultSetMetaData meta = rs.getMetaData();
                                     int colCount = meta.getColumnCount();
                                     while (rs.next()) {
+                                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                            stmt.cancel();
+                                            throw new RuntimeException("Result set fetching exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                        }
+                                        
                                         Map<String, Object> row = new LinkedHashMap<>();
                                         for (int i = 1; i <= colCount; i++) {
                                             row.put(meta.getColumnLabel(i), rs.getObject(i));
@@ -416,24 +451,34 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                     // No more results of any kind
                                     break;
                                 }
+                                totalUpdateCount += updateCount;
+                                hasUpdateCount = true;
                             }
                             // Advance to next result (only call ONCE per iteration!)
                             isResultSet = stmt.getMoreResults();
                         }
                     }
 
-                    // If no result set was returned (pure DDL/DML), return a status
+                    String statusMessage = null;
                     if (results.isEmpty()) {
-                        results.add(Map.of("result", "Statement executed successfully"));
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Commands completed successfully.";
+                        }
                     }
+
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .build();
                 } finally {
                     // Always revert context back to original user
                     try (Statement stmt = conn.createStatement()) {
                         stmt.execute("REVERT");
                     }
                 }
-
-                return results;
             });
         } catch (Exception e) {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
@@ -469,6 +514,17 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "OPENDATASOURCE", // external data access
                 "XP_CMDSHELL", // OS command execution
                 "SP_CONFIGURE", // server configuration
+                "USE ", // database switching
+                "DROP DATABASE", // drop db
+                "ALTER DATABASE", // alter db
+                "BACKUP DATABASE", // backup
+                "RESTORE DATABASE", // restore
+                "DBCC ", // database console commands
+                "KILL ", // kill processes
+                "SHUTDOWN", // shutdown server
+                "SP_OACREATE", // COM objects execution
+                "MAXRECURSION 0", // infinite recursion
+                "WAITFOR DELAY" // artificial delay
         };
 
         for (String blocked : blockedPatterns) {
@@ -480,12 +536,14 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
-    public List<Map<String, Object>> executeAdminSql(String sql) {
+    public SqlExecutionResult executeAdminSql(String sql) {
         log.debug("Executing admin SQL: {}", sql);
 
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
 
                 try (Statement stmt = conn.createStatement()) {
                     boolean isResultSet = stmt.execute(sql);
@@ -510,16 +568,27 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             if (updateCount == -1) {
                                 break;
                             }
+                            totalUpdateCount += updateCount;
+                            hasUpdateCount = true;
                         }
                         isResultSet = stmt.getMoreResults();
                     }
 
+                    String statusMessage = null;
                     if (results.isEmpty()) {
-                        results.add(Map.of("result", "Admin statement executed successfully"));
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Admin statement executed successfully.";
+                        }
                     }
-                }
 
-                return results;
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .build();
+                }
             });
         } catch (Exception e) {
             log.error("Admin SQL execution error: {}", e.getMessage());

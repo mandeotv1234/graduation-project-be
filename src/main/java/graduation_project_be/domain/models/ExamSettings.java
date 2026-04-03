@@ -20,4 +20,5 @@ public class ExamSettings {
     private String gradingMethod;
     private Integer maxViolations;
     private Boolean showResultAfterSubmit;
+    private Boolean isLoadDdl;
 }

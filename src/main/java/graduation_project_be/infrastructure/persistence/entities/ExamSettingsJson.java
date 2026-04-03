@@ -24,6 +24,7 @@ public class ExamSettingsJson {
     private String gradingMethod;
     private Integer maxViolations;
     private Boolean showResultAfterSubmit;
+    private Boolean isLoadDdl;
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -37,6 +38,7 @@ public class ExamSettingsJson {
                 .gradingMethod(gradingMethod)
                 .maxViolations(maxViolations)
                 .showResultAfterSubmit(showResultAfterSubmit)
+                .isLoadDdl(isLoadDdl)
                 .build();
     }
 
@@ -53,6 +55,7 @@ public class ExamSettingsJson {
                 .gradingMethod(model.getGradingMethod())
                 .maxViolations(model.getMaxViolations())
                 .showResultAfterSubmit(model.getShowResultAfterSubmit())
+                .isLoadDdl(model.getIsLoadDdl())
                 .build();
     }
 }

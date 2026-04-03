@@ -4,5 +4,6 @@ public enum GradingStatus {
     PENDING,
     GRADING,
     COMPLETED,
-    FAILED
+    FAILED,
+    SYSTEM_ERROR
 }

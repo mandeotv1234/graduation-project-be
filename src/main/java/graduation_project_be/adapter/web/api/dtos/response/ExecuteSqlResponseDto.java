@@ -10,6 +10,7 @@ public record ExecuteSqlResponseDto(
         int rowCount,
         Integer executionTimeMs,
         String errorMessage,
+        String statusMessage,
         List<TableMetadata> schema) {
     public static ExecuteSqlResponseDto fromResponse(ExecuteSqlResponse r) {
         return new ExecuteSqlResponseDto(
@@ -17,6 +18,7 @@ public record ExecuteSqlResponseDto(
                 r.rowCount(),
                 r.executionTimeMs(),
                 r.errorMessage(),
+                r.statusMessage(),
                 r.schema());
     }
 }

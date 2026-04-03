@@ -152,7 +152,7 @@ public class StartExamSessionUsecase {
         ExamSpecification specification = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+        boolean isLoadDdl = exam.getSettings() == null || exam.getSettings().getIsLoadDdl() == null || exam.getSettings().getIsLoadDdl();
         
         String ddlScript = isLoadDdl ? specification.getDdlScript() : null;
 

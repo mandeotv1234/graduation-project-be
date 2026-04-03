@@ -5,8 +5,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 
-import java.util.Set;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 /**
  * Redis Reliable Queue implementation of the grading queue.
@@ -21,6 +22,22 @@ public class RedisGradingQueueService implements GradingQueueService {
     private static final String PROCESSING_KEY = "grading_processing";
     private static final String DLQ_KEY = "grading_dlq";
 
+    private static final String DEQUEUE_SCRIPT =
+            "local item = redis.call('LPOP', KEYS[1]) " +
+            "if item then " +
+            "    redis.call('ZADD', KEYS[2], ARGV[1], item) " +
+            "    return item " +
+            "end " +
+            "return nil";
+
+    private static final String RECOVER_SCRIPT =
+            "local staleItems = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1]) " +
+            "for i, item in ipairs(staleItems) do " +
+            "    redis.call('ZREM', KEYS[1], item) " +
+            "    redis.call('RPUSH', KEYS[2], item) " +
+            "end " +
+            "return staleItems";
+
     private final RedisTemplate<String, String> redisTemplate;
 
     @Override
@@ -33,14 +50,14 @@ public class RedisGradingQueueService implements GradingQueueService {
 
     @Override
     public GradingJob dequeue() {
-        String value = redisTemplate.opsForList().leftPop(QUEUE_KEY);
+        DefaultRedisScript<String> script = new DefaultRedisScript<>(DEQUEUE_SCRIPT, String.class);
+        String value = redisTemplate.execute(script, List.of(QUEUE_KEY, PROCESSING_KEY), String.valueOf(System.currentTimeMillis()));
+
         if (value == null) {
             return null;
         }
 
         try {
-            // Put in processing ZSet with current timestamp as score
-            redisTemplate.opsForZSet().add(PROCESSING_KEY, value, System.currentTimeMillis());
 
             String[] parts = value.split(":");
             Long examId = Long.parseLong(parts[0]);
@@ -83,16 +100,16 @@ public class RedisGradingQueueService implements GradingQueueService {
 
     @Override
     public void recoverStaleJobs() {
-        // Find jobs in processing queue older than 5 minutes
         long staleThresholdMs = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5);
-        Set<String> staleJobs = redisTemplate.opsForZSet().rangeByScore(PROCESSING_KEY, 0, staleThresholdMs);
+        @SuppressWarnings("rawtypes")
+        DefaultRedisScript<List> script = new DefaultRedisScript<>(RECOVER_SCRIPT, List.class);
         
-        if (staleJobs != null && !staleJobs.isEmpty()) {
-            for (String value : staleJobs) {
-                log.warn("Recovering stale grading job (Worker Crash detected): {}", value);
-                // Atomically remove and re-enqueue
-                redisTemplate.opsForZSet().remove(PROCESSING_KEY, value);
-                redisTemplate.opsForList().rightPush(QUEUE_KEY, value);
+        @SuppressWarnings("unchecked")
+        List<String> recoveredItems = (List<String>) redisTemplate.execute(script, List.of(PROCESSING_KEY, QUEUE_KEY), String.valueOf(staleThresholdMs));
+        
+        if (recoveredItems != null && !recoveredItems.isEmpty()) {
+            for (String value : recoveredItems) {
+                log.warn("Recovered stale grading job (Worker Crash detected): {}", value);
             }
         }
     }

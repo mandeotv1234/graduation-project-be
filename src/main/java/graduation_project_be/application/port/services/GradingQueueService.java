@@ -25,7 +25,7 @@ public interface GradingQueueService {
     void ack(GradingJob job);
 
     /**
-     * Negative Acknowledge. Put message in DLQ if retry > 3, else re-enqueue.
+     * Negative Acknowledge. Put message in DLQ if retry >= 2 (after 3 attempts total), else re-enqueue.
      * Returns true if sent to DLQ, false if re-enqueued.
      */
     boolean nack(GradingJob job);

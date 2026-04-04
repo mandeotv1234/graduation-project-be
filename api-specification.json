@@ -48,7 +48,7 @@
           "Authentication"
         ],
         "summary": "User login",
-        "description": "Authenticate user with email and password. Returns JWT access token upon successful authentication.",
+        "description": "Authenticate user with email and password. Returns JWT access token upon successfully authentication.",
         "operationId": "login",
         "requestBody": {
           "required": true,
@@ -71,7 +71,7 @@
         },
         "responses": {
           "200": {
-            "description": "Login successful",
+            "description": "Login successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -79,7 +79,7 @@
                 },
                 "examples": {
                   "success": {
-                    "summary": "Successful login response",
+                    "summary": "successfully login response",
                     "value": {
                       "data": {
                         "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.xxx",
@@ -89,7 +89,7 @@
                         "timestamp": "2025-11-09T10:30:00.000"
                       },
                       "code": "OK",
-                      "message": "Login successful"
+                      "message": "Login successfully"
                     }
                   }
                 }
@@ -213,7 +213,7 @@
                 },
                 "examples": {
                   "success": {
-                    "summary": "Successful token refresh",
+                    "summary": "successfully token refresh",
                     "value": {
                       "data": {
                         "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjEyMDIwMUBzdHVkZW50LmhjbXVzLmVkdS52biIsInJvbGUiOiJTVFVERU5UIiwiaWF0IjoxNjk5NDY0MDAwLCJleHAiOjE2OTk1NTA0MDB9.xxx",
@@ -301,7 +301,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Logout successful",
+            "description": "Logout successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -309,13 +309,13 @@
                 },
                 "examples": {
                   "success": {
-                    "summary": "Successful logout",
+                    "summary": "successfully logout",
                     "value": {
                       "meta": {
                         "timestamp": "2025-11-09T10:30:00.000"
                       },
                       "code": "OK",
-                      "message": "Logout successful"
+                      "message": "Logout successfully"
                     }
                   }
                 }
@@ -1463,10 +1463,10 @@
           "message": {
             "type": "string",
             "description": "Response message",
-            "example": "Login successful"
+            "example": "Login successfully"
           }
         },
-        "description": "Wrapper object for successful login response"
+        "description": "Wrapper object for successfully login response"
       },
       "RefreshTokenResponseDto": {
         "type": "object",
@@ -1515,7 +1515,7 @@
             "example": "Token refreshed"
           }
         },
-        "description": "Wrapper object for successful refresh response"
+        "description": "Wrapper object for successfully refresh response"
       },
       "MessageResponse": {
         "type": "object",
@@ -1536,7 +1536,7 @@
           "message": {
             "type": "string",
             "description": "Response message",
-            "example": "Logout successful"
+            "example": "Logout successfully"
           }
         },
         "description": "Simple message response without data"

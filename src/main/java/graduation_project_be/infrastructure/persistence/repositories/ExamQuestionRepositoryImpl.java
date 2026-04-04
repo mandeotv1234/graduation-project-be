@@ -43,4 +43,10 @@ public class ExamQuestionRepositoryImpl implements ExamQuestionRepository {
     public Optional<ExamQuestion> findById(Long id) {
         return jpaRepository.findById(id).map(ExamQuestionEntity::toModel);
     }
+
+    @Override
+    public void deleteById(Long id) {
+        jpaRepository.deleteById(id);
+    }
 }
+

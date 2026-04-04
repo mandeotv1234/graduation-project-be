@@ -5,8 +5,10 @@ import java.util.Optional;
 
 public interface ExamSessionService {
     /**
-     * Try to start an exam session. Returns true if the session is started successfully.
-     * Returns false if a session already exists for this student+exam on a different device.
+     * Try to start an exam session. Returns true if the session is started
+     * successfully.
+     * Returns false if a session already exists for this student+exam on a
+     * different device.
      */
     boolean tryStartSession(Long examId, Long studentId, String ipAddress, String userAgent);
 

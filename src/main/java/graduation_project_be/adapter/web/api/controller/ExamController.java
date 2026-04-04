@@ -15,14 +15,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +41,9 @@ public class ExamController {
         private final SaveExamSpecificationUsecase saveExamSpecificationUsecase;
         private final GetExamSpecificationUsecase getExamSpecificationUsecase;
         private final UpdateExamUsecase updateExamUsecase;
+        private final UpdateExamQuestionUsecase updateExamQuestionUsecase;
+        private final DeleteExamQuestionUsecase deleteExamQuestionUsecase;
+
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
         private final GetExamMonitorUsecase getExamMonitorUsecase;
@@ -124,6 +121,34 @@ public class ExamController {
                                                 "CREATED",
                                                 response.totalCreated() + " question(s) created successfully"));
         }
+
+        @PutMapping("/{examId}/questions/{questionId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateExamQuestion(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("questionId") @Positive Long questionId,
+                        @RequestBody @Valid UpdateExamQuestionRequestDto requestDto) {
+                ExamQuestionResponse response = updateExamQuestionUsecase.execute(requestDto.toRequest(examId, questionId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                ExamQuestionResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Question updated successfully"));
+        }
+
+        @DeleteMapping("/{examId}/questions/{questionId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> deleteExamQuestion(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("questionId") @Positive Long questionId) {
+                deleteExamQuestionUsecase.execute(examId, questionId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                null,
+                                                "OK",
+                                                "Question deleted successfully"));
+        }
+
 
         @PostMapping("/{examId}/specification")
         @PreAuthorize("hasRole('TEACHER')")
@@ -222,8 +247,8 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId) {
                 List<GetExamResultsResponse> responses = getExamResultsUsecase.execute(examId);
                 List<GetExamResultsResponseDto> dtos = responses.stream()
-                        .map(GetExamResultsResponseDto::fromResponse)
-                        .toList();
+                                .map(GetExamResultsResponseDto::fromResponse)
+                                .toList();
                 return ResponseEntity.ok(
                                 ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
         }

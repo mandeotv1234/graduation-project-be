@@ -20,18 +20,21 @@ public interface GradingQueueService {
     GradingJob dequeue();
 
     /**
-     * Acknowledge successful processing. Message is removed from the processing area.
+     * Acknowledge successfully processing. Message is removed from the processing
+     * area.
      */
     void ack(GradingJob job);
 
     /**
-     * Negative Acknowledge. Put message in DLQ if retry >= 2 (after 3 attempts total), else re-enqueue.
+     * Negative Acknowledge. Put message in DLQ if retry >= 2 (after 3 attempts
+     * total), else re-enqueue.
      * Returns true if sent to DLQ, false if re-enqueued.
      */
     boolean nack(GradingJob job);
 
     /**
-     * Check processing area for stale jobs (e.g., worker crashed) and move them back to main queue.
+     * Check processing area for stale jobs (e.g., worker crashed) and move them
+     * back to main queue.
      */
     void recoverStaleJobs();
 

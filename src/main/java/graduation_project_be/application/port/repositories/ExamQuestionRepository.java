@@ -12,4 +12,6 @@ public interface ExamQuestionRepository {
     List<ExamQuestion> findByExamId(Long examId);
 
     Optional<ExamQuestion> findById(Long id);
+
+    void deleteById(Long id);
 }

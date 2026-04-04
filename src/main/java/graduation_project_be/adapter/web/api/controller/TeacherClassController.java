@@ -21,43 +21,43 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TeacherClassController {
 
-    private final AddTeacherToClassUsecase addTeacherToClassUsecase;
-    private final GetClassTeachersUsecase getClassTeachersUsecase;
-    private final RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase;
+        private final AddTeacherToClassUsecase addTeacherToClassUsecase;
+        private final GetClassTeachersUsecase getClassTeachersUsecase;
+        private final RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase;
 
-    @GetMapping("/{classId}/teachers")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getClassTeachers(
-            @PathVariable("classId") Long classId) {
-        List<GetClassTeachersResponse> responses = getClassTeachersUsecase.execute(classId);
-        List<ClassTeacherResponseDto> dtos = responses.stream()
-                .map(ClassTeacherResponseDto::fromResponse)
-                .toList();
+        @GetMapping("/{classId}/teachers")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getClassTeachers(
+                        @PathVariable("classId") Long classId) {
+                List<GetClassTeachersResponse> responses = getClassTeachersUsecase.execute(classId);
+                List<ClassTeacherResponseDto> dtos = responses.stream()
+                                .map(ClassTeacherResponseDto::fromResponse)
+                                .toList();
 
-        return ResponseEntity.ok(
-                ResponseDto.of(dtos, "OK", "Class teachers retrieved successfully"));
-    }
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Class teachers retrieved successfully"));
+        }
 
-    @PostMapping("/{classId}/teachers")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> addTeacherToClass(
-            @PathVariable("classId") Long classId,
-            @RequestBody @Valid AddTeacherToClassRequestDto requestDto) {
-        AddTeacherToClassRequest request = requestDto.toRequest(classId);
-        addTeacherToClassUsecase.execute(request);
+        @PostMapping("/{classId}/teachers")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> addTeacherToClass(
+                        @PathVariable("classId") Long classId,
+                        @RequestBody @Valid AddTeacherToClassRequestDto requestDto) {
+                AddTeacherToClassRequest request = requestDto.toRequest(classId);
+                addTeacherToClassUsecase.execute(request);
 
-        return ResponseEntity.ok(
-                ResponseDto.of(null, "OK", "Teacher added to class successfully"));
-    }
+                return ResponseEntity.ok(
+                                ResponseDto.of(null, "OK", "Teacher added to class successfully"));
+        }
 
-    @DeleteMapping("/{classId}/teachers/{teacherId}")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> removeTeacherFromClass(
-            @PathVariable("classId") Long classId,
-            @PathVariable("teacherId") Long teacherId) {
-        removeTeacherFromClassUsecase.execute(classId, teacherId);
+        @DeleteMapping("/{classId}/teachers/{teacherId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> removeTeacherFromClass(
+                        @PathVariable("classId") Long classId,
+                        @PathVariable("teacherId") Long teacherId) {
+                removeTeacherFromClassUsecase.execute(classId, teacherId);
 
-        return ResponseEntity.ok(
-                ResponseDto.of(null, "OK", "Teacher removed from class successfully"));
-    }
+                return ResponseEntity.ok(
+                                ResponseDto.of(null, "OK", "Teacher removed from class successfully"));
+        }
 }

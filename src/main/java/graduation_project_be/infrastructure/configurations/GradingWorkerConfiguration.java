@@ -14,7 +14,8 @@ import org.springframework.scheduling.annotation.Scheduled;
  * Background grading worker configuration.
  *
  * Polls the Redis grading queue every 2 seconds.
- * When a job is found, it invokes GradeExamUsecase to perform the actual grading.
+ * When a job is found, it invokes GradeExamUsecase to perform the actual
+ * grading.
  *
  * Concurrency is naturally limited to 1 worker per poll cycle.
  * For higher concurrency, increase the number of jobs processed per cycle
@@ -54,18 +55,19 @@ public class GradingWorkerConfiguration {
 
             try {
                 log.info("Processing grading job {}/{}: exam={}, student={}, attempt={}, retry={}",
-                        processed + 1, MAX_JOBS_PER_CYCLE, job.examId(), job.studentId(), job.attemptNumber(), job.retryCount());
+                        processed + 1, MAX_JOBS_PER_CYCLE, job.examId(), job.studentId(), job.attemptNumber(),
+                        job.retryCount());
 
                 gradeExamUsecase.execute(job.examId(), job.studentId(), job.attemptNumber());
-                
-                // Manual ACK upon successful processing
+
+                // Manual ACK upon successfully processing
                 gradingQueueService.ack(job);
                 processed++;
 
             } catch (Exception e) {
                 log.error("Grading job crashed with exception: exam={}, student={}, attempt={}: {}",
                         job.examId(), job.studentId(), job.attemptNumber(), e.getMessage(), e);
-                
+
                 // NACK job and check if it went to DLQ
                 boolean sentToDlq = gradingQueueService.nack(job);
                 if (sentToDlq) {
@@ -75,7 +77,7 @@ public class GradingWorkerConfiguration {
                         log.error("Failed to mark system error on DB", ex);
                     }
                 }
-                
+
                 processed++;
             }
         }

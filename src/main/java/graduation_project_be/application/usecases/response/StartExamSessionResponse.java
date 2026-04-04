@@ -12,10 +12,10 @@ public record StartExamSessionResponse(
         int durationMinutes) {
 
     public static StartExamSessionResponse success(LocalDateTime serverTime,
-                                                    LocalDateTime examStartedAt,
-                                                    LocalDateTime examEndTime,
-                                                    long remainingSeconds,
-                                                    int durationMinutes) {
+            LocalDateTime examStartedAt,
+            LocalDateTime examEndTime,
+            long remainingSeconds,
+            int durationMinutes) {
         return new StartExamSessionResponse(true, "Exam session started successfully",
                 serverTime, examStartedAt, examEndTime, remainingSeconds, durationMinutes);
     }

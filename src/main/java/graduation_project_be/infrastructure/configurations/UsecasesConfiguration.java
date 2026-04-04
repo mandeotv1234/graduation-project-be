@@ -12,6 +12,19 @@ import org.springframework.context.annotation.Configuration;
 public class UsecasesConfiguration {
 
     @Bean
+    UpdateClassUsecase updateClassUsecase(
+            ClassRepository classRepository,
+            UserRepository userRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            PasswordEncoder passwordEncoder,
+            CurrentUserService currentUserService) {
+        return new UpdateClassUsecase(classRepository, userRepository, classEnrollmentRepository,
+                passwordEncoder, currentUserService);
+    }
+
+
+
+    @Bean
     CreateClassUsecase createClassUsecase(
             ClassRepository classRepository,
             TeacherClassRepository teacherClassRepository,
@@ -22,6 +35,8 @@ public class UsecasesConfiguration {
         return new CreateClassUsecase(classRepository, teacherClassRepository, userRepository,
                 classEnrollmentRepository, passwordEncoder, currentUserService);
     }
+
+
 
     @Bean
     LoginUsecase authenticationUsecase(
@@ -578,4 +593,23 @@ public class UsecasesConfiguration {
                 currentUserService);
     }
 
+    @Bean
+    UpdateExamQuestionUsecase updateExamQuestionUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateExamQuestionUsecase(examQuestionRepository, examRepository, classRepository, currentUserService);
+    }
+
+    @Bean
+    DeleteExamQuestionUsecase deleteExamQuestionUsecase(
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new DeleteExamQuestionUsecase(examQuestionRepository, examRepository, classRepository, currentUserService);
+    }
+
 }
+

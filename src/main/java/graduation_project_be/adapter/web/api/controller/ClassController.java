@@ -4,15 +4,19 @@ import graduation_project_be.adapter.web.api.dtos.request.CreateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassesRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentsInClassRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.UpdateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.usecases.CreateClassUsecase;
+import graduation_project_be.application.usecases.UpdateClassUsecase;
 import graduation_project_be.application.usecases.GetClassDetailUsecase;
 import graduation_project_be.application.usecases.GetClassesUsecase;
 import graduation_project_be.application.usecases.GetExamsByClassUsecase;
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
+import graduation_project_be.application.usecases.request.UpdateClassRequest;
 import graduation_project_be.application.usecases.request.GetStudentsInClassRequest;
 import graduation_project_be.application.usecases.response.*;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,94 +31,109 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ClassController {
 
-    private final CreateClassUsecase createClassUsecase;
-    private final GetClassesUsecase getClassesUsecase;
-    private final GetStudentsInClassUsecase getStudentsInClassUsecase;
-    private final GetClassDetailUsecase getClassDetailUsecase;
-    private final GetExamsByClassUsecase getExamsByClassUsecase;
+        private final CreateClassUsecase createClassUsecase;
+        private final UpdateClassUsecase updateClassUsecase;
+        private final GetClassesUsecase getClassesUsecase;
+        private final GetStudentsInClassUsecase getStudentsInClassUsecase;
+        private final GetClassDetailUsecase getClassDetailUsecase;
+        private final GetExamsByClassUsecase getExamsByClassUsecase;
 
-    @PostMapping
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> createClass(
-            @RequestBody @Valid CreateClassRequestDto requestDto) {
-        CreateClassRequest usecaseRequest = requestDto.toRequest();
-        CreateClassResponse usecaseResponse = createClassUsecase.execute(usecaseRequest);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "CREATED",
-                        "Class created successfully"));
-    }
+        @PostMapping
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> createClass(
+                        @RequestBody @Valid CreateClassRequestDto requestDto) {
+                CreateClassRequest usecaseRequest = requestDto.toRequest();
+                CreateClassResponse usecaseResponse = createClassUsecase.execute(usecaseRequest);
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "CREATED",
+                                                "Class created successfully"));
+        }
 
-    @GetMapping
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<PaginationResponseDto<GetClassesResponseDto>> getClasses(
-            @RequestParam(name = "page", defaultValue = "1") int page,
-            @RequestParam(name = "size", defaultValue = "10") int size,
-            @RequestParam(name = "sortBy", defaultValue = "CREATED_AT") String sortBy,
-            @RequestParam(name = "sortOrder", defaultValue = "DESC") String sortOrder) {
-        GetClassesRequestDto requestDto = GetClassesRequestDto.builder()
-                .page(page)
-                .size(size)
-                .sortBy(sortBy)
-                .sortOrder(sortOrder)
-                .build();
+        @PutMapping("/{classId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateClass(
+                        @PathVariable("classId") Long classId,
+                        @RequestBody @Valid UpdateClassRequestDto requestDto) {
+                UpdateClassRequest usecaseRequest = requestDto.toRequest(classId);
+                CreateClassResponse usecaseResponse = updateClassUsecase.execute(usecaseRequest);
+                return ResponseEntity.ok()
+                                .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "OK",
+                                                "Class updated successfully"));
+        }
 
-        PaginationResponse<GetClassesResponse> usecaseResponse = getClassesUsecase.execute(requestDto.toRequest());
 
-        return ResponseEntity.ok()
-                .body(PaginationResponseDto.fromResponse(usecaseResponse,
-                        GetClassesResponseDto::fromResponse, "OK",
-                        "Classes retrieved successfully"));
-    }
+        @GetMapping
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<PaginationResponseDto<GetClassesResponseDto>> getClasses(
+                        @RequestParam(name = "page", defaultValue = "1") int page,
+                        @RequestParam(name = "size", defaultValue = "10") int size,
+                        @RequestParam(name = "sortBy", defaultValue = "CREATED_AT") String sortBy,
+                        @RequestParam(name = "sortOrder", defaultValue = "DESC") String sortOrder) {
+                GetClassesRequestDto requestDto = GetClassesRequestDto.builder()
+                                .page(page)
+                                .size(size)
+                                .sortBy(sortBy)
+                                .sortOrder(sortOrder)
+                                .build();
 
-    @GetMapping("/{classId}")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getClassDetail(
-            @PathVariable("classId") Long classId) {
-        GetClassDetailRequestDto requestDto = GetClassDetailRequestDto.builder()
-                .classId(classId)
-                .build();
+                PaginationResponse<GetClassesResponse> usecaseResponse = getClassesUsecase
+                                .execute(requestDto.toRequest());
 
-        GetClassDetailResponse usecaseResponse = getClassDetailUsecase.execute(requestDto.toRequest());
-        return ResponseEntity.ok()
-                .body(ResponseDto.of(GetClassDetailResponseDto.fromResponse(usecaseResponse), "OK",
-                        "Class detail retrieved successfully"));
-    }
+                return ResponseEntity.ok()
+                                .body(PaginationResponseDto.fromResponse(usecaseResponse,
+                                                GetClassesResponseDto::fromResponse, "OK",
+                                                "Classes retrieved successfully"));
+        }
 
-    @GetMapping("/{classId}/students")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<PaginationResponseDto<GetStudentsInClassResponseDto>> getStudentsInClass(
-            @PathVariable("classId") Long classId,
-            @RequestParam(name = "page", defaultValue = "1") int page,
-            @RequestParam(name = "size", defaultValue = "10") int size,
-            @RequestParam(name = "sortBy", defaultValue = "FULL_NAME") String sortBy,
-            @RequestParam(name = "sortOrder", defaultValue = "ASC") String sortOrder) {
-        GetStudentsInClassRequestDto requestDto = GetStudentsInClassRequestDto.builder()
-                .classId(classId)
-                .page(page)
-                .size(size)
-                .sortBy(sortBy)
-                .sortOrder(sortOrder)
-                .build();
+        @GetMapping("/{classId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getClassDetail(
+                        @PathVariable("classId") Long classId) {
+                GetClassDetailRequestDto requestDto = GetClassDetailRequestDto.builder()
+                                .classId(classId)
+                                .build();
 
-        GetStudentsInClassRequest usecaseRequest = requestDto.toRequest();
-        PaginationResponse<GetStudentsInClassResponse> usecaseResponse = getStudentsInClassUsecase
-                .execute(usecaseRequest);
+                GetClassDetailResponse usecaseResponse = getClassDetailUsecase.execute(requestDto.toRequest());
+                return ResponseEntity.ok()
+                                .body(ResponseDto.of(GetClassDetailResponseDto.fromResponse(usecaseResponse), "OK",
+                                                "Class detail retrieved successfully"));
+        }
 
-        return ResponseEntity.ok()
-                .body(PaginationResponseDto.fromResponse(usecaseResponse,
-                        GetStudentsInClassResponseDto::fromResponse, "OK",
-                        "Students retrieved successfully"));
-    }
+        @GetMapping("/{classId}/students")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<PaginationResponseDto<GetStudentsInClassResponseDto>> getStudentsInClass(
+                        @PathVariable("classId") Long classId,
+                        @RequestParam(name = "page", defaultValue = "1") int page,
+                        @RequestParam(name = "size", defaultValue = "10") int size,
+                        @RequestParam(name = "sortBy", defaultValue = "FULL_NAME") String sortBy,
+                        @RequestParam(name = "sortOrder", defaultValue = "ASC") String sortOrder) {
+                GetStudentsInClassRequestDto requestDto = GetStudentsInClassRequestDto.builder()
+                                .classId(classId)
+                                .page(page)
+                                .size(size)
+                                .sortBy(sortBy)
+                                .sortOrder(sortOrder)
+                                .build();
 
-    @GetMapping("/{classId}/exams")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getExamsByClass(
-            @PathVariable("classId") Long classId) {
-        List<CreateExamResponse> responses = getExamsByClassUsecase.execute(classId);
-        List<CreateExamResponseDto> dtos = responses.stream()
-                .map(CreateExamResponseDto::fromResponse)
-                .toList();
-        return ResponseEntity.ok(
-                ResponseDto.of(dtos, "OK", "Exams retrieved successfully"));
-    }
+                GetStudentsInClassRequest usecaseRequest = requestDto.toRequest();
+                PaginationResponse<GetStudentsInClassResponse> usecaseResponse = getStudentsInClassUsecase
+                                .execute(usecaseRequest);
+
+                return ResponseEntity.ok()
+                                .body(PaginationResponseDto.fromResponse(usecaseResponse,
+                                                GetStudentsInClassResponseDto::fromResponse, "OK",
+                                                "Students retrieved successfully"));
+        }
+
+        @GetMapping("/{classId}/exams")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamsByClass(
+                        @PathVariable("classId") Long classId) {
+                List<CreateExamResponse> responses = getExamsByClassUsecase.execute(classId);
+                List<CreateExamResponseDto> dtos = responses.stream()
+                                .map(CreateExamResponseDto::fromResponse)
+                                .toList();
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Exams retrieved successfully"));
+        }
 }

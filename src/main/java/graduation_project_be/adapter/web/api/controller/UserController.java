@@ -25,7 +25,7 @@ public class UserController {
 				ResponseDto.of(
 						GetCurrentUserResponseDto.fromResponse(response),
 						"OK",
-						"Get current user successful"));
+						"Get current user successfully"));
 	}
 
 }

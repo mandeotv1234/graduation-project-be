@@ -13,4 +13,6 @@ public interface ClassEnrollmentJpaRepository extends JpaRepository<ClassEnrollm
     List<ClassEnrollmentEntity> findByClassId(Long classId);
     Optional<ClassEnrollmentEntity> findByClassIdAndStudentId(Long classId, Long studentId);
     boolean existsByClassIdAndStudentId(Long classId, Long studentId);
+    void deleteByClassId(Long classId);
 }
+

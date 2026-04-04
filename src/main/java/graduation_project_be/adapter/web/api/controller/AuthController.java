@@ -45,7 +45,7 @@ public class AuthController {
 
         return ResponseEntity
                 .ok()
-                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Login successful"));
+                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Login successfully"));
     }
 
     @PostMapping("/refresh")
@@ -65,7 +65,7 @@ public class AuthController {
         logoutUsecase.execute(logoutRequest);
 
         return ResponseEntity.ok()
-                .body(MessageResponseDto.of("Logout successful"));
+                .body(MessageResponseDto.of("Logout successfully"));
     }
 
     @PostMapping("/google")
@@ -75,16 +75,18 @@ public class AuthController {
 
         return ResponseEntity
                 .ok()
-                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Google login successful"));
+                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Google login successfully"));
     }
 
     @PostMapping("/microsoft")
-    public ResponseEntity<ResponseDto> microsoftLogin(@RequestBody @Valid MicrosoftLoginRequestDto microsoftLoginRequestDto) {
+    public ResponseEntity<ResponseDto> microsoftLogin(
+            @RequestBody @Valid MicrosoftLoginRequestDto microsoftLoginRequestDto) {
         MicrosoftLoginRequest microsoftLoginRequest = microsoftLoginRequestDto.toRequest();
         LoginResponse loginResponse = microsoftLoginUsecase.execute(microsoftLoginRequest);
 
         return ResponseEntity
                 .ok()
-                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Microsoft login successful"));
+                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK",
+                        "Microsoft login successfully"));
     }
 }

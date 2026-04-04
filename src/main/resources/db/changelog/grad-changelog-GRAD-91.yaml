@@ -1,0 +1,588 @@
+databaseChangeLog:
+  - changeSet:
+      id: "0404261425"
+      author: manhuynh
+      comment: "GRAD-92: Seed QLNHAXE specification, datasets, entities, attributes, exam and questions for final exam"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DO $$
+              DECLARE
+                v_spec_id BIGINT;
+                v_exam_id BIGINT;
+                v_creator_id BIGINT;
+                v_class_id BIGINT := 1;
+                v_entity_tuyenxe_id BIGINT;
+                v_entity_xe_id BIGINT;
+                v_entity_chuyenxe_id BIGINT;
+                v_entity_phongban_id BIGINT;
+                v_entity_nhanvien_id BIGINT;
+                v_entity_phancong_id BIGINT;
+                v_ddl_script TEXT;
+                v_dataset_script TEXT;
+                v_schema_json TEXT;
+                v_q1_content TEXT;
+                v_q1_correct TEXT;
+                v_q2_content TEXT;
+                v_q2_correct TEXT;
+                v_q3_content TEXT;
+                v_q3_correct TEXT;
+                v_q4_content TEXT;
+                v_q4_correct TEXT;
+              BEGIN
+                -- ====================================================
+                -- Step 1: Define DDL script (MS SQL Server syntax for exam sandbox)
+                -- ====================================================
+                v_ddl_script := $DDL$
+              CREATE TABLE TuyenXe (
+                  MaTuyen VARCHAR(10) PRIMARY KEY,
+                  BenDi NVARCHAR(100),
+                  BenDen NVARCHAR(100),
+                  UocLuongThoiGian INT
+              );
+
+              CREATE TABLE Xe (
+                  MaXe VARCHAR(10) PRIMARY KEY,
+                  BienSo VARCHAR(20),
+                  SoCho INT,
+                  GhiChu NVARCHAR(200)
+              );
+
+              CREATE TABLE PhongBan (
+                  MaPB VARCHAR(10) PRIMARY KEY,
+                  TenPB NVARCHAR(100),
+                  DienThoai VARCHAR(20),
+                  TruongPhong VARCHAR(10),
+                  NgayNhanChuc DATE
+              );
+
+              CREATE TABLE NhanVien (
+                  MaNV VARCHAR(10) PRIMARY KEY,
+                  HoTen NVARCHAR(100),
+                  GioiTinh NVARCHAR(10),
+                  NgaySinh DATE,
+                  ChuyenMon NVARCHAR(100),
+                  DienThoai VARCHAR(20),
+                  DiaChi NVARCHAR(100),
+                  Luong DECIMAL(15, 2),
+                  PhongBan VARCHAR(10),
+                  QLCM VARCHAR(10),
+                  FOREIGN KEY (PhongBan) REFERENCES PhongBan(MaPB)
+              );
+
+              ALTER TABLE PhongBan
+              ADD CONSTRAINT FK_TruongPhong FOREIGN KEY (TruongPhong) REFERENCES NhanVien(MaNV);
+
+              CREATE TABLE ChuyenXe (
+                  MaChuyen VARCHAR(10) PRIMARY KEY,
+                  TuyenXe VARCHAR(10),
+                  MaXe VARCHAR(10),
+                  BatDau DATETIME,
+                  KetThuc DATETIME,
+                  GhiChu NVARCHAR(200),
+                  FOREIGN KEY (TuyenXe) REFERENCES TuyenXe(MaTuyen),
+                  FOREIGN KEY (MaXe) REFERENCES Xe(MaXe)
+              );
+
+              CREATE TABLE PhanCong (
+                  ChuyenXe VARCHAR(10),
+                  MaNV VARCHAR(10),
+                  VaiTro NVARCHAR(50),
+                  PRIMARY KEY (ChuyenXe, MaNV),
+                  FOREIGN KEY (ChuyenXe) REFERENCES ChuyenXe(MaChuyen),
+                  FOREIGN KEY (MaNV) REFERENCES NhanVien(MaNV)
+              );
+                $DDL$;
+
+                -- ====================================================
+                -- Step 2: Define dataset (INSERT statements)
+                -- ====================================================
+                v_dataset_script := $DATA$
+              INSERT INTO TuyenXe (MaTuyen, BenDi, BenDen, UocLuongThoiGian) VALUES
+              ('TX01', N'Ho Chi Minh', N'Can Tho', 210),
+              ('TX02', N'Can Tho', N'Ho Chi Minh', 210),
+              ('TX03', N'Ho Chi Minh', N'Vung Tau', 150),
+              ('TX04', N'Vung Tau', N'Ho Chi Minh', 150),
+              ('TX05', N'Can Tho', N'Rach Gia', 150),
+              ('TX06', N'Rach Gia', N'Can Tho', 150),
+              ('TX07', N'Vung Tau', N'Phan Thiet', 240),
+              ('TX08', N'Phan Thiet', N'Vung Tau', 240),
+              ('TX09', N'Ho Chi Minh', N'Da Lat', 420),
+              ('TX10', N'Da Lat', N'Ho Chi Minh', 420);
+
+              INSERT INTO Xe (MaXe, BienSo, SoCho, GhiChu) VALUES
+              ('X01', '51A-12345', 38, N'Giuong nam'),
+              ('X02', '51B-67890', 40, N'Giuong nam'),
+              ('X03', '72A-11223', 40, N'Ghe ngoi'),
+              ('X04', '72B-33445', 40, N'Ghe ngoi'),
+              ('X05', '65A-55667', 30, N'Ghe ngoi'),
+              ('X06', '68B-77889', 30, N'Ghe ngoi'),
+              ('X07', '72C-99001', 35, N'Giuong nam'),
+              ('X08', '86A-11229', 35, N'Giuong nam'),
+              ('X09', '51C-33449', 28, N'Giuong nam'),
+              ('X10', '49B-55679', 28, N'Giuong nam'),
+              ('X11', '51D-77881', 40, N'Ghe ngoi'),
+              ('X12', '63A-99002', 30, N'Ghe ngoi'),
+              ('X13', '72D-22334', 35, N'Giuong nam'),
+              ('X14', '86B-44556', 40, N'Giuong nam'),
+              ('X15', '51E-66778', 40, N'Ghe ngoi');
+
+              INSERT INTO PhongBan (MaPB, TenPB, DienThoai, TruongPhong, NgayNhanChuc) VALUES
+              ('PB01', N'Phong Dieu Hanh Chuyen Xe', '028-1234567', NULL, '2023-01-01'),
+              ('PB02', N'Phong Bao Duong Ky Thuat', '028-2345678', NULL, '2023-01-01'),
+              ('PB03', N'Phong Quan Ly Lo Trinh', '028-3456789', NULL, '2023-01-01'),
+              ('PB04', N'Phong Quan Ly Lai Xe', '028-4567890', NULL, '2023-01-01'),
+              ('PB05', N'Phong Dich Vu Hanh Khach', '028-5678901', NULL, '2023-01-01');
+
+              INSERT INTO NhanVien (MaNV, HoTen, GioiTinh, NgaySinh, ChuyenMon, DienThoai, DiaChi, Luong, PhongBan, QLCM) VALUES
+              ('NV01', N'Nguyen Van Hung', N'Nam', '1980-03-12', N'Quan ly doi lai xe', '0901000001', N'Q.1, TP.HCM', 25000000.00, 'PB04', NULL),
+              ('NV02', N'Tran Thi Mai', N'Nu', '1985-07-23', N'Quan ly dich vu hanh khach', '0902000002', N'Q.3, TP.HCM', 24000000.00, 'PB05', NULL),
+              ('NV03', N'Le Van Thanh', N'Nam', '1987-05-10', N'Tai xe hang E', '0903000003', N'Q.Binh Thanh, TP.HCM', 18000000.00, 'PB04', 'NV05'),
+              ('NV04', N'Pham Quoc Dung', N'Nam', '1990-12-02', N'Tai xe hang D', '0903000004', N'Q.Thu Duc, TP.HCM', 17000000.00, 'PB04', 'NV05'),
+              ('NV05', N'Ngo Minh Khang', N'Nam', '1988-09-18', N'Tai xe hang E', '0903000005', N'Q.Go Vap, TP.HCM', 18500000.00, 'PB04', 'NV01'),
+              ('NV06', N'Doan Huu Phuc', N'Nam', '1992-01-27', N'Tai xe hang D', '0903000006', N'Q.Tan Binh, TP.HCM', 16500000.00, 'PB04', 'NV07'),
+              ('NV07', N'Nguyen Van Loi', N'Nam', '1986-11-05', N'Tai xe hang E', '0903000007', N'Q.7, TP.HCM', 18200000.00, 'PB04', 'NV01'),
+              ('NV08', N'Huynh Tan Tai', N'Nam', '1991-04-14', N'Tai xe hang D', '0903000008', N'Q.Tan Phu, TP.HCM', 16800000.00, 'PB04', 'NV07'),
+              ('NV09', N'Pham Thuy An', N'Nu', '1996-06-20', N'Phu xe', '0905000009', N'Q.Binh Tan, TP.HCM', 12000000.00, 'PB05', 'NV11'),
+              ('NV10', N'Vo Hoang Nam', N'Nam', '1995-10-08', N'Phu xe', '0905000010', N'Q.10, TP.HCM', 11500000.00, 'PB05', 'NV11'),
+              ('NV11', N'Nguyen My Duyen', N'Nu', '1997-02-11', N'Phu xe', '0905000011', N'Q.8, TP.HCM', 11800000.00, 'PB05', 'NV02'),
+              ('NV12', N'Ly Thanh Phong', N'Nam', '1998-12-30', N'Phu xe', '0905000012', N'Q.5, TP.HCM', 11000000.00, 'PB05', 'NV14'),
+              ('NV13', N'Dang Gia Huy', N'Nam', '1994-03-03', N'Phu xe', '0905000013', N'Q.11, TP.HCM', 11600000.00, 'PB05', 'NV14'),
+              ('NV14', N'Bui Thanh Truc', N'Nu', '1996-09-09', N'Phu xe', '0905000014', N'Q.4, TP.HCM', 11700000.00, 'PB05', 'NV02'),
+              ('NV15', N'Phan Van Tri', N'Nam', '1989-01-15', N'Tai xe hang E', '0903000015', N'Q.12, TP.HCM', 18000000.00, 'PB04', 'NV21'),
+              ('NV16', N'Truong Minh Duc', N'Nam', '1990-04-22', N'Tai xe hang D', '0903000016', N'Q.Binh Thanh', 17000000.00, 'PB04', NULL),
+              ('NV17', N'Vo Cong Toan', N'Nam', '1988-08-11', N'Tai xe hang E', '0903000017', N'Q.Tan Phu', 18500000.00, 'PB04', 'NV21'),
+              ('NV18', N'Dinh Hoai Nam', N'Nam', '1991-02-09', N'Tai xe hang D', '0903000018', N'Q.7', 16800000.00, 'PB04', NULL),
+              ('NV19', N'Nguyen Huu Tin', N'Nam', '1987-06-05', N'Tai xe hang E', '0903000019', N'Q.10', 18200000.00, 'PB04', 'NV21'),
+              ('NV20', N'Lam Nhat Huy', N'Nam', '1992-10-30', N'Tai xe hang D', '0903000020', N'Q.Go Vap', 16500000.00, 'PB04', NULL),
+              ('NV21', N'Bui Minh Hieu', N'Nam', '1986-03-19', N'Tai xe hang E', '0903000021', N'Q.Binh Tan', 18300000.00, 'PB04', 'NV01'),
+              ('NV22', N'Pham Tan Khoa', N'Nam', '1993-09-14', N'Tai xe hang D', '0903000022', N'Thu Duc', 16900000.00, 'PB04', NULL),
+              ('NV23', N'Le Tan Phuc', N'Nam', '1989-12-25', N'Tai xe hang E', '0903000023', N'Q.Tan Binh', 18100000.00, 'PB04', 'NV21'),
+              ('NV24', N'Tran Ngoc Ha', N'Nu', '1997-07-07', N'Phu xe', '0905000024', N'Q.3', 11700000.00, 'PB05', 'NV14'),
+              ('NV25', N'Nguyen Van Duy', N'Nam', '1996-05-21', N'Phu xe', '0905000025', N'Q.6', 11500000.00, 'PB05', 'NV14');
+
+              UPDATE PhongBan SET TruongPhong = 'NV01' WHERE MaPB = 'PB04';
+              UPDATE PhongBan SET TruongPhong = 'NV02' WHERE MaPB = 'PB05';
+
+              INSERT INTO ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc, GhiChu) VALUES
+              ('CX001', 'TX01', 'X01', '2024-02-08 06:15', '2024-02-08 09:35', N'Tre, ket xe'),
+              ('CX002', 'TX02', 'X02', '2024-02-08 13:00', '2024-02-08 16:20', N'Som, duong thong'),
+              ('CX003', 'TX03', 'X03', '2024-02-09 07:10', '2024-02-09 09:25', N'Som, it khach'),
+              ('CX004', 'TX04', 'X04', '2024-02-09 12:00', '2024-02-09 14:45', N'Tre, nghi lau'),
+              ('CX005', 'TX05', 'X05', '2024-02-10 08:00', '2024-02-10 10:40', N'Tre, mua lon'),
+              ('CX006', 'TX06', 'X06', '2024-02-10 15:10', '2024-02-10 17:25', N'Som, it khach'),
+              ('CX007', 'TX07', 'X07', '2024-02-11 06:25', '2024-02-11 10:35', N'Tre, ket deo'),
+              ('CX008', 'TX08', 'X08', '2024-02-11 11:20', '2024-02-11 15:20', N'Dung gio'),
+              ('CX009', 'TX09', 'X09', '2024-02-12 05:05', '2024-02-12 12:05', N'Tre, hong xe'),
+              ('CX010', 'TX10', 'X10', '2024-02-12 14:10', '2024-02-12 21:05', N'Som, thoi tiet tot'),
+              ('CX011', 'TX01', 'X11', '2024-02-13 06:00', '2024-02-13 09:50', N'Tre, un tac'),
+              ('CX012', 'TX02', 'X12', '2024-02-13 13:05', '2024-02-13 16:15', N'Som, duong vang'),
+              ('CX013', 'TX03', 'X13', '2024-02-14 07:20', '2024-02-14 09:40', N'Dung gio'),
+              ('CX014', 'TX04', 'X14', '2024-02-14 12:15', '2024-02-14 14:50', N'Som, khong dung'),
+              ('CX015', 'TX05', 'X15', '2024-02-14 08:10', '2024-02-14 10:35', N'Tre, nhieu diem dung');
+
+              INSERT INTO PhanCong (ChuyenXe, MaNV, VaiTro) VALUES
+              ('CX001','NV03',N'Tai xe'),
+              ('CX002','NV05',N'Tai xe'),
+              ('CX009','NV07',N'Tai xe'),
+              ('CX010','NV15',N'Tai xe'),
+              ('CX014','NV17',N'Tai xe'),
+              ('CX003','NV19',N'Tai xe'),
+              ('CX004','NV21',N'Tai xe'),
+              ('CX011','NV23',N'Tai xe'),
+              ('CX015','NV03',N'Tai xe'),
+              ('CX007','NV05',N'Tai xe'),
+              ('CX008','NV07',N'Tai xe'),
+              ('CX013','NV15',N'Tai xe'),
+              ('CX005','NV04',N'Tai xe'),
+              ('CX006','NV06',N'Tai xe'),
+              ('CX012','NV08',N'Tai xe'),
+              ('CX001','NV09',N'Phu xe'),
+              ('CX002','NV10',N'Phu xe'),
+              ('CX009','NV11',N'Phu xe'),
+              ('CX010','NV12',N'Phu xe'),
+              ('CX014','NV13',N'Phu xe'),
+              ('CX007','NV24',N'Phu xe'),
+              ('CX008','NV25',N'Phu xe'),
+              ('CX013','NV14',N'Phu xe'),
+              ('CX005','NV14',N'Phu xe'),
+              ('CX015','NV14',N'Phu xe');
+                $DATA$;
+
+                -- ====================================================
+                -- Step 3: Define schema_json for UI rendering
+                -- ====================================================
+                v_schema_json := '[{"tableName":"TuyenXe","columns":[{"columnName":"MaTuyen","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"BenDi","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"BenDen","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"UocLuongThoiGian","dataType":"INT","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]},{"tableName":"Xe","columns":[{"columnName":"MaXe","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"BienSo","dataType":"VARCHAR(20)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"SoCho","dataType":"INT","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"GhiChu","dataType":"NVARCHAR(200)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]},{"tableName":"PhongBan","columns":[{"columnName":"MaPB","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"TenPB","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"DienThoai","dataType":"VARCHAR(20)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"TruongPhong","dataType":"VARCHAR(10)","primaryKey":false,"foreignKey":true,"referencesTable":"NhanVien","referencesColumn":"MaNV","nullable":true},{"columnName":"NgayNhanChuc","dataType":"DATE","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]},{"tableName":"NhanVien","columns":[{"columnName":"MaNV","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"HoTen","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"GioiTinh","dataType":"NVARCHAR(10)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"NgaySinh","dataType":"DATE","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"ChuyenMon","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"DienThoai","dataType":"VARCHAR(20)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"DiaChi","dataType":"NVARCHAR(100)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"Luong","dataType":"DECIMAL(15,2)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"PhongBan","dataType":"VARCHAR(10)","primaryKey":false,"foreignKey":true,"referencesTable":"PhongBan","referencesColumn":"MaPB","nullable":true},{"columnName":"QLCM","dataType":"VARCHAR(10)","primaryKey":false,"foreignKey":true,"referencesTable":"NhanVien","referencesColumn":"MaNV","nullable":true}]},{"tableName":"ChuyenXe","columns":[{"columnName":"MaChuyen","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":false},{"columnName":"TuyenXe","dataType":"VARCHAR(10)","primaryKey":false,"foreignKey":true,"referencesTable":"TuyenXe","referencesColumn":"MaTuyen","nullable":true},{"columnName":"MaXe","dataType":"VARCHAR(10)","primaryKey":false,"foreignKey":true,"referencesTable":"Xe","referencesColumn":"MaXe","nullable":true},{"columnName":"BatDau","dataType":"DATETIME","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"KetThuc","dataType":"DATETIME","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true},{"columnName":"GhiChu","dataType":"NVARCHAR(200)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]},{"tableName":"PhanCong","columns":[{"columnName":"ChuyenXe","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":true,"referencesTable":"ChuyenXe","referencesColumn":"MaChuyen","nullable":false},{"columnName":"MaNV","dataType":"VARCHAR(10)","primaryKey":true,"foreignKey":true,"referencesTable":"NhanVien","referencesColumn":"MaNV","nullable":false},{"columnName":"VaiTro","dataType":"NVARCHAR(50)","primaryKey":false,"foreignKey":false,"referencesTable":null,"referencesColumn":null,"nullable":true}]}]';
+
+                -- ====================================================
+                -- Step 4: Define exam question content and correct queries
+                -- ====================================================
+
+                -- Cau 1 (2.5d): Tim ten phong ban, ho ten truong phong va ho ten QLCM cua tai xe co tong so chuyen khong tre gio cao nhat
+                v_q1_content := '<p><strong>Câu 1 (2.5 điểm):</strong> Tìm tên phòng ban, họ tên trưởng phòng và họ tên người quản lý chuyên môn (QLCM) của (các) tài xế có tổng số chuyến không trễ giờ cao nhất.</p><p><em>Gợi ý: Các chuyến trễ giờ sẽ có ghi chú bắt đầu bằng "Trễ".</em></p>';
+                v_q1_correct := $SQL$
+              SELECT pb.TenPB, tp.HoTen AS TruongPhong, qlcm.HoTen AS QLCM
+              FROM NhanVien nv
+              JOIN PhanCong pc ON pc.MaNV = nv.MaNV
+              JOIN ChuyenXe cx ON cx.MaChuyen = pc.ChuyenXe
+              JOIN PhongBan pb ON pb.MaPB = nv.PhongBan
+              JOIN NhanVien tp ON tp.MaNV = pb.TruongPhong
+              LEFT JOIN NhanVien qlcm ON qlcm.MaNV = nv.QLCM
+              WHERE pc.VaiTro = N'Tai xe'
+                AND (cx.GhiChu NOT LIKE N'Tre%' OR cx.GhiChu IS NULL)
+              GROUP BY nv.MaNV, nv.HoTen, pb.TenPB, tp.HoTen, qlcm.HoTen
+              HAVING COUNT(*) = (
+                SELECT TOP 1 COUNT(*)
+                FROM PhanCong pc2
+                JOIN ChuyenXe cx2 ON cx2.MaChuyen = pc2.ChuyenXe
+                WHERE pc2.VaiTro = N'Tai xe'
+                  AND (cx2.GhiChu NOT LIKE N'Tre%' OR cx2.GhiChu IS NULL)
+                GROUP BY pc2.MaNV
+                ORDER BY COUNT(*) DESC
+              );
+                $SQL$;
+
+                -- Cau 2 (2.5d): Cho biet ho ten QLCM va ho ten tai xe da chay tat ca cac tuyen di va den Da Lat
+                v_q2_content := '<p><strong>Câu 2 (2.5 điểm):</strong> Cho biết thông tin họ và tên người quản lý chuyên môn và họ tên của tài xế đã chạy tất cả các tuyến đi và đến Đà Lạt.</p>';
+                v_q2_correct := $SQL$
+              SELECT qlcm.HoTen AS QLCM, nv.HoTen AS TaiXe
+              FROM NhanVien nv
+              JOIN NhanVien qlcm ON qlcm.MaNV = nv.QLCM
+              WHERE NOT EXISTS (
+                SELECT tx.MaTuyen
+                FROM TuyenXe tx
+                WHERE tx.BenDi = N'Da Lat' OR tx.BenDen = N'Da Lat'
+                EXCEPT
+                SELECT cx.TuyenXe
+                FROM PhanCong pc
+                JOIN ChuyenXe cx ON cx.MaChuyen = pc.ChuyenXe
+                WHERE pc.MaNV = nv.MaNV
+                  AND pc.VaiTro = N'Tai xe'
+              );
+                $SQL$;
+
+                -- Cau 3 (2.5d): Stored Procedure SP_ThemChuyenXe
+                v_q3_content := '<p><strong>Câu 3 (2.5 điểm):</strong> Cài đặt stored procedure <code>SP_ThemChuyenXe_MSSV</code> để lên lịch cho chuyến mới, nhận vào mã chuyến, mã tuyến, mã xe, bắt đầu.</p><ul><li>Mã chuyến xe được tạo tự động theo cấu trúc <code>CX###</code>, trong đó ### là số thứ tự gồm 3 chữ số. Số thứ tự này được xác định bằng cách lấy mã chuyến xe có số thứ tự lớn nhất hiện có rồi cộng thêm 1. <em>(Sử dụng function để xác định tự động mã chuyến mới.)</em></li><li>Mã tuyến và mã xe phải tồn tại trong hệ thống.</li><li>Thời gian bắt đầu của chuyến mới phải sau thời gian kết thúc của chuyến sau cùng của xe đó (cùng mã xe) ít nhất 2 giờ.</li></ul><p>Khi các điều kiện thỏa mã thì thêm chuyến xe vào và trả về 1 báo hiệu thành công, ngược lại trả về 0 báo hiệu thất bại kèm in thông báo lỗi.</p>';
+                v_q3_correct := $SQL$
+              -- Buoc 1: Tao function sinh ma chuyen tu dong
+              CREATE FUNCTION FN_SinhMaChuyen()
+              RETURNS VARCHAR(10)
+              AS
+              BEGIN
+                DECLARE @MaxNum INT;
+                DECLARE @NewMa VARCHAR(10);
+                SELECT @MaxNum = MAX(CAST(SUBSTRING(MaChuyen, 3, LEN(MaChuyen) - 2) AS INT))
+                FROM ChuyenXe;
+                IF @MaxNum IS NULL SET @MaxNum = 0;
+                SET @NewMa = 'CX' + RIGHT('000' + CAST(@MaxNum + 1 AS VARCHAR(3)), 3);
+                RETURN @NewMa;
+              END;
+              GO
+
+              -- Buoc 2: Tao stored procedure them chuyen xe
+              CREATE PROCEDURE SP_ThemChuyenXe_MSSV
+                @MaTuyen VARCHAR(10),
+                @MaXe VARCHAR(10),
+                @BatDau DATETIME
+              AS
+              BEGIN
+                DECLARE @MaChuyen VARCHAR(10);
+                DECLARE @LastKetThuc DATETIME;
+
+                -- Kiem tra ma tuyen ton tai
+                IF NOT EXISTS (SELECT 1 FROM TuyenXe WHERE MaTuyen = @MaTuyen)
+                BEGIN
+                  PRINT N'Loi: Ma tuyen khong ton tai';
+                  RETURN 0;
+                END
+
+                -- Kiem tra ma xe ton tai
+                IF NOT EXISTS (SELECT 1 FROM Xe WHERE MaXe = @MaXe)
+                BEGIN
+                  PRINT N'Loi: Ma xe khong ton tai';
+                  RETURN 0;
+                END
+
+                -- Kiem tra thoi gian bat dau phai sau ket thuc chuyen cuoi cung cua xe it nhat 2 gio
+                SELECT @LastKetThuc = MAX(KetThuc) FROM ChuyenXe WHERE MaXe = @MaXe;
+                IF @LastKetThuc IS NOT NULL AND @BatDau < DATEADD(HOUR, 2, @LastKetThuc)
+                BEGIN
+                  PRINT N'Loi: Thoi gian bat dau phai sau thoi gian ket thuc chuyen cuoi cung cua xe it nhat 2 gio';
+                  RETURN 0;
+                END
+
+                -- Sinh ma chuyen tu dong
+                SET @MaChuyen = dbo.FN_SinhMaChuyen();
+
+                -- Them chuyen xe
+                INSERT INTO ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau)
+                VALUES (@MaChuyen, @MaTuyen, @MaXe, @BatDau);
+
+                RETURN 1;
+              END;
+                $SQL$;
+
+                -- Cau 4 (2.5d): Stored procedure SP_InTKXe
+                v_q4_content := '<p><strong>Câu 4 (2.5 điểm):</strong> Cài đặt stored procedure <code>SP_InTKXe_MSSV</code> nhận vào mã xe và in thông tin xe theo mẫu sau:</p><pre>--- THONG KE XE ---\n--- Xe: &lt;@MaXe&gt; - &lt;@BienSo&gt;\n--- Tong so chuyen: &lt;Tong so chuyen da chay&gt;\n--- So tuyen da chay: &lt;Tong so tuyen da chay&gt;\n--- Tong so chuyen chua chay: &lt;Tong so chuyen chua chay&gt;</pre><p><em>Lưu ý: Trạng thái đã chạy/chưa chạy dựa vào so sánh thời gian bắt đầu của chuyến và thời gian hiện tại.</em></p>';
+                v_q4_correct := $SQL$
+              CREATE PROCEDURE SP_InTKXe_MSSV
+                @MaXe VARCHAR(10)
+              AS
+              BEGIN
+                DECLARE @BienSo VARCHAR(20);
+                DECLARE @TongChuyen INT;
+                DECLARE @SoTuyen INT;
+                DECLARE @ChuaChay INT;
+
+                -- Lay bien so xe
+                SELECT @BienSo = BienSo FROM Xe WHERE MaXe = @MaXe;
+
+                IF @BienSo IS NULL
+                BEGIN
+                  PRINT N'Ma xe khong ton tai';
+                  RETURN;
+                END
+
+                -- Tong so chuyen da chay (bat dau < thoi gian hien tai)
+                SELECT @TongChuyen = COUNT(*)
+                FROM ChuyenXe
+                WHERE MaXe = @MaXe AND BatDau < GETDATE();
+
+                -- So tuyen da chay
+                SELECT @SoTuyen = COUNT(DISTINCT TuyenXe)
+                FROM ChuyenXe
+                WHERE MaXe = @MaXe AND BatDau < GETDATE();
+
+                -- Tong so chuyen chua chay (bat dau >= thoi gian hien tai)
+                SELECT @ChuaChay = COUNT(*)
+                FROM ChuyenXe
+                WHERE MaXe = @MaXe AND BatDau >= GETDATE();
+
+                PRINT '--- THONG KE XE ---';
+                PRINT '--- Xe: ' + @MaXe + ' - ' + @BienSo;
+                PRINT '--- Tong so chuyen: ' + CAST(@TongChuyen AS VARCHAR(10));
+                PRINT '--- So tuyen da chay: ' + CAST(@SoTuyen AS VARCHAR(10));
+                PRINT '--- Tong so chuyen chua chay: ' + CAST(@ChuaChay AS VARCHAR(10));
+              END;
+                $SQL$;
+
+                -- ====================================================
+                -- Step 5: Insert specification
+                -- ====================================================
+                SELECT id INTO v_creator_id
+                FROM users
+                WHERE role = 'TEACHER'
+                ORDER BY id
+                LIMIT 1;
+
+                IF v_creator_id IS NULL THEN
+                  SELECT id INTO v_creator_id
+                  FROM users ORDER BY id LIMIT 1;
+                END IF;
+
+                INSERT INTO specifications (name, ddl_script, description, created_by, created_at, updated_at, schema_json)
+                VALUES (
+                  'Quan Ly Nha Xe (QLNHAXE)',
+                  v_ddl_script,
+                  'Co so du lieu quan ly nha xe khach, bao gom cac tuyen xe, xe, chuyen xe, phong ban, nhan vien va phan cong.',
+                  v_creator_id,
+                  CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP,
+                  v_schema_json
+                )
+                RETURNING id INTO v_spec_id;
+
+                -- ====================================================
+                -- Step 6: Insert spec_entities
+                -- ====================================================
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'TuyenXe', 'TuyenXe', 'Thong tin tuyen xe', 1)
+                RETURNING id INTO v_entity_tuyenxe_id;
+
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'Xe', 'Xe', 'Thong tin xe', 2)
+                RETURNING id INTO v_entity_xe_id;
+
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'PhongBan', 'PhongBan', 'Thong tin phong ban', 3)
+                RETURNING id INTO v_entity_phongban_id;
+
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'NhanVien', 'NhanVien', 'Thong tin nhan vien', 4)
+                RETURNING id INTO v_entity_nhanvien_id;
+
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'ChuyenXe', 'ChuyenXe', 'Thong tin chuyen xe', 5)
+                RETURNING id INTO v_entity_chuyenxe_id;
+
+                INSERT INTO spec_entities (specification_id, entity_name, display_name, description, order_index)
+                VALUES (v_spec_id, 'PhanCong', 'PhanCong', 'Phan cong nhan vien cho chuyen xe', 6)
+                RETURNING id INTO v_entity_phancong_id;
+
+                -- ====================================================
+                -- Step 7: Insert spec_attributes for each entity
+                -- ====================================================
+
+                -- TuyenXe attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_tuyenxe_id, 'MaTuyen', 'VARCHAR(10)', 'Ma tuyen xe', TRUE, FALSE, 1),
+                (v_entity_tuyenxe_id, 'BenDi', 'NVARCHAR(100)', 'Ben di', FALSE, TRUE, 2),
+                (v_entity_tuyenxe_id, 'BenDen', 'NVARCHAR(100)', 'Ben den', FALSE, TRUE, 3),
+                (v_entity_tuyenxe_id, 'UocLuongThoiGian', 'INT', 'Uoc luong thoi gian (phut)', FALSE, TRUE, 4);
+
+                -- Xe attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_xe_id, 'MaXe', 'VARCHAR(10)', 'Ma xe', TRUE, FALSE, 1),
+                (v_entity_xe_id, 'BienSo', 'VARCHAR(20)', 'Bien so xe', FALSE, TRUE, 2),
+                (v_entity_xe_id, 'SoCho', 'INT', 'So cho ngoi', FALSE, TRUE, 3),
+                (v_entity_xe_id, 'GhiChu', 'NVARCHAR(200)', 'Ghi chu', FALSE, TRUE, 4);
+
+                -- PhongBan attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_phongban_id, 'MaPB', 'VARCHAR(10)', 'Ma phong ban', TRUE, FALSE, 1),
+                (v_entity_phongban_id, 'TenPB', 'NVARCHAR(100)', 'Ten phong ban', FALSE, TRUE, 2),
+                (v_entity_phongban_id, 'DienThoai', 'VARCHAR(20)', 'So dien thoai', FALSE, TRUE, 3),
+                (v_entity_phongban_id, 'TruongPhong', 'VARCHAR(10)', 'Ma truong phong (FK -> NhanVien.MaNV)', FALSE, TRUE, 4),
+                (v_entity_phongban_id, 'NgayNhanChuc', 'DATE', 'Ngay nhan chuc', FALSE, TRUE, 5);
+
+                -- NhanVien attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_nhanvien_id, 'MaNV', 'VARCHAR(10)', 'Ma nhan vien', TRUE, FALSE, 1),
+                (v_entity_nhanvien_id, 'HoTen', 'NVARCHAR(100)', 'Ho ten', FALSE, TRUE, 2),
+                (v_entity_nhanvien_id, 'GioiTinh', 'NVARCHAR(10)', 'Gioi tinh', FALSE, TRUE, 3),
+                (v_entity_nhanvien_id, 'NgaySinh', 'DATE', 'Ngay sinh', FALSE, TRUE, 4),
+                (v_entity_nhanvien_id, 'ChuyenMon', 'NVARCHAR(100)', 'Chuyen mon', FALSE, TRUE, 5),
+                (v_entity_nhanvien_id, 'DienThoai', 'VARCHAR(20)', 'Dien thoai', FALSE, TRUE, 6),
+                (v_entity_nhanvien_id, 'DiaChi', 'NVARCHAR(100)', 'Dia chi', FALSE, TRUE, 7),
+                (v_entity_nhanvien_id, 'Luong', 'DECIMAL(15,2)', 'Luong', FALSE, TRUE, 8),
+                (v_entity_nhanvien_id, 'PhongBan', 'VARCHAR(10)', 'Ma phong ban (FK -> PhongBan.MaPB)', FALSE, TRUE, 9),
+                (v_entity_nhanvien_id, 'QLCM', 'VARCHAR(10)', 'Ma quan ly chuyen mon (FK -> NhanVien.MaNV)', FALSE, TRUE, 10);
+
+                -- ChuyenXe attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_chuyenxe_id, 'MaChuyen', 'VARCHAR(10)', 'Ma chuyen xe', TRUE, FALSE, 1),
+                (v_entity_chuyenxe_id, 'TuyenXe', 'VARCHAR(10)', 'Ma tuyen xe (FK -> TuyenXe.MaTuyen)', FALSE, TRUE, 2),
+                (v_entity_chuyenxe_id, 'MaXe', 'VARCHAR(10)', 'Ma xe (FK -> Xe.MaXe)', FALSE, TRUE, 3),
+                (v_entity_chuyenxe_id, 'BatDau', 'DATETIME', 'Thoi gian bat dau', FALSE, TRUE, 4),
+                (v_entity_chuyenxe_id, 'KetThuc', 'DATETIME', 'Thoi gian ket thuc', FALSE, TRUE, 5),
+                (v_entity_chuyenxe_id, 'GhiChu', 'NVARCHAR(200)', 'Ghi chu', FALSE, TRUE, 6);
+
+                -- PhanCong attributes
+                INSERT INTO spec_attributes (entity_id, attribute_name, data_type, description, is_primary_key, is_nullable, order_index)
+                VALUES
+                (v_entity_phancong_id, 'ChuyenXe', 'VARCHAR(10)', 'Ma chuyen xe (FK -> ChuyenXe.MaChuyen)', TRUE, FALSE, 1),
+                (v_entity_phancong_id, 'MaNV', 'VARCHAR(10)', 'Ma nhan vien (FK -> NhanVien.MaNV)', TRUE, FALSE, 2),
+                (v_entity_phancong_id, 'VaiTro', 'NVARCHAR(50)', 'Vai tro (Tai xe / Phu xe)', FALSE, TRUE, 3);
+
+                -- ====================================================
+                -- Step 8: Insert dataset
+                -- ====================================================
+                INSERT INTO spec_datasets (specification_id, name, data_script, order_index, is_active, created_at, updated_at)
+                VALUES (
+                  v_spec_id,
+                  'Dataset goc - De thi cuoi ky HK2',
+                  v_dataset_script,
+                  1,
+                  TRUE,
+                  CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP
+                );
+
+                -- ====================================================
+                -- Step 9: Create exam for class_id=1
+                -- ====================================================
+                INSERT INTO exams (
+                  class_id, creator_id, title, duration_minutes,
+                  start_time, end_time, is_published, created_at,
+                  specification_id, description, max_attempts,
+                  settings
+                )
+                VALUES (
+                  v_class_id,
+                  v_creator_id,
+                  'DE THI THUC HANH CUOI KY - MON CO SO DU LIEU - HOC KY 2',
+                  90,
+                  TIMESTAMP '2026-04-10 08:00:00.000',
+                  TIMESTAMP '2026-06-30 23:59:00.000',
+                  FALSE,
+                  CURRENT_TIMESTAMP,
+                  v_spec_id,
+                  'De thi thuc hanh cuoi ky mon Co so du lieu, hoc ky 2. Noi dung gom 4 cau: 2 cau SELECT va 2 cau Stored Procedure. CSDL Quan ly Nha xe (QLNHAXE).',
+                  1,
+                  '{"allow_review": true, "allow_overtime": false, "grading_method": "highest_score", "force_fullscreen": true, "track_tab_switch": true, "prevent_copy_paste": true, "score_display_mode": "after_closed", "auto_submit_on_violation": false, "is_load_ddl": true}'::json
+                )
+                RETURNING id INTO v_exam_id;
+
+                -- ====================================================
+                -- Step 10: Insert 4 exam questions
+                -- ====================================================
+                INSERT INTO exam_questions (exam_id, content, correct_query, difficulty_level, points, order_index, question_type)
+                VALUES
+                (
+                  v_exam_id,
+                  v_q1_content,
+                  v_q1_correct,
+                  3,
+                  2.50,
+                  1,
+                  'SELECT_QUERY'
+                ),
+                (
+                  v_exam_id,
+                  v_q2_content,
+                  v_q2_correct,
+                  3,
+                  2.50,
+                  2,
+                  'SELECT_QUERY'
+                ),
+                (
+                  v_exam_id,
+                  v_q3_content,
+                  v_q3_correct,
+                  4,
+                  2.50,
+                  3,
+                  'STORED_PROCEDURE'
+                ),
+                (
+                  v_exam_id,
+                  v_q4_content,
+                  v_q4_correct,
+                  3,
+                  2.50,
+                  4,
+                  'STORED_PROCEDURE'
+                );
+
+              END $$;
+  - changeSet:
+      id: 04042621342
+      author: manhuynh
+      comment: "Add a teacher user"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: nnmchau@fit.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2a$12$1CoftoH5gBLpa0BpWlqW5O5PnQYod7ssWfYbO/sQAfC/4dPtla4Gu"
+              - column:
+                  name: full_name
+                  value: "Nguyen Nhat Minh Chau"
+              - column:
+                  name: role
+                  value: TEACHER
+              - column:
+                  name: is_active
+                  valueBoolean: true

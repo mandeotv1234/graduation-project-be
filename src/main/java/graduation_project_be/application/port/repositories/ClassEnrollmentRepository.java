@@ -9,4 +9,6 @@ public interface ClassEnrollmentRepository {
     List<ClassEnrollment> findByClassId(Long classId);
     Optional<ClassEnrollment> findByClassIdAndStudentId(Long classId, Long studentId);
     boolean existsByClassIdAndStudentId(Long classId, Long studentId);
+    void deleteByClassId(Long classId);
 }
+

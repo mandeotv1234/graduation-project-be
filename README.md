@@ -442,7 +442,7 @@ src/main/java/graduation_project_be/
 │  AuthController (continued)                                 │
 │                                                             │
 │  7. Return HTTP 200 OK                                     │
-│  8. Response: { "message": "Logout successful" }            │
+│  8. Response: { "message": "Logout successfully" }            │
 └────────────────────────┬────────────────────────────────────┘
                          ↓
                     [Client]
@@ -617,7 +617,7 @@ This project now implements a secure Access + Refresh Token strategy (similar to
        "data": { "accessToken": "...", "refreshToken": "...", "accessTokenExpiresAt": "...", "refreshTokenExpiresAt": "..." },
        "meta": { "timestamp": "..." },
        "code": "OK",
-       "message": "Login successful"
+       "message": "Login successfully"
      }
      ```
    - Creates new access and refresh tokens
@@ -643,7 +643,7 @@ This project now implements a secure Access + Refresh Token strategy (similar to
    - Response body (JSON):
      ```json
      {
-       "message": "Logout successful"
+       "message": "Logout successfully"
      }
      ```
    - Deletes refresh token from Redis
@@ -651,7 +651,7 @@ This project now implements a secure Access + Refresh Token strategy (similar to
 
 ### Single-Device Session Policy
 
-This application enforces a **single active session per user**: when a successful login occurs, any existing refresh tokens for that user (from other devices/sessions) are revoked. In other words: one device allowed to be logged in at a time; a new login automatically signs out previous session(s).
+This application enforces a **single active session per user**: when a successfully login occurs, any existing refresh tokens for that user (from other devices/sessions) are revoked. In other words: one device allowed to be logged in at a time; a new login automatically signs out previous session(s).
 - Redis is used to persist hashed refresh tokens with TTL (recommended: SHA-256 + pepper or BCrypt hashing). The project includes a `RedisConfiguration` and a `RedisRefreshTokenRepository` implementation.
 - Key pattern used: `rt:{userId}:{tokenId}` → hashedValue
 
@@ -780,7 +780,7 @@ curl -X POST http://localhost:8080/api/auth/login \
     "timestamp": "2025-11-20T10:30:00"
   },
   "code": "OK",
-  "message": "Login successful"
+  "message": "Login successfully"
 }
 ```
 
@@ -822,7 +822,7 @@ curl -X POST http://localhost:8080/api/auth/logout \
 **Response:**
 ```json
 {
-  "message": "Logout successful"
+  "message": "Logout successfully"
 }
 ```
 

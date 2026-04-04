@@ -38,81 +38,82 @@ import lombok.RequiredArgsConstructor;
 @Validated
 public class SpecificationController {
 
-    private final CreateSpecificationUsecase createSpecificationUsecase;
-    private final UpdateSpecificationUsecase updateSpecificationUsecase;
-    private final GetSpecificationsUsecase getSpecificationsUsecase;
-    private final GetSpecificationByIdUsecase getSpecificationByIdUsecase;
-    private final DeleteSpecificationUsecase deleteSpecificationUsecase;
+        private final CreateSpecificationUsecase createSpecificationUsecase;
+        private final UpdateSpecificationUsecase updateSpecificationUsecase;
+        private final GetSpecificationsUsecase getSpecificationsUsecase;
+        private final GetSpecificationByIdUsecase getSpecificationByIdUsecase;
+        private final DeleteSpecificationUsecase deleteSpecificationUsecase;
 
-    @PostMapping
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> createSpecification(
-            @RequestBody @Valid CreateSpecificationRequestDto requestDto) {
-        SpecificationResponse response = createSpecificationUsecase.execute(requestDto.toRequest());
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ResponseDto.of(
-                        SpecificationResponseDto.fromResponse(response),
-                        "CREATED",
-                        "Specification created successfully"));
-    }
+        @PostMapping
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> createSpecification(
+                        @RequestBody @Valid CreateSpecificationRequestDto requestDto) {
+                SpecificationResponse response = createSpecificationUsecase.execute(requestDto.toRequest());
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                SpecificationResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                "Specification created successfully"));
+        }
 
-    @PostMapping("/v2")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> createSpecificationV2(
-            @RequestBody @Valid CreateSpecificationV2RequestDto requestDto) {
-        SpecificationResponse response = createSpecificationUsecase.execute(requestDto.toRequest());
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ResponseDto.of(
-                        SpecificationResponseDto.fromResponse(response),
-                        "CREATED",
-                        "Specification created successfully (v2)"));
-    }
+        @PostMapping("/v2")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> createSpecificationV2(
+                        @RequestBody @Valid CreateSpecificationV2RequestDto requestDto) {
+                SpecificationResponse response = createSpecificationUsecase.execute(requestDto.toRequest());
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                SpecificationResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                "Specification created successfully (v2)"));
+        }
 
-    @PutMapping("/{specificationId}")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> updateSpecification(
-            @PathVariable("specificationId") @Positive Long specificationId,
-            @RequestBody @Valid UpdateSpecificationRequestDto requestDto) {
-        ExamSpecificationResponse response = updateSpecificationUsecase.execute(specificationId, requestDto.toRequest());
-        return ResponseEntity.ok(
-                ResponseDto.of(
-                        ExamSpecificationResponseDto.fromResponse(response),
-                        "SUCCESS",
-                        "Specification updated successfully"));
-    }
+        @PutMapping("/{specificationId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateSpecification(
+                        @PathVariable("specificationId") @Positive Long specificationId,
+                        @RequestBody @Valid UpdateSpecificationRequestDto requestDto) {
+                ExamSpecificationResponse response = updateSpecificationUsecase.execute(specificationId,
+                                requestDto.toRequest());
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                ExamSpecificationResponseDto.fromResponse(response),
+                                                "SUCCESS",
+                                                "Specification updated successfully"));
+        }
 
-    @GetMapping
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getSpecifications() {
-        List<SpecificationResponse> responses = getSpecificationsUsecase.execute();
-        List<SpecificationResponseDto> dtos = responses.stream()
-                .map(SpecificationResponseDto::fromResponse)
-                .toList();
-        return ResponseEntity.ok(
-                ResponseDto.of(dtos, "OK", "Specifications retrieved successfully"));
-    }
+        @GetMapping
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getSpecifications() {
+                List<SpecificationResponse> responses = getSpecificationsUsecase.execute();
+                List<SpecificationResponseDto> dtos = responses.stream()
+                                .map(SpecificationResponseDto::fromResponse)
+                                .toList();
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Specifications retrieved successfully"));
+        }
 
-    @GetMapping("/{specificationId}")
-    @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
-    public ResponseEntity<ResponseDto> getSpecificationById(
-            @PathVariable("specificationId") @Positive Long specificationId) {
-        ExamSpecificationResponse response = getSpecificationByIdUsecase.execute(specificationId);
-        return ResponseEntity.ok(
-                ResponseDto.of(
-                        ExamSpecificationResponseDto.fromResponse(response),
-                        "OK",
-                        "Exam specification retrieved successfully"));
-    }
+        @GetMapping("/{specificationId}")
+        @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
+        public ResponseEntity<ResponseDto> getSpecificationById(
+                        @PathVariable("specificationId") @Positive Long specificationId) {
+                ExamSpecificationResponse response = getSpecificationByIdUsecase.execute(specificationId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                ExamSpecificationResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam specification retrieved successfully"));
+        }
 
-    @DeleteMapping("/{specificationId}")
-    @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> deleteSpecification(
-            @PathVariable("specificationId") @Positive Long specificationId) {
-        deleteSpecificationUsecase.execute(specificationId);
-        return ResponseEntity.ok(
-                ResponseDto.of(
-                        null,
-                        "SUCCESS",
-                        "Specification deleted successfully"));
-    }
+        @DeleteMapping("/{specificationId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> deleteSpecification(
+                        @PathVariable("specificationId") @Positive Long specificationId) {
+                deleteSpecificationUsecase.execute(specificationId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                null,
+                                                "SUCCESS",
+                                                "Specification deleted successfully"));
+        }
 }

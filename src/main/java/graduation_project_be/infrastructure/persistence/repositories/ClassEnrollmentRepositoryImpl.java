@@ -44,4 +44,10 @@ public class ClassEnrollmentRepositoryImpl implements ClassEnrollmentRepository 
     public boolean existsByClassIdAndStudentId(Long classId, Long studentId) {
         return classEnrollmentJpaRepository.existsByClassIdAndStudentId(classId, studentId);
     }
+
+    @Override
+    public void deleteByClassId(Long classId) {
+        classEnrollmentJpaRepository.deleteByClassId(classId);
+    }
 }
+

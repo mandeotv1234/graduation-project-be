@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record UpdateExamResponseDto(
         Long id,
         String title,
+        Long specificationId,
         Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,
@@ -19,6 +20,7 @@ public record UpdateExamResponseDto(
         return new UpdateExamResponseDto(
                 response.id(),
                 response.title(),
+                response.specificationId(),
                 response.durationMinutes(),
                 response.startTime(),
                 response.endTime(),

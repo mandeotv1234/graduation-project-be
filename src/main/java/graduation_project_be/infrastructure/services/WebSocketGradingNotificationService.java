@@ -21,6 +21,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WebSocketGradingNotificationService implements GradingNotificationService {
 
+    private static final String TEACHER_GLOBAL_GRADING_RESULTS_DESTINATION = "/topic/teacher/grading-results";
+
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
 
@@ -76,7 +78,7 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
     @Override
     public void notifyTeacherGradingCompleted(Long examId, String examName, Long studentId,
                                               String studentName, BigDecimal totalScore, BigDecimal maxScore) {
-        String destination = String.format("/topic/teacher/exam/%d/grading-result", examId);
+        String examDestination = String.format("/topic/teacher/exam/%d/grading-result", examId);
 
         Map<String, Object> payload = Map.of(
                 "examId", examId,
@@ -90,8 +92,10 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
                            " đã thi xong bài " + (examName != null ? examName : examId) +
                            ". Điểm: " + totalScore + "/" + maxScore);
 
-        messagingTemplate.convertAndSend(destination, payload);
+        messagingTemplate.convertAndSend(examDestination, payload);
+        messagingTemplate.convertAndSend(TEACHER_GLOBAL_GRADING_RESULTS_DESTINATION, payload);
 
-        log.info("Teacher notified via WebSocket: student={} completed exam={}", studentId, examId);
+        log.info("Teacher notified via WebSocket: student={} completed exam={}, destinations=[{}, {}]",
+                studentId, examId, examDestination, TEACHER_GLOBAL_GRADING_RESULTS_DESTINATION);
     }
 }

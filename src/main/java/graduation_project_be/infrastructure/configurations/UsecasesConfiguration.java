@@ -27,12 +27,11 @@ public class UsecasesConfiguration {
     @Bean
     CreateClassUsecase createClassUsecase(
             ClassRepository classRepository,
-            TeacherClassRepository teacherClassRepository,
             UserRepository userRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService) {
-        return new CreateClassUsecase(classRepository, teacherClassRepository, userRepository,
+        return new CreateClassUsecase(classRepository, userRepository,
                 classEnrollmentRepository, passwordEncoder, currentUserService);
     }
 
@@ -240,11 +239,12 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSessionService examSessionService,
-            GradingQueueService gradingQueueService) {
+            GradingQueueService gradingQueueService,
+            ExamDraftRepository examDraftRepository) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, classEnrollmentRepository, currentUserService,
-                examSessionService, gradingQueueService);
+                examSessionService, gradingQueueService, examDraftRepository);
     }
 
     @Bean
@@ -284,6 +284,15 @@ public class UsecasesConfiguration {
             ExamResultRepository examResultRepository,
             UserRepository userRepository) {
         return new GetExamResultsUsecase(examRepository, examResultRepository, userRepository);
+    }
+
+    @Bean
+    GetExamResultDetailUsecase getExamResultDetailUsecase(
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamQuestionRepository examQuestionRepository,
+            UserRepository userRepository) {
+        return new GetExamResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, userRepository);
     }
 
     @Bean
@@ -355,13 +364,23 @@ public class UsecasesConfiguration {
             ExamSessionService examSessionService,
             ExamResultRepository examResultRepository,
             ExamSpecificationRepository examSpecificationRepository,
-            ExamSchemaService examSchemaService) {
+            ExamSchemaService examSchemaService,
+            DeviceConflictStore deviceConflictStore,
+            DeviceConflictNotificationService deviceConflictNotificationService,
+            UserRepository userRepository,
+            ClassRepository classRepository,
+            ExamDraftRepository examDraftRepository) {
         return new StartExamSessionUsecase(
                 examRepository, classEnrollmentRepository,
                 currentUserService, examSessionService,
                 examResultRepository,
                 examSpecificationRepository,
-                examSchemaService);
+                examSchemaService,
+                deviceConflictStore,
+                deviceConflictNotificationService,
+                userRepository,
+                classRepository,
+                examDraftRepository);
     }
 
     @Bean
@@ -462,12 +481,10 @@ public class UsecasesConfiguration {
         @Bean
     AddTeacherToClassUsecase addTeacherToClassUsecase(
             ClassRepository classRepository,
-            TeacherClassRepository teacherClassRepository,
             UserRepository userRepository,
             CurrentUserService currentUserService) {
         return new AddTeacherToClassUsecase(
                 classRepository,
-                teacherClassRepository,
                 userRepository,
                 currentUserService);
     }
@@ -475,12 +492,10 @@ public class UsecasesConfiguration {
     @Bean
     GetClassTeachersUsecase getClassTeachersUsecase(
             ClassRepository classRepository,
-            TeacherClassRepository teacherClassRepository,
             UserRepository userRepository,
             CurrentUserService currentUserService) {
         return new GetClassTeachersUsecase(
                 classRepository,
-                teacherClassRepository,
                 userRepository,
                 currentUserService);
     }
@@ -488,11 +503,9 @@ public class UsecasesConfiguration {
     @Bean
     RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase(
             ClassRepository classRepository,
-            TeacherClassRepository teacherClassRepository,
             CurrentUserService currentUserService) {
         return new RemoveTeacherFromClassUsecase(
                 classRepository,
-                teacherClassRepository,
                 currentUserService);
     }
 
@@ -611,5 +624,55 @@ public class UsecasesConfiguration {
         return new DeleteExamQuestionUsecase(examQuestionRepository, examRepository, classRepository, currentUserService);
     }
 
+    // ===== EXAM DRAFT USECASES =====
+
+    @Bean
+    SaveExamDraftUsecase saveExamDraftUsecase(
+            ExamRepository examRepository,
+            ExamDraftRepository examDraftRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService) {
+        return new SaveExamDraftUsecase(examRepository, examDraftRepository, classEnrollmentRepository, currentUserService);
+    }
+
+    @Bean
+    GetExamDraftUsecase getExamDraftUsecase(
+            ExamRepository examRepository,
+            ExamDraftRepository examDraftRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService) {
+        return new GetExamDraftUsecase(examRepository, examDraftRepository, classEnrollmentRepository, currentUserService);
+    }
+
+    // ===== DEVICE CONFLICT USECASES =====
+
+    @Bean
+    ApproveDeviceConflictUsecase approveDeviceConflictUsecase(
+            DeviceConflictStore deviceConflictStore,
+            ExamSessionService examSessionService,
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            DeviceConflictNotificationService deviceConflictNotificationService) {
+        return new ApproveDeviceConflictUsecase(
+                deviceConflictStore, examSessionService,
+                examRepository, classRepository,
+                currentUserService, deviceConflictNotificationService);
+    }
+
+    @Bean
+    RejectDeviceConflictUsecase rejectDeviceConflictUsecase(
+            DeviceConflictStore deviceConflictStore,
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            DeviceConflictNotificationService deviceConflictNotificationService) {
+        return new RejectDeviceConflictUsecase(
+                deviceConflictStore, examRepository,
+                classRepository, currentUserService,
+                deviceConflictNotificationService);
+    }
+
 }
+
 

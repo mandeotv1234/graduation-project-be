@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ExamResultJpaRepository extends JpaRepository<ExamResultEntity, Long> {
-    Optional<ExamResultEntity> findByExamIdAndStudentId(Long examId, Long studentId);
+    Optional<ExamResultEntity> findFirstByExamIdAndStudentIdOrderByAttemptNumberDesc(Long examId, Long studentId);
 
     Optional<ExamResultEntity> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
 

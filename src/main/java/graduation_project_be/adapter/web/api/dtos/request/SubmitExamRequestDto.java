@@ -15,10 +15,10 @@ public record SubmitExamRequestDto(
                         String studentQuery) {
         }
 
-        public SubmitExamRequest toRequest(Long examId) {
+        public SubmitExamRequest toRequest(Long examId, String ipAddress, String userAgent) {
                 List<SubmitExamRequest.AnswerItem> items = answers.stream()
                                 .map(a -> new SubmitExamRequest.AnswerItem(a.questionId(), a.studentQuery()))
                                 .toList();
-                return new SubmitExamRequest(examId, items);
+                return new SubmitExamRequest(examId, items, ipAddress, userAgent);
         }
 }

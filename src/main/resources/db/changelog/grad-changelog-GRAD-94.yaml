@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0404262050
+      author: manhuynh
+      comment: "GRAD-94: Create exam_drafts table for 3-layer persistence strategy"
+      changes:
+        - createTable:
+            tableName: exam_drafts
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: answers_json
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: saved_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: client_timestamp
+                  type: VARCHAR(50)
+        - addUniqueConstraint:
+            tableName: exam_drafts
+            columnNames: exam_id, student_id
+            constraintName: uk_exam_drafts_exam_student

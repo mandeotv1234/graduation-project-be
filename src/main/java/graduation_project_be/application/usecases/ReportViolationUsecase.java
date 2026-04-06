@@ -105,6 +105,6 @@ public class ReportViolationUsecase {
     private void autoSubmitExam(Long examId, Long studentId) {
         // Auto-submit with empty answers — the SubmitExamUsecase saves submissions
         // and enqueues grading. Session cleanup is handled by the grading worker.
-        submitExamUsecase.execute(new SubmitExamRequest(examId, List.of()));
+        submitExamUsecase.executeAsSystem(new SubmitExamRequest(examId, List.of(), null, null), studentId, true);
     }
 }

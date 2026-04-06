@@ -5,7 +5,6 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.usecases.response.GetExamResultsResponse;
-import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
@@ -22,8 +21,9 @@ public class GetExamResultsUsecase {
     private final UserRepository userRepository;
 
     public List<GetExamResultsResponse> execute(Long examId) {
-        Exam exam = examRepository.findById(examId)
-                .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", examId));
+        if (examRepository.findById(examId).isEmpty()) {
+            throw new ResourceNotFoundException("Exam", "id", examId);
+        }
 
         List<ExamResult> results = examResultRepository.findByExamId(examId);
 
@@ -35,6 +35,7 @@ public class GetExamResultsUsecase {
         return results.stream().map(result -> {
             User student = studentMap.get(result.getStudentId());
             return new GetExamResultsResponse(
+                    result.getId(),
                     result.getStudentId(),
                     student != null ? student.getFullName() : "Unknown",
                     student != null ? student.getEmail() : "Unknown",

@@ -39,4 +39,27 @@ public interface ExamSessionService {
      * Returns empty if the student hasn't started the exam yet.
      */
     Optional<LocalDateTime> getExamStartTime(Long examId, Long studentId);
+
+    /**
+     * Force-override an existing session with a new device's details.
+     * Called by ApproveDeviceConflictUsecase after teacher approves.
+     * The old session is replaced; start-time key is preserved.
+     */
+    void forceOverrideSession(Long examId, Long studentId, String newIpAddress, String newUserAgent);
+
+    /**
+     * Returns the raw session value (ip|ua) for an existing session, 
+     * to extract the existing device info for the conflict dialog.
+     */
+    Optional<String> getRawSessionValue(Long examId, Long studentId);
+
+    /**
+     * Check if the current request's ip address and user agent match the active 
+     * session for the student.
+     */
+    default boolean isSessionValid(Long examId, Long studentId, String ipAddress, String userAgent) {
+        return getRawSessionValue(examId, studentId)
+                .map(v -> v.equals(ipAddress + "|" + userAgent))
+                .orElse(false);
+    }
 }

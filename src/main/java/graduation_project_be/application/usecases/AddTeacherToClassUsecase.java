@@ -5,7 +5,6 @@ import graduation_project_be.application.exceptions.ConflictException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.TeacherClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.request.AddTeacherToClassRequest;
@@ -21,7 +20,6 @@ import java.time.LocalDateTime;
 public class AddTeacherToClassUsecase {
 
     private final ClassRepository classRepository;
-    private final TeacherClassRepository teacherClassRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
 
@@ -29,7 +27,7 @@ public class AddTeacherToClassUsecase {
         Class clazz = classRepository.findById(request.classId());
 
         Long currentUserId = currentUserService.getCurrentUserId();
-        boolean hasAccess = teacherClassRepository.existsByClassIdAndTeacherId(request.classId(), currentUserId);
+        boolean hasAccess = classRepository.existsTeacherAccess(request.classId(), currentUserId);
         if (!hasAccess) {
             throw new UnauthorizedException("User is not a teacher of this class");
         }
@@ -50,7 +48,7 @@ public class AddTeacherToClassUsecase {
             throw new BadRequestException("Teacher is inactive");
         }
 
-        boolean alreadyExists = teacherClassRepository.existsByClassIdAndTeacherId(clazz.getId(), teacher.getId());
+        boolean alreadyExists = classRepository.existsTeacherAccess(clazz.getId(), teacher.getId());
         if (alreadyExists) {
             throw new ConflictException("TeacherClass", "classId-teacherId", clazz.getId() + "-" + teacher.getId());
         }
@@ -61,6 +59,6 @@ public class AddTeacherToClassUsecase {
                 .addedAt(LocalDateTime.now())
                 .build();
 
-        teacherClassRepository.save(teacherClass);
+        classRepository.saveTeacherAssociation(teacherClass);
     }
 }

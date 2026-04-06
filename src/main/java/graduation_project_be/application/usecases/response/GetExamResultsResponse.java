@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record GetExamResultsResponse(
+        Long submissionId,
         Long studentId,
         String studentName,
         String studentEmail,

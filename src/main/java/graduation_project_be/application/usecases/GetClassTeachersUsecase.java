@@ -3,7 +3,6 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.TeacherClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.response.GetClassTeachersResponse;
@@ -18,7 +17,6 @@ import java.util.List;
 public class GetClassTeachersUsecase {
 
     private final ClassRepository classRepository;
-    private final TeacherClassRepository teacherClassRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
 
@@ -26,12 +24,12 @@ public class GetClassTeachersUsecase {
         Class clazz = classRepository.findById(classId);
 
         Long currentUserId = currentUserService.getCurrentUserId();
-        boolean hasAccess = teacherClassRepository.existsByClassIdAndTeacherId(classId, currentUserId);
+        boolean hasAccess = classRepository.existsTeacherAccess(classId, currentUserId);
         if (!hasAccess) {
             throw new UnauthorizedException("User is not a teacher of this class");
         }
 
-        List<TeacherClass> teacherClasses = teacherClassRepository.findByClassId(classId);
+        List<TeacherClass> teacherClasses = classRepository.findTeachersByClassId(classId);
 
         return teacherClasses.stream()
                 .map(teacherClass -> {

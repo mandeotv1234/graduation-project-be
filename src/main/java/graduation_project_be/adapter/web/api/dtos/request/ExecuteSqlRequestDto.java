@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record ExecuteSqlRequestDto(
         @NotBlank(message = "SQL query is required") String sql) {
-    public ExecuteSqlRequest toRequest(Long examId) {
-        return new ExecuteSqlRequest(examId, sql);
+    public ExecuteSqlRequest toRequest(Long examId, String ipAddress, String userAgent) {
+        return new ExecuteSqlRequest(examId, sql, ipAddress, userAgent);
     }
 }

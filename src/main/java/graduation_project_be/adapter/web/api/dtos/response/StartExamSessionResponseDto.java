@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 
 public record StartExamSessionResponseDto(
         boolean sessionStarted,
+        boolean conflictPending,
+        String conflictId,
         String message,
         LocalDateTime serverTime,
         LocalDateTime examStartedAt,
@@ -15,7 +17,8 @@ public record StartExamSessionResponseDto(
 
     public static StartExamSessionResponseDto fromResponse(StartExamSessionResponse r) {
         return new StartExamSessionResponseDto(
-                r.sessionStarted(), r.message(), r.serverTime(),
+                r.sessionStarted(), r.conflictPending(), r.conflictId(),
+                r.message(), r.serverTime(),
                 r.examStartedAt(), r.examEndTime(),
                 r.remainingSeconds(), r.durationMinutes());
     }

@@ -5,7 +5,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
-import java.util.HashSet;
 import java.util.Set;
 
 public class RedisRefreshTokenRepository implements RefreshTokenRepository {

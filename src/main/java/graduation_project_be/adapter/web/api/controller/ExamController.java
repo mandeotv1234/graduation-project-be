@@ -46,12 +46,17 @@ public class ExamController {
 
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
+        private final GetExamResultDetailUsecase getExamResultDetailUsecase;
         private final GetExamMonitorUsecase getExamMonitorUsecase;
         private final RubricTestingUsecase rubricTestingUsecase;
         private final ObjectMapper objectMapper;
         private final GetTeacherExamSettingsUsecase getTeacherExamSettingsUsecase;
         private final GetTeacherExamTemplateVersionsUsecase getTeacherExamTemplateVersionsUsecase;
         private final UpdateTeacherExamSettingsUsecase updateTeacherExamSettingsUsecase;
+        private final SaveExamDraftUsecase saveExamDraftUsecase;
+        private final GetExamDraftUsecase getExamDraftUsecase;
+        private final ApproveDeviceConflictUsecase approveDeviceConflictUsecase;
+        private final RejectDeviceConflictUsecase rejectDeviceConflictUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -212,6 +217,31 @@ public class ExamController {
                                                 "Exam template history retrieved successfully"));
         }
 
+        @GetMapping("/{examId}/results")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamResults(
+                        @PathVariable("examId") @Positive Long examId) {
+                List<GetExamResultsResponse> responses = getExamResultsUsecase.execute(examId);
+                List<GetExamResultsResponseDto> dtos = responses.stream()
+                                .map(GetExamResultsResponseDto::fromResponse)
+                                .toList();
+                return ResponseEntity.ok(
+                                ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/results/{resultId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamResultDetail(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("resultId") @Positive Long resultId) {
+                GetExamResultDetailResponse response = getExamResultDetailUsecase.execute(examId, resultId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                GetExamResultDetailResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam result detail retrieved successfully"));
+        }
+
         @GetMapping("/{examId}/questions")
         @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> getExamQuestions(
@@ -241,17 +271,6 @@ public class ExamController {
                 }
         }
 
-        @GetMapping("/{examId}/results")
-        @PreAuthorize("hasRole('TEACHER')")
-        public ResponseEntity<ResponseDto> getExamResults(
-                        @PathVariable("examId") @Positive Long examId) {
-                List<GetExamResultsResponse> responses = getExamResultsUsecase.execute(examId);
-                List<GetExamResultsResponseDto> dtos = responses.stream()
-                                .map(GetExamResultsResponseDto::fromResponse)
-                                .toList();
-                return ResponseEntity.ok(
-                                ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
-        }
 
         // ===== STUDENT ENDPOINTS =====
 
@@ -283,8 +302,11 @@ public class ExamController {
         @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> executeSql(
                         @PathVariable("examId") @Positive Long examId,
-                        @RequestBody @Valid ExecuteSqlRequestDto requestDto) {
-                ExecuteSqlResponse response = executeSqlUsecase.execute(requestDto.toRequest(examId));
+                        @RequestBody @Valid ExecuteSqlRequestDto requestDto,
+                        HttpServletRequest httpRequest) {
+                String ip = getClientIp(httpRequest);
+                String ua = httpRequest.getHeader("User-Agent");
+                ExecuteSqlResponse response = executeSqlUsecase.execute(requestDto.toRequest(examId, ip, ua));
                 return ResponseEntity.ok(
                                 ResponseDto.of(ExecuteSqlResponseDto.fromResponse(response), "OK", "SQL executed"));
         }
@@ -298,8 +320,11 @@ public class ExamController {
         @PreAuthorize("hasRole('STUDENT')")
         public ResponseEntity<ResponseDto> submitExam(
                         @PathVariable("examId") @Positive Long examId,
-                        @RequestBody @Valid SubmitExamRequestDto requestDto) {
-                SubmitExamResponse response = submitExamUsecase.execute(requestDto.toRequest(examId));
+                        @RequestBody @Valid SubmitExamRequestDto requestDto,
+                        HttpServletRequest httpRequest) {
+                String ip = getClientIp(httpRequest);
+                String ua = httpRequest.getHeader("User-Agent");
+                SubmitExamResponse response = submitExamUsecase.execute(requestDto.toRequest(examId, ip, ua));
                 return ResponseEntity.status(HttpStatus.ACCEPTED)
                                 .body(ResponseDto.of(
                                                 SubmitExamResponseDto.fromResponse(response),
@@ -367,6 +392,30 @@ public class ExamController {
                 return ResponseEntity.ok(
                                 ResponseDto.of(ExamTimeResponseDto.fromResponse(response), "OK",
                                                 "Exam time retrieved successfully"));
+        }
+
+        // ===== DEVICE CONFLICT ENDPOINTS =====
+
+        @PostMapping("/{examId}/device-conflict/{conflictId}/approve")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> approveDeviceConflict(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("conflictId") String conflictId) {
+                approveDeviceConflictUsecase.execute(examId, conflictId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(null, "OK", "Device conflict approved. Student may now continue exam."));
+        }
+
+        @PostMapping("/{examId}/device-conflict/{conflictId}/reject")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> rejectDeviceConflict(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("conflictId") String conflictId,
+                        @RequestBody(required = false) RejectDeviceConflictRequestDto requestDto) {
+                String reason = requestDto != null ? requestDto.reason() : null;
+                rejectDeviceConflictUsecase.execute(examId, conflictId, reason);
+                return ResponseEntity.ok(
+                                ResponseDto.of(null, "OK", "Device conflict rejected."));
         }
 
         // ===== HELPER =====
@@ -444,5 +493,34 @@ public class ExamController {
                                         .body(ResponseDto.of(null, "GRADING_ERROR",
                                                         "Lỗi chấm thử: " + e.getMessage()));
                 }
+        }
+
+        // ===== DRAFT ENDPOINTS =====
+
+        @PutMapping("/{examId}/draft")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> saveExamDraft(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid SaveExamDraftRequestDto requestDto) {
+                SaveExamDraftResponse response = saveExamDraftUsecase.execute(requestDto.toRequest(examId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                SaveExamDraftResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Draft saved successfully"));
+        }
+
+        @GetMapping("/{examId}/draft")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> getExamDraft(
+                        @PathVariable("examId") @Positive Long examId) {
+                return getExamDraftUsecase.execute(examId)
+                                .map(resp -> ResponseEntity.ok(
+                                                ResponseDto.of(
+                                                                GetExamDraftResponseDto.fromResponse(resp),
+                                                                "OK",
+                                                                "Draft retrieved successfully")))
+                                .orElseGet(() -> ResponseEntity.ok(
+                                                ResponseDto.of(null, "NOT_FOUND", "No draft found")));
         }
 }

@@ -7,6 +7,7 @@ import java.util.Optional;
 
 public interface ExamResultRepository {
     ExamResult save(ExamResult examResult);
+    Optional<ExamResult> findById(Long id);
 
     Optional<ExamResult> findByExamIdAndStudentId(Long examId, Long studentId);
 

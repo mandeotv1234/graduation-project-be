@@ -2,7 +2,6 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.TeacherClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.PasswordEncoder;

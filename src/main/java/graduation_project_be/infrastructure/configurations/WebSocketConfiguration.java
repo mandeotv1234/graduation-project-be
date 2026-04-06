@@ -55,4 +55,6 @@ public class WebSocketConfiguration implements WebSocketMessageBrokerConfigurer 
             ObjectMapper objectMapper) {
         return new WebSocketGradingNotificationService(messagingTemplate, objectMapper);
     }
+
 }
+

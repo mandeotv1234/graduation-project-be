@@ -24,8 +24,13 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
     }
 
     @Override
+    public Optional<ExamResult> findById(Long id) {
+        return jpaRepository.findById(id).map(ExamResultEntity::toModel);
+    }
+
+    @Override
     public Optional<ExamResult> findByExamIdAndStudentId(Long examId, Long studentId) {
-        return jpaRepository.findByExamIdAndStudentId(examId, studentId)
+        return jpaRepository.findFirstByExamIdAndStudentIdOrderByAttemptNumberDesc(examId, studentId)
                 .map(ExamResultEntity::toModel);
     }
 

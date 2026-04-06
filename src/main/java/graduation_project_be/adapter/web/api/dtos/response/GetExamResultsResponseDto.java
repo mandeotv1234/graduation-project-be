@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record GetExamResultsResponseDto(
+        Long submissionId,
         Long studentId,
         String studentName,
         String studentEmail,
@@ -20,7 +21,7 @@ public record GetExamResultsResponseDto(
 ) {
     public static GetExamResultsResponseDto fromResponse(GetExamResultsResponse r) {
         return new GetExamResultsResponseDto(
-                r.studentId(), r.studentName(), r.studentEmail(),
+                r.submissionId(), r.studentId(), r.studentName(), r.studentEmail(),
                 r.attemptNumber(), r.totalScore(), r.maxScore(),
                 r.correctCount(), r.totalQuestions(),
                 r.status(), r.submittedAt()

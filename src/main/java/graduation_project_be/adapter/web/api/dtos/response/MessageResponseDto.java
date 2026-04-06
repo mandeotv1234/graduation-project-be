@@ -1,13 +1,11 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
 import graduation_project_be.application.codes.Code;
-import graduation_project_be.application.usecases.response.MessageResponse;
-
 import java.time.LocalDateTime;
 
 public record MessageResponseDto(
         Meta meta,
-        String code,
+        String code,    
         String message
 
 ) {

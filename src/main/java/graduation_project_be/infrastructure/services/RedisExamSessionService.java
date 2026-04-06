@@ -32,10 +32,21 @@ public class RedisExamSessionService implements ExamSessionService {
         return ipAddress + "|" + userAgent;
     }
 
+    private String normalizeIp(String ip) {
+        if (ip == null) return "0.0.0.0";
+        if (ip.equals("::1") || ip.equals("0:0:0:0:0:0:0:1")) {
+            return "127.0.0.1";
+        }
+        return ip;
+    }
+
     @Override
     public boolean tryStartSession(Long examId, Long studentId, String ipAddress, String userAgent) {
         String key = buildKey(examId, studentId);
-        String newValue = buildValue(ipAddress, userAgent);
+        String newValue = buildValue(normalizeIp(ipAddress), userAgent);
+
+        log.info("Try start exam session: exam={}, student={}, ip={}, ua={}", 
+                examId, studentId, ipAddress, userAgent);
 
         // Check if session already exists
         String existingValue = redisTemplate.opsForValue().get(key);
@@ -48,7 +59,7 @@ public class RedisExamSessionService implements ExamSessionService {
                 log.info("Exam session refreshed: exam={}, student={}", examId, studentId);
                 return true;
             }
-            // Different device — reject
+            // Different device — reject (caller will handle conflict notification)
             log.warn("Exam session conflict: exam={}, student={}, existing={}, new={}",
                     examId, studentId, existingValue, newValue);
             return false;
@@ -62,7 +73,23 @@ public class RedisExamSessionService implements ExamSessionService {
         }
 
         // Race condition — another request created the session first
+        // Double check if that session is for the same device
+        String retryExistingValue = redisTemplate.opsForValue().get(key);
+        if (newValue.equals(retryExistingValue)) {
+            redisTemplate.expire(key, SESSION_TTL);
+            log.info("Exam session refreshed (race recovery): exam={}, student={}", examId, studentId);
+            return true;
+        }
+
         return false;
+    }
+
+    @Override
+    public boolean isSessionValid(Long examId, Long studentId, String ipAddress, String userAgent) {
+        String expectedValue = buildValue(normalizeIp(ipAddress), userAgent);
+        return getRawSessionValue(examId, studentId)
+                .map(v -> v.equals(expectedValue))
+                .orElse(false);
     }
 
     @Override
@@ -70,6 +97,19 @@ public class RedisExamSessionService implements ExamSessionService {
         String key = buildKey(examId, studentId);
         String value = redisTemplate.opsForValue().get(key);
         return Optional.ofNullable(value);
+    }
+
+    @Override
+    public Optional<String> getRawSessionValue(Long examId, Long studentId) {
+        return getActiveSession(examId, studentId);
+    }
+
+    @Override
+    public void forceOverrideSession(Long examId, Long studentId, String newIpAddress, String newUserAgent) {
+        String key = buildKey(examId, studentId);
+        String newValue = buildValue(normalizeIp(newIpAddress), newUserAgent);
+        redisTemplate.opsForValue().set(key, newValue, SESSION_TTL);
+        log.info("Exam session force-overridden: exam={}, student={}, newDevice={}", examId, studentId, newIpAddress);
     }
 
     @Override

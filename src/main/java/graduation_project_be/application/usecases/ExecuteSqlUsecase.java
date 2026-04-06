@@ -66,6 +66,11 @@ public class ExecuteSqlUsecase {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
 
+        // Validate session fingerprint
+        if (!examSessionService.isSessionValid(request.examId(), currentUserId, request.ipAddress(), request.userAgent())) {
+            throw new BadRequestException("Session invalid or replaced by another device. Please refresh.");
+        }
+
         validateExamTime(request.examId(), currentUserId, exam);
         String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId);
         return new ExecutionContext(schemaName);

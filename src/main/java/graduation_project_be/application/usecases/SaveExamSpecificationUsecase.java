@@ -152,10 +152,6 @@ public class SaveExamSpecificationUsecase {
                 .toList();
     }
 
-    private boolean resolveVisibility(Boolean requestedValue, boolean currentValue) {
-        return requestedValue == null ? currentValue : requestedValue;
-    }
-
     private SpecDataset findMatchingDataset(
             SaveExamSpecificationRequest.SpecDatasetRequest requestDataset,
             List<SpecDataset> currentDatasets) {

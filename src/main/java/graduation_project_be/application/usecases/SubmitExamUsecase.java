@@ -51,10 +51,45 @@ public class SubmitExamUsecase {
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
     private final GradingQueueService gradingQueueService;
+    private final ExamDraftRepository examDraftRepository;
 
     @Transactional
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
+
+        // Validate session fingerprint (only for manual submissions)
+        // Note: request.ipAddress and userAgent are now passed from the Controller via HttpServletRequest
+        try {
+            if (!examSessionService.isSessionValid(request.examId(), studentId, request.ipAddress(), request.userAgent())) {
+                // If session is missing but exam is already submitted, it means auto-submit probably just finished.
+                // We should return the existing result instead of throwing 401.
+                boolean alreadySubmitted = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent();
+                if (alreadySubmitted) {
+                    log.info("Session invalid but exam {} already submitted for student {}. Returning successful status.", request.examId(), studentId);
+                    // Return a "fake" successful response so FE doesn't logout
+                    return new SubmitExamResponse(
+                        request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                        BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null
+                    );
+                }
+                throw new UnauthorizedException("Phiên thi không hợp lệ hoặc đã được thay thế bởi thiết bị khác. Vui lòng làm mới trang.");
+            }
+        } catch (UnauthorizedException e) {
+            // Re-check submission state one last time in case of race condition
+            if (examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent()) {
+                return new SubmitExamResponse(
+                    request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                    BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null
+                );
+            }
+            throw e;
+        }
+
+        return executeAsSystem(request, studentId, false);
+    }
+
+    @Transactional
+    public SubmitExamResponse executeAsSystem(SubmitExamRequest request, Long studentId, boolean isAutoSubmit) {
         Long examId = request.examId();
         LocalDateTime submittedAt = LocalDateTime.now();
 
@@ -70,7 +105,7 @@ public class SubmitExamUsecase {
         }
 
         // 3. Backend time validation — prevent DevTools time manipulation
-        long lateDurationSeconds = validateExamTime(examId, studentId, exam, submittedAt);
+        long lateDurationSeconds = validateExamTime(examId, studentId, exam, submittedAt, isAutoSubmit);
 
         // 4. Load all questions for this exam (for validation only)
         List<ExamQuestion> allQuestions = examQuestionRepository.findByExamId(examId);
@@ -154,6 +189,9 @@ public class SubmitExamUsecase {
 
         // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
         examSessionService.clearSession(examId, studentId);
+        
+        // 11. CLEAR THE DRAFT! So next attempt starts with an empty answer set.
+        examDraftRepository.deleteByExamIdAndStudentId(examId, studentId);
 
         // 10. Check if we need to return detailed answers
         List<SubmitExamResponse.SubmissionDetail> details = null;
@@ -175,7 +213,7 @@ public class SubmitExamUsecase {
 
     // ========== Backend time validation ==========
 
-    private long validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt) {
+    private long validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt, boolean isAutoSubmit) {
         Optional<LocalDateTime> startTimeOpt = examSessionService.getExamStartTime(examId, studentId);
 
         if (startTimeOpt.isPresent()) {
@@ -200,10 +238,21 @@ public class SubmitExamUsecase {
                                 examId, studentId, secondsOverdue, lateThresholdMinutes);
                         return secondsOverdue;
                     }
+
+                    if (isAutoSubmit) {
+                        log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId, secondsOverdue);
+                        return secondsOverdue;
+                    }
+
                     log.warn("Late submission rejected: exam={}, student={}, overdue={}s exceeds lateThreshold={}min",
                             examId, studentId, secondsOverdue, lateThresholdMinutes);
                     throw new BadRequestException(
                             "Thời gian nộp bài trễ đã vượt quá ngưỡng cho phép (" + lateThresholdMinutes + " phút).");
+                }
+
+                if (isAutoSubmit) {
+                    log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId, secondsOverdue);
+                    return secondsOverdue;
                 }
 
                 log.warn("Late submission rejected: exam={}, student={}, overdue={}s (grace={}s)",

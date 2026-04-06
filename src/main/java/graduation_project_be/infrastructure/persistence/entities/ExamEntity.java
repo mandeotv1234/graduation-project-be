@@ -1,8 +1,6 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.Exam;
-import graduation_project_be.domain.models.ExamSettings;
-import graduation_project_be.infrastructure.persistence.converters.ExamSettingsConverter;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;

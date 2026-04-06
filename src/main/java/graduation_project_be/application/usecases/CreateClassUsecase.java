@@ -2,7 +2,6 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
-import graduation_project_be.application.port.repositories.TeacherClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.PasswordEncoder;
@@ -28,7 +27,6 @@ public class CreateClassUsecase {
     private static final String DEFAULT_STUDENT_PASSWORD = "Vlchinsu1234*";
 
     private final ClassRepository classRepository;
-    private final TeacherClassRepository teacherClassRepository;
     private final UserRepository userRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final PasswordEncoder passwordEncoder;
@@ -47,7 +45,7 @@ public class CreateClassUsecase {
         
         Class savedClass = classRepository.save(newClass);
 
-        teacherClassRepository.save(TeacherClass.builder()
+        classRepository.saveTeacherAssociation(TeacherClass.builder()
                 .classId(savedClass.getId())
                 .teacherId(teacherId)
                 .addedAt(LocalDateTime.now())
@@ -77,7 +75,7 @@ public class CreateClassUsecase {
             }
         }
 
-        List<User> savedStudents = userRepository.saveAll(studentsToSave);
+        userRepository.saveAll(studentsToSave);
 
         
         List<User> allStudents = new ArrayList<>();

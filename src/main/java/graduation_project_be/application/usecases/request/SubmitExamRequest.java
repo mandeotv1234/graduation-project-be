@@ -4,7 +4,9 @@ import java.util.List;
 
 public record SubmitExamRequest(
         Long examId,
-        List<AnswerItem> answers) {
+        List<AnswerItem> answers,
+        String ipAddress,
+        String userAgent) {
 
     public record AnswerItem(
             Long questionId,

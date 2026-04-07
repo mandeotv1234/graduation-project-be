@@ -1,5 +1,6 @@
 package graduation_project_be.domain.models;
 
+import graduation_project_be.domain.models.enums.GradingType;
 import graduation_project_be.domain.models.enums.SubmissionStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -27,4 +28,9 @@ public class ExamSubmission {
     private Integer executionTimeMs;
     private SubmissionStatus status;
     private LocalDateTime submittedAt;
+    @Builder.Default
+    private GradingType gradingType = GradingType.AUTO;
+    private Long gradedBy;
+    private LocalDateTime gradedAt;
+    private String teacherComment;
 }

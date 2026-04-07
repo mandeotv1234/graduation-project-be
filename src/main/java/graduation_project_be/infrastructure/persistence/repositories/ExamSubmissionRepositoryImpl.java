@@ -23,6 +23,11 @@ public class ExamSubmissionRepositoryImpl implements ExamSubmissionRepository {
     }
 
     @Override
+    public Optional<ExamSubmission> findById(Long id) {
+        return jpaRepository.findById(id).map(ExamSubmissionEntity::toModel);
+    }
+
+    @Override
     public Optional<ExamSubmission> findByExamIdAndQuestionIdAndStudentId(Long examId, Long questionId,
             Long studentId) {
         return jpaRepository.findByExamIdAndQuestionIdAndStudentId(examId, questionId, studentId)
@@ -33,6 +38,16 @@ public class ExamSubmissionRepositoryImpl implements ExamSubmissionRepository {
     public List<ExamSubmission> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber) {
         return jpaRepository.findByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber)
                 .stream()
+                .map(ExamSubmissionEntity::toModel)
+                .toList();
+    }
+
+    @Override
+    public List<ExamSubmission> saveAll(List<ExamSubmission> submissions) {
+        List<ExamSubmissionEntity> entities = submissions.stream()
+                .map(ExamSubmissionEntity::fromModel)
+                .toList();
+        return jpaRepository.saveAll(entities).stream()
                 .map(ExamSubmissionEntity::toModel)
                 .toList();
     }

@@ -1,6 +1,7 @@
 package graduation_project_be.domain.models;
 
 import graduation_project_be.domain.models.enums.GradingStatus;
+import graduation_project_be.domain.models.enums.GradingType;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -23,4 +24,7 @@ public class ExamResult {
     private int lateDurationSeconds;
     private LocalDateTime submittedAt;
     private GradingStatus status;
+    @Builder.Default
+    private GradingType gradingType = GradingType.AUTO;
+    private LocalDateTime lastGradedAt;
 }

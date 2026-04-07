@@ -644,6 +644,31 @@ public class UsecasesConfiguration {
         return new GetExamDraftUsecase(examRepository, examDraftRepository, classEnrollmentRepository, currentUserService);
     }
 
+    // ===== REGRADE USECASES =====
+
+    @Bean
+    RegradeExamUsecase regradeExamUsecase(
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            GradingQueueService gradingQueueService) {
+        return new RegradeExamUsecase(examResultRepository, examSubmissionRepository, gradingQueueService);
+    }
+
+    // ===== MANUAL OVERRIDE USECASES =====
+
+    @Bean
+    OverrideSubmissionScoreUsecase overrideSubmissionScoreUsecase(
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamQuestionRepository examQuestionRepository,
+            CurrentUserService currentUserService) {
+        return new OverrideSubmissionScoreUsecase(
+                examResultRepository,
+                examSubmissionRepository,
+                examQuestionRepository,
+                currentUserService);
+    }
+
     // ===== DEVICE CONFLICT USECASES =====
 
     @Bean

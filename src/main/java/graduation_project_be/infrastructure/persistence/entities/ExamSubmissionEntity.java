@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.ExamSubmission;
+import graduation_project_be.domain.models.enums.GradingType;
 import graduation_project_be.domain.models.enums.SubmissionStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -60,6 +61,20 @@ public class ExamSubmissionEntity {
     @Column(name = "submitted_at")
     private LocalDateTime submittedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "grading_type", length = 10, nullable = false)
+    @Builder.Default
+    private GradingType gradingType = GradingType.AUTO;
+
+    @Column(name = "graded_by")
+    private Long gradedBy;
+
+    @Column(name = "graded_at")
+    private LocalDateTime gradedAt;
+
+    @Column(name = "teacher_comment", columnDefinition = "TEXT")
+    private String teacherComment;
+
     public ExamSubmission toModel() {
         return ExamSubmission.builder()
                 .id(id)
@@ -75,6 +90,10 @@ public class ExamSubmissionEntity {
                 .executionTimeMs(executionTimeMs)
                 .status(status)
                 .submittedAt(submittedAt)
+                .gradingType(gradingType)
+                .gradedBy(gradedBy)
+                .gradedAt(gradedAt)
+                .teacherComment(teacherComment)
                 .build();
     }
 
@@ -93,6 +112,10 @@ public class ExamSubmissionEntity {
                 .executionTimeMs(model.getExecutionTimeMs())
                 .status(model.getStatus())
                 .submittedAt(model.getSubmittedAt())
+                .gradingType(model.getGradingType())
+                .gradedBy(model.getGradedBy())
+                .gradedAt(model.getGradedAt())
+                .teacherComment(model.getTeacherComment())
                 .build();
     }
 }

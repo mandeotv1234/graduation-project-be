@@ -7,7 +7,11 @@ import java.util.Optional;
 public interface ExamSubmissionRepository {
     ExamSubmission save(ExamSubmission submission);
 
+    Optional<ExamSubmission> findById(Long id);
+
     Optional<ExamSubmission> findByExamIdAndQuestionIdAndStudentId(Long examId, Long questionId, Long studentId);
 
     List<ExamSubmission> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
+
+    List<ExamSubmission> saveAll(List<ExamSubmission> submissions);
 }

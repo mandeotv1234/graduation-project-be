@@ -654,6 +654,15 @@ public class UsecasesConfiguration {
         return new RegradeExamUsecase(examResultRepository, examSubmissionRepository, gradingQueueService);
     }
 
+    @Bean
+    RegradeAllExamUsecase regradeAllExamUsecase(
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            GradingQueueService gradingQueueService) {
+        return new RegradeAllExamUsecase(examRepository, examResultRepository, examSubmissionRepository, gradingQueueService);
+    }
+
     // ===== MANUAL OVERRIDE USECASES =====
 
     @Bean

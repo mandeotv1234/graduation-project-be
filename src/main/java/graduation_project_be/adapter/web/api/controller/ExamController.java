@@ -58,6 +58,7 @@ public class ExamController {
         private final ApproveDeviceConflictUsecase approveDeviceConflictUsecase;
         private final RejectDeviceConflictUsecase rejectDeviceConflictUsecase;
         private final RegradeExamUsecase regradeExamUsecase;
+        private final RegradeAllExamUsecase regradeAllExamUsecase;
         private final OverrideSubmissionScoreUsecase overrideSubmissionScoreUsecase;
 
         // ===== TEACHER ENDPOINTS =====
@@ -267,6 +268,16 @@ public class ExamController {
                 return ResponseEntity.accepted().body(ResponseDto.of(
                                 RegradeExamResponseDto.fromResponse(response),
                                 "ACCEPTED", "Re-grading started"));
+        }
+
+        @PostMapping("/{examId}/regrade-all")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> regradeAllExamResults(
+                        @PathVariable("examId") @Positive Long examId) {
+                RegradeAllExamResponse response = regradeAllExamUsecase.execute(examId);
+                return ResponseEntity.accepted().body(ResponseDto.of(
+                                RegradeAllExamResponseDto.fromResponse(response),
+                                "ACCEPTED", response.message()));
         }
 
         @GetMapping("/{examId}/questions")

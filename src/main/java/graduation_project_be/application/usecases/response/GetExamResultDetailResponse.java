@@ -17,10 +17,13 @@ public record GetExamResultDetailResponse(
     int totalQuestions,
     GradingStatus status,
     LocalDateTime submittedAt,
+    String gradingType,
+    LocalDateTime lastGradedAt,
     List<QuestionResultDetail> questionResults
 ) {
     public record QuestionResultDetail(
         Long questionId,
+        Long submissionId,
         String content,
         String studentQuery,
         String correctQuery,
@@ -28,6 +31,12 @@ public record GetExamResultDetailResponse(
         BigDecimal scoreEarned,
         BigDecimal maxPoints,
         String errorMessage,
-        Integer executionTimeMs
+        Integer executionTimeMs,
+        String questionType,
+        String gradingType,
+        Long gradedBy,
+        String gradedByName,
+        LocalDateTime gradedAt,
+        String teacherComment
     ) {}
 }

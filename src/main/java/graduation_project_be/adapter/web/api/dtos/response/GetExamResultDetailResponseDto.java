@@ -18,6 +18,8 @@ public record GetExamResultDetailResponseDto(
     int totalQuestions,
     GradingStatus status,
     LocalDateTime submittedAt,
+    String gradingType,
+    LocalDateTime lastGradedAt,
     List<QuestionResultDetailDto> questionResults
 ) {
     public static GetExamResultDetailResponseDto fromResponse(GetExamResultDetailResponse r) {
@@ -33,6 +35,8 @@ public record GetExamResultDetailResponseDto(
             r.totalQuestions(),
             r.status(),
             r.submittedAt(),
+            r.gradingType(),
+            r.lastGradedAt(),
             r.questionResults().stream()
                 .map(QuestionResultDetailDto::fromResponse)
                 .toList()
@@ -41,6 +45,7 @@ public record GetExamResultDetailResponseDto(
 
     public record QuestionResultDetailDto(
         Long questionId,
+        Long submissionId,
         String content,
         String studentQuery,
         String correctQuery,
@@ -48,13 +53,21 @@ public record GetExamResultDetailResponseDto(
         BigDecimal scoreEarned,
         BigDecimal maxPoints,
         String errorMessage,
-        Integer executionTimeMs
+        Integer executionTimeMs,
+        String questionType,
+        String gradingType,
+        Long gradedBy,
+        String gradedByName,
+        LocalDateTime gradedAt,
+        String teacherComment
     ) {
         public static QuestionResultDetailDto fromResponse(GetExamResultDetailResponse.QuestionResultDetail d) {
             return new QuestionResultDetailDto(
-                d.questionId(), d.content(), d.studentQuery(), d.correctQuery(),
+                d.questionId(), d.submissionId(), d.content(), d.studentQuery(), d.correctQuery(),
                 d.isCorrect(), d.scoreEarned(), d.maxPoints(),
-                d.errorMessage(), d.executionTimeMs()
+                d.errorMessage(), d.executionTimeMs(),
+                d.questionType(), d.gradingType(),
+                d.gradedBy(), d.gradedByName(), d.gradedAt(), d.teacherComment()
             );
         }
     }

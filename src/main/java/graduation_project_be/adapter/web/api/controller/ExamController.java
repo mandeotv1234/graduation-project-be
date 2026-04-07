@@ -57,6 +57,8 @@ public class ExamController {
         private final GetExamDraftUsecase getExamDraftUsecase;
         private final ApproveDeviceConflictUsecase approveDeviceConflictUsecase;
         private final RejectDeviceConflictUsecase rejectDeviceConflictUsecase;
+        private final RegradeExamUsecase regradeExamUsecase;
+        private final OverrideSubmissionScoreUsecase overrideSubmissionScoreUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -240,6 +242,31 @@ public class ExamController {
                                                 GetExamResultDetailResponseDto.fromResponse(response),
                                                 "OK",
                                                 "Exam result detail retrieved successfully"));
+        }
+
+        @PatchMapping("/{examId}/results/{resultId}/submissions/{submissionId}/override")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> overrideSubmissionScore(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("resultId") @Positive Long resultId,
+                        @PathVariable("submissionId") @Positive Long submissionId,
+                        @RequestBody @Valid OverrideSubmissionRequestDto requestDto) {
+                OverrideSubmissionScoreResponse response = overrideSubmissionScoreUsecase.execute(
+                                examId, resultId, submissionId, requestDto.toRequest());
+                return ResponseEntity.ok(ResponseDto.of(
+                                OverrideSubmissionResponseDto.fromResponse(response),
+                                "OK", "Score overridden successfully"));
+        }
+
+        @PostMapping("/{examId}/results/{resultId}/regrade")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> regradeExamResult(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("resultId") @Positive Long resultId) {
+                RegradeExamResponse response = regradeExamUsecase.execute(examId, resultId);
+                return ResponseEntity.accepted().body(ResponseDto.of(
+                                RegradeExamResponseDto.fromResponse(response),
+                                "ACCEPTED", "Re-grading started"));
         }
 
         @GetMapping("/{examId}/questions")

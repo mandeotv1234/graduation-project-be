@@ -1,0 +1,56 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0604262200
+      author: manhuynh
+      comment: "GRAD-101: Add grading metadata columns to exam_submissions for manual override tracking"
+      changes:
+        - addColumn:
+            tableName: exam_submissions
+            columns:
+              - column:
+                  name: grading_type
+                  type: VARCHAR(10)
+                  defaultValue: 'AUTO'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: graded_by
+                  type: BIGINT
+              - column:
+                  name: graded_at
+                  type: TIMESTAMP
+              - column:
+                  name: teacher_comment
+                  type: TEXT
+
+  - changeSet:
+      id: 0604262201
+      author: manhuynh
+      comment: "GRAD-101: Add grading metadata columns to exam_results for grading type tracking"
+      changes:
+        - addColumn:
+            tableName: exam_results
+            columns:
+              - column:
+                  name: grading_type
+                  type: VARCHAR(10)
+                  defaultValue: 'AUTO'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: last_graded_at
+                  type: TIMESTAMP
+
+  - changeSet:
+      id: 0604262202
+      author: manhuynh
+      comment: "GRAD-101: Add foreign key constraint for graded_by on exam_submissions"
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: exam_submissions
+            baseColumnNames: graded_by
+            constraintName: fk_exam_submissions_graded_by
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: SET NULL
+            onUpdate: CASCADE

@@ -35,8 +35,13 @@ public class CreateExamUsecase {
             throw new UnauthorizedException("User is not the teacher of this class");
         }
 
+        Long specificationId = request.specificationId();
+        if (specificationId != null && specificationId <= 0L) {
+            specificationId = null;
+        }
+
         Exam exam = Exam.builder()
-                .specificationId(request.specificationId())
+                .specificationId(specificationId)
                 .classId(request.classId())
                 .creatorId(currentUserId)
                 .title(request.title())

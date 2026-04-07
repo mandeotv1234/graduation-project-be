@@ -1,13 +1,17 @@
 package graduation_project_be.adapter.web.api.dtos.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import graduation_project_be.application.usecases.request.UpdateExamRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import java.time.LocalDateTime;
 
+/** Body có thể gửi từng phần; field null = không đổi. */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record UpdateExamRequestDto(
         String title,
-        @Positive(message = "Specification id must be positive") Long specificationId,
+        /** null = không đổi; 0 = gỡ đặc tả; {@code > 0} = gắn đặc tả. */
+        Long specificationId,
         @Positive(message = "Duration must be positive") Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,

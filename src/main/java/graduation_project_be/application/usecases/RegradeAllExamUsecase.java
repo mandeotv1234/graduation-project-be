@@ -7,7 +7,6 @@ import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.repositories.ExamSubmissionRepository;
 import graduation_project_be.application.port.services.GradingQueueService;
 import graduation_project_be.application.usecases.response.RegradeAllExamResponse;
-import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.enums.GradingStatus;
@@ -34,7 +33,7 @@ public class RegradeAllExamUsecase {
     @Transactional
     public RegradeAllExamResponse execute(Long examId) {
         // 1. Validate exam exists
-        Exam exam = examRepository.findById(examId)
+        examRepository.findById(examId)
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", examId));
 
         // 2. Find all COMPLETED results for this exam

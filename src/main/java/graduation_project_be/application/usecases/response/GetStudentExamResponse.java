@@ -21,6 +21,7 @@ public record GetStudentExamResponse(
         long secondsUntilStart,
         String description,
         Integer maxAttempts,
+        Long usedAttempts,
         Integer lateThreshold,
         ExamSettings settings,
         List<TableMetadata> schema
@@ -31,7 +32,7 @@ public record GetStudentExamResponse(
      * - IN_PROGRESS: exam is currently active (startTime <= now <= endTime)
      * - ENDED: exam has ended (now > endTime)
      */
-    public static GetStudentExamResponse fromModel(Exam exam, String className, List<TableMetadata> schema) {
+    public static GetStudentExamResponse fromModel(Exam exam, String className, List<TableMetadata> schema, Long usedAttempts) {
         LocalDateTime now = LocalDateTime.now();
         String status;
         long secondsUntilStart = 0;
@@ -58,6 +59,7 @@ public record GetStudentExamResponse(
                 secondsUntilStart,
                 exam.getDescription(),
                 exam.getMaxAttempts(),
+                usedAttempts,
                 exam.getLateThreshold(),
                 exam.getSettings(),
                 schema

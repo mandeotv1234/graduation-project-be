@@ -83,7 +83,7 @@ public class StartExamSessionUsecase {
             long attemptCount = examResultRepository.countByExamIdAndStudentId(request.examId(), studentId);
             if (attemptCount >= exam.getMaxAttempts()) {
                 throw new BadRequestException(
-                        "Ban da het so lan lam bai (" + exam.getMaxAttempts() + "/" + exam.getMaxAttempts() + ").");
+                        "Bạn đã hết số lần làm bài (" + exam.getMaxAttempts() + "/" + exam.getMaxAttempts() + ").");
             }
         }
 
@@ -134,7 +134,7 @@ public class StartExamSessionUsecase {
                     request.examId(), studentId, conflictId);
 
             return StartExamSessionResponse.conflictPending(conflictId,
-                    "Tai khoan cua ban dang trong phien thi o mot thiet bi khac. Vui long cho giao vien duyet.");
+                    "Tài khoản của bạn đang trong phiên thi ở một thiết bị khác. Vui lòng chờ giáo viên duyệt.");
         }
 
         // 6. Session started or same-device reconnect

@@ -7,5 +7,6 @@ import java.util.Optional;
 
 public interface ExamDraftJpaRepository extends JpaRepository<ExamDraftEntity, Long> {
     Optional<ExamDraftEntity> findByExamIdAndStudentId(Long examId, Long studentId);
+
     void deleteByExamIdAndStudentId(Long examId, Long studentId);
 }

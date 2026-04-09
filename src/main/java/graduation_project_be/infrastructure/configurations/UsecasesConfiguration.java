@@ -122,13 +122,15 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSchemaService examSchemaService) {
+            ExamSchemaService examSchemaService,
+            ExamResultRepository examResultRepository) {
         return new GetStudentExamUsecase(
                 examRepository,
                 classRepository,
                 classEnrollmentRepository,
                 currentUserService,
-                examSchemaService);
+                examSchemaService,
+                examResultRepository);
     }
 
     @Bean

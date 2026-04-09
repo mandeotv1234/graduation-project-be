@@ -5,6 +5,7 @@ import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.usecases.response.GetStudentExamResponse;
@@ -24,6 +25,7 @@ public class GetStudentExamUsecase {
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
+    private final ExamResultRepository examResultRepository;
 
     public GetStudentExamResponse execute(GetStudentExamDetailRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -47,6 +49,9 @@ public class GetStudentExamUsecase {
 
         String schemaName = String.format("exam_%d_student_%d", examId, studentId);
         List<TableMetadata> schema = examSchemaService.extractMetadata(schemaName);
-        return GetStudentExamResponse.fromModel(exam, className, schema);
+
+        Long usedAttempts = examResultRepository.countByExamIdAndStudentId(examId, studentId);
+
+        return GetStudentExamResponse.fromModel(exam, className, schema, usedAttempts);
     }
 }

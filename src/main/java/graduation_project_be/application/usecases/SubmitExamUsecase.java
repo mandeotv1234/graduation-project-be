@@ -34,7 +34,8 @@ import java.util.stream.Collectors;
 /**
  * Submit exam usecase — now LIGHTWEIGHT.
  * Only saves student's SQL text to DB and enqueues a grading job.
- * Actual grading is performed asynchronously by GradeExamUsecase via the grading queue.
+ * Actual grading is performed asynchronously by GradeExamUsecase via the
+ * grading queue.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -58,29 +59,34 @@ public class SubmitExamUsecase {
         Long studentId = currentUserService.getCurrentUserId();
 
         // Validate session fingerprint (only for manual submissions)
-        // Note: request.ipAddress and userAgent are now passed from the Controller via HttpServletRequest
+        // Note: request.ipAddress and userAgent are now passed from the Controller via
+        // HttpServletRequest
         try {
-            if (!examSessionService.isSessionValid(request.examId(), studentId, request.ipAddress(), request.userAgent())) {
-                // If session is missing but exam is already submitted, it means auto-submit probably just finished.
+            if (!examSessionService.isSessionValid(request.examId(), studentId, request.ipAddress(),
+                    request.userAgent())) {
+                // If session is missing but exam is already submitted, it means auto-submit
+                // probably just finished.
                 // We should return the existing result instead of throwing 401.
-                boolean alreadySubmitted = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent();
+                boolean alreadySubmitted = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId)
+                        .isPresent();
                 if (alreadySubmitted) {
-                    log.info("Session invalid but exam {} already submitted for student {}. Returning successful status.", request.examId(), studentId);
+                    log.info(
+                            "Session invalid but exam {} already submitted for student {}. Returning successful status.",
+                            request.examId(), studentId);
                     // Return a "fake" successful response so FE doesn't logout
                     return new SubmitExamResponse(
-                        request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
-                        BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null
-                    );
+                            request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                            BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
                 }
-                throw new UnauthorizedException("Phiên thi không hợp lệ hoặc đã được thay thế bởi thiết bị khác. Vui lòng làm mới trang.");
+                throw new UnauthorizedException(
+                        "Phiên thi không hợp lệ hoặc đã được thay thế bởi thiết bị khác. Vui lòng làm mới trang.");
             }
         } catch (UnauthorizedException e) {
             // Re-check submission state one last time in case of race condition
             if (examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent()) {
                 return new SubmitExamResponse(
-                    request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
-                    BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null
-                );
+                        request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                        BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
             }
             throw e;
         }
@@ -117,7 +123,8 @@ public class SubmitExamUsecase {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         int totalQuestions = allQuestions.size();
 
-        // 5. Validate submitted answers: no duplicates, all questionIds must belong to this exam
+        // 5. Validate submitted answers: no duplicates, all questionIds must belong to
+        // this exam
         Map<Long, String> answerMap = new LinkedHashMap<>();
         for (SubmitExamRequest.AnswerItem answer : request.answers()) {
             if (!questionMap.containsKey(answer.questionId())) {
@@ -163,7 +170,8 @@ public class SubmitExamUsecase {
             examSubmissionRepository.save(submission);
         }
 
-        // 8. Create ExamResult with status PENDING (placeholder — will be updated by grading worker)
+        // 8. Create ExamResult with status PENDING (placeholder — will be updated by
+        // grading worker)
         ExamResult examResult = ExamResult.builder()
                 .examId(examId)
                 .studentId(studentId)
@@ -189,7 +197,7 @@ public class SubmitExamUsecase {
 
         // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
         examSessionService.clearSession(examId, studentId);
-        
+
         // 11. CLEAR THE DRAFT! So next attempt starts with an empty answer set.
         examDraftRepository.deleteByExamIdAndStudentId(examId, studentId);
 
@@ -200,8 +208,7 @@ public class SubmitExamUsecase {
                     q.getId(),
                     q.getContent(),
                     q.getPoints(),
-                    answerMap.getOrDefault(q.getId(), "")
-            )).collect(Collectors.toList());
+                    answerMap.getOrDefault(q.getId(), ""))).collect(Collectors.toList());
         }
 
         // 11. Return immediately — student sees "Đang chấm điểm..."
@@ -213,7 +220,8 @@ public class SubmitExamUsecase {
 
     // ========== Backend time validation ==========
 
-    private long validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt, boolean isAutoSubmit) {
+    private long validateExamTime(Long examId, Long studentId, Exam exam, LocalDateTime submittedAt,
+            boolean isAutoSubmit) {
         Optional<LocalDateTime> startTimeOpt = examSessionService.getExamStartTime(examId, studentId);
 
         if (startTimeOpt.isPresent()) {
@@ -234,13 +242,15 @@ public class SubmitExamUsecase {
                 if (allowOvertime && lateThresholdMinutes > 0) {
                     long lateThresholdSeconds = (long) lateThresholdMinutes * 60;
                     if (secondsOverdue <= lateThresholdSeconds) {
-                        log.info("Late submission accepted within lateThreshold: exam={}, student={}, overdue={}s, threshold={}min",
+                        log.info(
+                                "Late submission accepted within lateThreshold: exam={}, student={}, overdue={}s, threshold={}min",
                                 examId, studentId, secondsOverdue, lateThresholdMinutes);
                         return secondsOverdue;
                     }
 
                     if (isAutoSubmit) {
-                        log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId, secondsOverdue);
+                        log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId,
+                                studentId, secondsOverdue);
                         return secondsOverdue;
                     }
 
@@ -251,7 +261,8 @@ public class SubmitExamUsecase {
                 }
 
                 if (isAutoSubmit) {
-                    log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId, secondsOverdue);
+                    log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId,
+                            secondsOverdue);
                     return secondsOverdue;
                 }
 

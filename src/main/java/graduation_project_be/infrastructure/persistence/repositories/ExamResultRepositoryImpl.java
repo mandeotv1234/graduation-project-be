@@ -41,7 +41,7 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
     }
 
     @Override
-    public long countByExamIdAndStudentId(Long examId, Long studentId) {
+    public Long countByExamIdAndStudentId(Long examId, Long studentId) {
         return jpaRepository.countByExamIdAndStudentId(examId, studentId);
     }
 

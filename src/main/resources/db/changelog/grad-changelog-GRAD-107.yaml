@@ -1,0 +1,111 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2604090001"
+      author: codex
+      comment: "GRAD-95: Migrate CREATE_TABLE grading_rubric JSON to the new deduction-only schema"
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              WITH source_rows AS (
+                SELECT
+                  id,
+                  grading_rubric::jsonb AS rubric_json
+                FROM exam_questions
+                WHERE question_type = 'CREATE_TABLE'
+                  AND grading_rubric IS NOT NULL
+                  AND BTRIM(grading_rubric) <> ''
+              ),
+              migrated AS (
+                SELECT
+                  id,
+                  jsonb_set(
+                    jsonb_set(
+                      jsonb_set(
+                        rubric_json,
+                        '{question_category}',
+                        to_jsonb('CREATE_TABLE'::text),
+                        true
+                      ),
+                      '{grading_payload,grading_settings}',
+                      COALESCE(rubric_json -> 'grading_payload' -> 'grading_settings', '{}'::jsonb)
+                        || jsonb_build_object(
+                          'positive_only_scoring', false,
+                          'deduction_mode', true,
+                          'skip_child_checks_when_table_missing', true
+                        ),
+                      true
+                    ),
+                    '{grading_payload,tables}',
+                    COALESCE(
+                      (
+                        SELECT jsonb_agg(
+                          (table_item - 'existence_points')
+                          || jsonb_build_object(
+                            'missing_table_penalty',
+                            COALESCE(
+                              (table_item ->> 'missing_table_penalty')::numeric,
+                              (table_item ->> 'existence_points')::numeric,
+                              0
+                            ),
+                            'missing_penalty_action',
+                            COALESCE(table_item ->> 'missing_penalty_action', 'SKIP_TABLE'),
+                            'columns',
+                            COALESCE(
+                              (
+                                SELECT jsonb_agg(
+                                  (column_item - 'points')
+                                  || jsonb_build_object(
+                                    'missing_column_penalty',
+                                    COALESCE(
+                                      (column_item ->> 'missing_column_penalty')::numeric,
+                                      (column_item ->> 'points')::numeric,
+                                      0
+                                    ),
+                                    'type_mismatch_penalty',
+                                    COALESCE((column_item ->> 'type_mismatch_penalty')::numeric, 0)
+                                  )
+                                )
+                                FROM jsonb_array_elements(COALESCE(table_item -> 'columns', '[]'::jsonb)) column_item
+                              ),
+                              '[]'::jsonb
+                            ),
+                            'constraints',
+                            COALESCE(
+                              (
+                                SELECT jsonb_agg(
+                                  ((constraint_item - 'points') - 'missing_penalty')
+                                  || jsonb_build_object(
+                                    'missing_constraint_penalty',
+                                    COALESCE(
+                                      (constraint_item ->> 'missing_constraint_penalty')::numeric,
+                                      (constraint_item ->> 'missing_penalty')::numeric,
+                                      (constraint_item ->> 'points')::numeric,
+                                      0
+                                    )
+                                  )
+                                )
+                                FROM jsonb_array_elements(COALESCE(table_item -> 'constraints', '[]'::jsonb)) constraint_item
+                              ),
+                              '[]'::jsonb
+                            )
+                          )
+                        )
+                        FROM jsonb_array_elements(COALESCE(rubric_json -> 'grading_payload' -> 'tables', '[]'::jsonb)) table_item
+                      ),
+                      '[]'::jsonb
+                    ),
+                    true
+                  ) AS new_rubric
+                FROM source_rows
+              )
+              UPDATE exam_questions target
+              SET grading_rubric = migrated.new_rubric::text
+              FROM migrated
+              WHERE target.id = migrated.id;

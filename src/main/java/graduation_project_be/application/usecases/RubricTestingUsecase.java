@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -218,9 +219,10 @@ public class RubricTestingUsecase {
                         "type", "error",
                         "message", "Lỗi thực thi SQL: " + normalizedCompileError,
                         "points", 0));
+                fakeSubmission.setScoreEarned(BigDecimal.ZERO);
+            } else {
+                gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission);
             }
-
-            gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission);
 
             boolean allPassed = fakeSubmission.getScoreEarned() != null
                     && fakeSubmission.getScoreEarned().compareTo(BigDecimal.valueOf(totalPoints)) >= 0;
@@ -573,7 +575,7 @@ public class RubricTestingUsecase {
                                         "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
             }
 
-            return executeRubricGrading(
+            return executeRubricGradingV2(
                     studentSchema, teacherSchema, gradingRubric, totalPoints);
 
         } catch (Exception e) {
@@ -617,17 +619,22 @@ public class RubricTestingUsecase {
             return "";
         }
 
-        String normalized = sql;
+        String normalized = sql
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\r", "\n")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n");
 
         normalized = normalized.replaceAll(
                 "(?i)(CREATE\\s+TABLE|ALTER\\s+TABLE|INSERT\\s+INTO|UPDATE\\s+|DELETE\\s+FROM|MERGE\\s+INTO|DROP\\s+TABLE|TRUNCATE\\s+TABLE|WITH\\s+)",
-                "\\n$1");
+                "\n$1");
 
         normalized = normalized.replaceAll("(?s)/\\*.*?\\*/", " ");
         normalized = normalized.replaceAll("--[^\\r\\n]*", " ");
 
-        normalized = normalized.replaceAll("[\\t\\x0B\\f\\r ]+", " ");
-        normalized = normalized.replaceAll("\\n+", "\\n");
+        normalized = normalized.replaceAll("[\\t\\x0B\\f ]+", " ");
+        normalized = normalized.replaceAll("\n+", "\n");
 
         return normalized.trim();
     }
@@ -980,6 +987,39 @@ public class RubricTestingUsecase {
         }
     }
 
+    private Map<String, Object> executeRubricGradingV2(
+            String studentSchema,
+            String teacherSchema,
+            String gradingRubricJson,
+            double totalPoints) {
+        JsonNode rubric;
+        try {
+            rubric = objectMapper.readTree(gradingRubricJson);
+        } catch (Exception e) {
+            return Map.of(
+                    "earnedPoints", 0,
+                    "totalPoints", totalPoints,
+                    "totalDeductions", 0,
+                    "allPassed", false,
+                    "details", List.of(
+                            Map.of("type", "error", "message", "Rubric JSON khong hop le", "points", 0)));
+        }
+
+        List<TableMetadata> actualTables = examSchemaService.extractMetadata(studentSchema);
+        CreateTableRubricEvaluator.CreateTableRubricGradeResult result =
+                CreateTableRubricEvaluator.evaluate(
+                        rubric,
+                        actualTables,
+                        BigDecimal.valueOf(totalPoints));
+
+        return Map.of(
+                "earnedPoints", result.earnedPoints().doubleValue(),
+                "totalPoints", totalPoints,
+                "totalDeductions", result.totalDeductions().doubleValue(),
+                "allPassed", result.allPassed(),
+                "details", result.details());
+    }
+
     private Map<String, Object> executeRubricGrading(
             String studentSchema,
             String teacherSchema,
@@ -1069,9 +1109,7 @@ public class RubricTestingUsecase {
                             String.format("Bảng %s: thiếu cột %s", expectedName, colName),
                             "points", positiveOnlyScoring ? 0 : -colPts));
                 } else {
-                    boolean typeMatch = caseSensitive
-                            ? actualCol.getRawDataType().equals(expectedType)
-                            : actualCol.getRawDataType().equalsIgnoreCase(expectedType);
+                    boolean typeMatch = matchesSqlType(actualCol.getRawDataType(), expectedType);
                     if (typeMatch) {
                         earned += colPts;
                         details.add(Map.of("type", "success", "message",
@@ -1236,6 +1274,32 @@ public class RubricTestingUsecase {
         }
 
         return true;
+    }
+
+    private boolean matchesSqlType(String actualType, String expectedType) {
+        return normalizeSqlType(actualType).equals(normalizeSqlType(expectedType));
+    }
+
+    private String normalizeSqlType(String sqlType) {
+        if (sqlType == null) {
+            return "";
+        }
+        String normalized = sqlType.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return "";
+        }
+
+        int parenIndex = normalized.indexOf('(');
+        if (parenIndex >= 0) {
+            normalized = normalized.substring(0, parenIndex);
+        }
+
+        int spaceIndex = normalized.indexOf(' ');
+        if (spaceIndex >= 0) {
+            normalized = normalized.substring(0, spaceIndex);
+        }
+
+        return normalized.trim();
     }
 
     private boolean readBoolean(JsonNode node, boolean defaultValue) {

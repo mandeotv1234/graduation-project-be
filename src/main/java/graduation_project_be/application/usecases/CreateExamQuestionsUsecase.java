@@ -62,8 +62,7 @@ public class CreateExamQuestionsUsecase {
             String correctQuery = item.correctQuery();
             String verifyScript = item.verifyScript();
 
-            boolean needsAi = (correctQuery == null || correctQuery.isBlank()) ||
-                              (verifyScript == null || verifyScript.isBlank());
+            boolean needsAi = (correctQuery == null || correctQuery.isBlank());
 
             if (needsAi) {
                 // Call Gemini to generate correctQuery + verifyScript

@@ -96,15 +96,28 @@ public class RubricTestingUsecase {
             JsonNode settings = payload.path("grading_settings");
             String seedSchemaScript = payload.path("seed_schema_script").asText("");
             String dependsOnQuestionIdRaw = settings.path("depends_on_question_id").asText("").trim();
-            boolean useConstraintWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(false);
+            boolean useConstraintWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(true);
             List<Map<String, Object>> details = new ArrayList<>();
             List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
 
             examSchemaService.resetSchema(teacherSchema);
             examSchemaService.resetSchema(studentSchema);
 
-            int teacherPrepared = executeExistingAnswersForSchema(examQuestions, teacherSchema, details, null);
-            int studentPrepared = executeExistingAnswersForSchema(examQuestions, studentSchema, details, null);
+            String currentCorrectNormalized = normalizeSqlForExecution(correctQuery);
+            int teacherPrepared = executeExistingAnswersForSchema(
+                    examQuestions,
+                    teacherSchema,
+                    details,
+                    null,
+                    false,
+                    currentCorrectNormalized);
+            int studentPrepared = executeExistingAnswersForSchema(
+                    examQuestions,
+                    studentSchema,
+                    details,
+                    null,
+                    false,
+                    currentCorrectNormalized);
             if (teacherPrepared > 0 || studentPrepared > 0) {
                 details.add(Map.of(
                         "type", "info",
@@ -214,7 +227,7 @@ public class RubricTestingUsecase {
                             + " Hãy điều chỉnh thứ tự insert hoặc tách bước tạo/liên kết dữ liệu cho phù hợp.";
                 }
 
-                fakeSubmission.setErrorMessage("Lỗi cú pháp SQL: " + compileError);
+                fakeSubmission.setErrorMessage("Lỗi thực thi SQL: " + compileError);
                 details.add(Map.of(
                         "type", "error",
                         "message", "Lỗi thực thi SQL: " + normalizedCompileError,
@@ -653,6 +666,22 @@ public class RubricTestingUsecase {
             List<Map<String, Object>> details,
             String caseId,
             boolean createTableOnly) {
+        return executeExistingAnswersForSchema(
+                examQuestions,
+                schemaName,
+                details,
+                caseId,
+                createTableOnly,
+                null);
+    }
+
+    private int executeExistingAnswersForSchema(
+            List<ExamQuestionResponse> examQuestions,
+            String schemaName,
+            List<Map<String, Object>> details,
+            String caseId,
+            boolean createTableOnly,
+            String excludeNormalizedSql) {
         int preparedCount = 0;
         for (ExamQuestionResponse question : examQuestions) {
             if ("SELECT_QUERY".equalsIgnoreCase(question.questionType())) {
@@ -667,6 +696,11 @@ public class RubricTestingUsecase {
 
             String normalizedSql = normalizeSqlForExecution(question.correctQuery());
             if (normalizedSql.isBlank()) {
+                continue;
+            }
+            if (excludeNormalizedSql != null
+                    && !excludeNormalizedSql.isBlank()
+                    && normalizedSql.equals(excludeNormalizedSql)) {
                 continue;
             }
 

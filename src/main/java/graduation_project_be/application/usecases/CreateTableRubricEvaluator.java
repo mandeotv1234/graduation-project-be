@@ -42,7 +42,14 @@ final class CreateTableRubricEvaluator {
         boolean allPassed = true;
         boolean ruleFailAllTriggered = false;
 
+        boolean hasGradingRules = gradingRules != null && gradingRules.isArray() && !gradingRules.isEmpty();
+
+        // When grading_rules exist, skip legacy penalty-based scoring
+        // and only use rule-based evaluation below
         for (JsonNode rubricTable : tables) {
+            if (hasGradingRules) {
+                continue;
+            }
             String expectedName = rubricTable.path("expected_name").asText("");
             String missingAction = rubricTable.path("missing_penalty_action").asText("SKIP_TABLE");
             TableMetadata actualTable = findTable(actualTables, expectedName, caseSensitive);

@@ -1,0 +1,61 @@
+Ban la chuyen gia cham diem SQL cho he thong thi thuc hanh CSDL.
+Phan tich SQL CREATE TABLE ben duoi va tao cac grading_rules theo KIEU TRU DIEM.
+
+=== CAU HOI ===
+%s
+
+=== SQL DAP AN MAU ===
+%s
+
+=== TONG DIEM ===
+%.2f diem
+
+=== DAU RA BAT BUOC ===
+Tra ve DUNG JSON (khong markdown, khong giai thich):
+{
+  "total_points": %.2f,
+  "question_category": "CREATE_TABLE",
+  "grading_payload": {
+    "grading_rules": [
+      {
+        "rule_name": "<TEN_RULE>",
+        "target": "<TABLE|COLUMN|DATA_TYPE|PRIMARY_KEY|FOREIGN_KEY|CONSTRAINT_LOCAL|COLUMN_ORDER>",
+        "condition": "<IS_MISSING|IS_EXTRA|NOT_EQUAL|TYPE_MISMATCH|LENGTH_MISMATCH|REFERENCE_ERROR|OUT_OF_ORDER>",
+        "modifiers": ["<IGNORE_CASE|MATCH_FAMILY_TYPE|IGNORE_CONSTRAINT_NAME|IGNORE_LENGTH>"],
+        "action": "<DEDUCT_POINTS|DEDUCT_PERCENTAGE|FAIL_ITEM|FAIL_ALL|IGNORE>",
+        "penalty_value": <SO_DUONG>,
+        "description": "<MO_TA_NGAN_GON>"
+      }
+    ]
+  }
+}
+
+=== TARGET VA CONDITION HOP LE CHO CREATE_TABLE ===
+- TABLE: IS_MISSING, IS_EXTRA, NOT_EQUAL
+- COLUMN: IS_MISSING, IS_EXTRA, NOT_EQUAL, OUT_OF_ORDER
+- DATA_TYPE: TYPE_MISMATCH, LENGTH_MISMATCH, NOT_EQUAL
+- PRIMARY_KEY: IS_MISSING, IS_EXTRA, NOT_EQUAL
+- FOREIGN_KEY: IS_MISSING, IS_EXTRA, REFERENCE_ERROR
+- CONSTRAINT_LOCAL: IS_MISSING, IS_EXTRA, NOT_EQUAL
+- COLUMN_ORDER: OUT_OF_ORDER
+
+=== QUY TAC QUAN TRONG ===
+- Day la rubric TRU DIEM cho cau hoi CREATE TABLE, KHONG phai INSERT DATA.
+- Dung rule_name (KHONG dung rule_id).
+- KHONG dung target lien quan du lieu nhu ROW, CELL_VALUE, ROW_ORDER.
+- Moi rule dai dien cho mot loi/dieu kien KHAC NHAU, khong lap noi dung.
+- Cho phep "rule dac biet" mo ta bang text:
+  {
+    "rule_name": "<TEN_RULE>",
+    "description": "<MO_TA_QUY_TAC_DAC_BIET_BANG_NGON_NGU_TU_NHIEN>"
+  }
+- Uu tien ten quy tac than thien tieng Viet, ngan gon, co dau.
+- penalty_value phai >= 0.
+
+=== KIEM TRA TRUOC KHI TRA VE ===
+- JSON hop le, chi tra ve JSON.
+- Co question_category = CREATE_TABLE.
+- Co grading_rules (it nhat 1 rule).
+- Moi rule deu co rule_name.
+- Phai tao DAY DU cac rule theo yeu cau cua giao vien trong phan CAU HOI.
+- Khong bo sot bat ky loai loi nao duoc yeu cau.

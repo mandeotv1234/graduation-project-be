@@ -36,7 +36,7 @@ public record CreateSpecificationV2RequestDto(
     public record SpecDatasetRequestDto(
             Long id,
             @NotBlank(message = "Dataset name is required") String name,
-            @NotBlank(message = "Dataset script is required") String dataScript,
+            String dataScript,
             String tableData,
             int orderIndex,
             Boolean isActive) {
@@ -63,7 +63,7 @@ public record CreateSpecificationV2RequestDto(
                 : datasets.stream().map(dataset -> new CreateSpecificationRequest.SpecDatasetRequest(
                         dataset.id(),
                         dataset.name(),
-                        dataset.dataScript(),
+                        dataset.dataScript() == null ? "" : dataset.dataScript(),
                         dataset.tableData(),
                         dataset.orderIndex(),
                         dataset.isActive())).toList();

@@ -47,4 +47,9 @@ public class ExamRepositoryImpl implements ExamRepository {
                 .map(ExamEntity::toModel)
                 .toList();
     }
+
+    @Override
+    public boolean existsBySpecificationId(Long specificationId) {
+        return examJpaRepository.existsBySpecificationId(specificationId);
+    }
 }

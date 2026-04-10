@@ -1,5 +1,7 @@
 package graduation_project_be.application.port.services;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 public interface GeminiService {
     /**
      * Given a question content + questionType, ask Gemini to generate
@@ -20,6 +22,11 @@ public interface GeminiService {
             double totalPoints,
             String questionType,
             String priorQuestionContext);
+
+    /**
+     * Generate DB schema JSON from natural-language specification description.
+     */
+    JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson);
 
     record GeneratedQuestion(String correctQuery, String verifyScript) {}
 }

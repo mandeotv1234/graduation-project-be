@@ -502,7 +502,7 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeInsertRequestDto requestDto) {
                 try {
-                        Map<String, Object> result = rubricTestingUsecase.testGradeInsert(
+                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeInsert(
                                         requestDto.toRequest(examId, objectMapper));
                         return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
                 } catch (Exception e) {
@@ -518,7 +518,7 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeSelectRequestDto requestDto) {
                 try {
-                        Map<String, Object> result = rubricTestingUsecase.testGradeSelect(
+                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeSelect(
                                         requestDto.toRequest(examId, objectMapper));
                         return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
                 } catch (Exception e) {
@@ -528,12 +528,51 @@ public class ExamController {
                 }
         }
 
+        @PostMapping("/{examId}/run-select-testcase")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> runSelectTestcase(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid ExecuteSelectQueryRequestDto requestDto) {
+                try {
+                        ExecuteSelectTestCaseResponse result = rubricTestingUsecase
+                                        .executeSelectTestCase(requestDto.toRequest(examId));
+                        return ResponseEntity.ok(ResponseDto.of(
+                                        ExecuteSelectTestCaseResponseDto.fromResponse(result),
+                                        "OK",
+                                        "Run testcase completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
+                                                        "Lỗi chạy thử dữ liệu: " + e.getMessage()));
+                }
+        }
+
+        @PostMapping("/{examId}/build-insert-tables")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> buildInsertTables(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid BuildInsertTablesRequestDto requestDto) {
+                try {
+                        BuildInsertTablesResponse result = rubricTestingUsecase.buildInsertTablesFromAnswer(
+                                        examId,
+                                        requestDto.correctQuery());
+                        return ResponseEntity.ok(ResponseDto.of(
+                                        BuildInsertTablesResponseDto.fromResponse(result),
+                                        "OK",
+                                        "Build insert tables completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
+                                                        "Lỗi tạo dữ liệu tables INSERT: " + e.getMessage()));
+                }
+        }
+
         @PostMapping("/test-grade")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> testGrade(
                         @RequestBody @Valid TestGradeCreateTableRequestDto requestDto) {
                 try {
-                        Map<String, Object> result = rubricTestingUsecase.testGradeCreateTable(
+                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeCreateTable(
                                         requestDto.toRequest(objectMapper));
                         return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
                 } catch (Exception e) {

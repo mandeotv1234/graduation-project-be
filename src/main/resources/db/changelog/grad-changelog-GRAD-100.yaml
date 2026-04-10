@@ -1,0 +1,25 @@
+databaseChangeLog:
+  - changeSet:
+      id: 090420260001
+      author: phanphuc
+      changes:
+        - addColumn:
+            tableName: exam_questions
+            columns:
+              - column:
+                  name: rule_cards_schema
+                  type: TEXT
+                  constraints:
+                    nullable: true
+  - changeSet:
+      id: 090420260002
+      author: phanphuc
+      changes:
+        - addColumn:
+            tableName: specifications
+            columns:
+              - column:
+                  name: schema_diagram
+                  type: TEXT
+                  constraints:
+                    nullable: true

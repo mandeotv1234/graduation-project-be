@@ -21,10 +21,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -255,6 +257,16 @@ public class GeminiServiceImpl implements GeminiService {
                 }
 
                 return latestJson;
+            }
+
+            if ("INSERT_DATA".equalsIgnoreCase(questionType)) {
+                String rubricJson = callGeminiForJson(client, basePrompt);
+                if (rubricJson == null) {
+                    return null;
+                }
+                String normalizedRubric = normalizeInsertRubricSchema(rubricJson, totalPoints);
+                logGeneratedRubric(questionType, normalizedRubric);
+                return normalizedRubric;
             }
 
             if (!"SELECT_QUERY".equalsIgnoreCase(questionType)) {
@@ -880,6 +892,190 @@ public class GeminiServiceImpl implements GeminiService {
             List<String> columns,
             String referencesTable,
             List<String> referencesColumns) {
+    }
+
+    private String normalizeInsertRubricSchema(String rubricJson, double totalPoints) throws Exception {
+        JsonNode parsed = objectMapper.readTree(rubricJson);
+        if (!(parsed instanceof ObjectNode root)) {
+            return rubricJson;
+        }
+
+        root.put("question_category", "INSERT_DATA");
+        root.put("total_points", totalPoints);
+
+        ObjectNode payload = ensureObject(root, "grading_payload");
+
+        ArrayNode normalizedRules = normalizeInsertRules(extractInsertRulesNode(root, payload));
+        ArrayNode normalizedTables = normalizeInsertTables(extractInsertTablesNode(root, payload));
+
+        payload.set("grading_rules", normalizedRules.deepCopy());
+        payload.set("tables", normalizedTables.deepCopy());
+        payload.remove("expected_datasets");
+
+        root.set("grading_rules", normalizedRules);
+        root.set("tables", normalizedTables.deepCopy());
+        root.remove("expected_datasets");
+
+        return objectMapper.writeValueAsString(root);
+    }
+
+    private JsonNode extractInsertRulesNode(ObjectNode root, ObjectNode payload) {
+        JsonNode rootRules = root.get("grading_rules");
+        if (rootRules != null && rootRules.isArray()) {
+            return rootRules;
+        }
+
+        JsonNode payloadRules = payload.get("grading_rules");
+        if (payloadRules != null && payloadRules.isArray()) {
+            return payloadRules;
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private JsonNode extractInsertTablesNode(ObjectNode root, ObjectNode payload) {
+        JsonNode rootTables = root.get("tables");
+        if (rootTables != null && rootTables.isArray()) {
+            return rootTables;
+        }
+
+        JsonNode payloadTables = payload.get("tables");
+        if (payloadTables != null && payloadTables.isArray()) {
+            return payloadTables;
+        }
+
+        JsonNode payloadLegacy = payload.get("expected_datasets");
+        if (payloadLegacy != null && payloadLegacy.isArray()) {
+            return payloadLegacy;
+        }
+
+        JsonNode rootLegacy = root.get("expected_datasets");
+        if (rootLegacy != null && rootLegacy.isArray()) {
+            return rootLegacy;
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private ArrayNode normalizeInsertRules(JsonNode sourceRules) {
+        ArrayNode normalized = objectMapper.createArrayNode();
+        if (!sourceRules.isArray()) {
+            return normalized;
+        }
+
+        int ruleIndex = 1;
+        for (JsonNode ruleNode : sourceRules) {
+            if (!(ruleNode instanceof ObjectNode sourceRule)) {
+                continue;
+            }
+
+            ObjectNode rule = sourceRule.deepCopy();
+            String ruleName = rule.path("rule_name").asText("").trim();
+            if (ruleName.isBlank()) {
+                ruleName = rule.path("rule_id").asText("").trim();
+            }
+            if (ruleName.isBlank()) {
+                ruleName = String.format(Locale.ROOT, "RULE_%02d", ruleIndex);
+            }
+            rule.put("rule_name", ruleName);
+
+            if (!rule.path("modifiers").isArray()) {
+                rule.set("modifiers", objectMapper.createArrayNode());
+            }
+
+            normalized.add(rule);
+            ruleIndex++;
+        }
+
+        return normalized;
+    }
+
+    private ArrayNode normalizeInsertTables(JsonNode sourceTables) {
+        ArrayNode normalized = objectMapper.createArrayNode();
+        if (!sourceTables.isArray()) {
+            return normalized;
+        }
+
+        for (JsonNode tableNode : sourceTables) {
+            if (!(tableNode instanceof ObjectNode sourceTable)) {
+                continue;
+            }
+
+            ObjectNode table = sourceTable.deepCopy();
+
+            String tableName = table.path("table_name").asText("").trim();
+            if (tableName.isBlank()) {
+                String fallback = table.path("expected_name").asText("").trim();
+                if (!fallback.isBlank()) {
+                    table.put("table_name", fallback);
+                }
+            }
+
+            JsonNode expectedData = table.path("expected_data");
+            if (!expectedData.isArray()) {
+                JsonNode legacyRows = table.path("rows");
+                if (legacyRows.isArray()) {
+                    table.set("expected_data", legacyRows.deepCopy());
+                }
+            }
+
+            JsonNode columnsConfig = table.path("columns_config");
+            if (!columnsConfig.isArray()) {
+                JsonNode columnsToGrade = table.path("columns_to_grade");
+                if (columnsToGrade.isArray()) {
+                    table.set(
+                            "columns_config",
+                            buildColumnsConfigFromLegacy(columnsToGrade, table.path("primary_keys")));
+                }
+            }
+
+            JsonNode rowPenaltyNode = table.get("missing_row_penalty");
+            if (rowPenaltyNode == null || rowPenaltyNode.isNull() || rowPenaltyNode.isMissingNode()) {
+                double pointsPerRow = table.path("points_per_row").asDouble(0d);
+                if (pointsPerRow > 0d) {
+                    table.put("missing_row_penalty", pointsPerRow);
+                }
+            }
+
+            table.remove("rows");
+            table.remove("points_per_row");
+            table.remove("columns_to_grade");
+            table.remove("primary_keys");
+
+            normalized.add(table);
+        }
+
+        return normalized;
+    }
+
+    private ArrayNode buildColumnsConfigFromLegacy(JsonNode columnsToGrade, JsonNode primaryKeysNode) {
+        ArrayNode columnsConfig = objectMapper.createArrayNode();
+        Set<String> primaryKeys = new HashSet<>();
+
+        if (primaryKeysNode.isArray()) {
+            for (JsonNode pkNode : primaryKeysNode) {
+                String pk = pkNode.asText("").trim();
+                if (!pk.isBlank()) {
+                    primaryKeys.add(pk.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        for (JsonNode columnNode : columnsToGrade) {
+            String columnName = columnNode.asText("").trim();
+            if (columnName.isBlank()) {
+                continue;
+            }
+
+            ObjectNode mapped = objectMapper.createObjectNode();
+            mapped.put("name", columnName);
+            mapped.put("is_primary_key", primaryKeys.contains(columnName.toLowerCase(Locale.ROOT)));
+            mapped.put("is_graded", true);
+            mapped.put("match_type", "EXACT");
+            columnsConfig.add(mapped);
+        }
+
+        return columnsConfig;
     }
 
     private String buildCreateTableRubricPrompt(String correctQuery, String questionContent, double totalPoints) {

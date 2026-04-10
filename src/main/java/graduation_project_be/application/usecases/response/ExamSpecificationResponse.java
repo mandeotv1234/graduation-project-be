@@ -16,6 +16,7 @@ public record ExamSpecificationResponse(
         String name,
         String ddlScript,
         JsonNode schemaJson,
+        String schemaDiagram,
         String description,
         List<SpecEntityResponse> entities,
         List<SpecDatasetResponse> datasets,
@@ -68,11 +69,19 @@ public record ExamSpecificationResponse(
             }
         }
 
+        String schemaDiagram = model.getSchemaDiagram();
+        if ((schemaDiagram == null || schemaDiagram.isBlank())
+                && model.getSchemaJson() != null
+                && !model.getSchemaJson().isBlank()) {
+            schemaDiagram = model.getSchemaJson();
+        }
+
         return new ExamSpecificationResponse(
                 model.getId(),
                 model.getName(),
                 model.getDdlScript(),
                 jsonNode,
+                schemaDiagram,
                 model.getDescription(),
                 entityResponses,
                 datasetResponses,

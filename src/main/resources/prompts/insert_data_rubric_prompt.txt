@@ -1,5 +1,5 @@
 Ban la chuyen gia cham diem SQL cho he thong thi thuc hanh CSDL.
-Phan tich cau lenh INSERT SQL ben duoi va tao rubric theo KIEU TRU DIEM.
+Phan tich SQL INSERT ben duoi va tao rubric theo KIEU TRU DIEM.
 
 === CAU HOI ===
 %s
@@ -10,72 +10,71 @@ Phan tich cau lenh INSERT SQL ben duoi va tao rubric theo KIEU TRU DIEM.
 === TONG DIEM ===
 %.2f diem
 
-=== YEU CAU DAU RA ===
-Tra ve DUNG JSON, khong markdown, khong giai thich:
+=== DAU RA BAT BUOC ===
+Tra ve DUNG JSON (khong markdown, khong giai thich):
 {
   "total_points": %.2f,
   "question_category": "INSERT_DATA",
-  "grading_payload": {
-    "grading_settings": {
-      "syntax_error_action": "PARTIAL",
-      "allow_extra_rows": false,
-      "penalty_per_extra_row": 0.1,
-      "ignore_column_order": true,
-      "trim_string_spaces": true,
-      "case_insensitive_data": false
-    },
-    "tables": [
-      {
-        "table_name": "<TEN_BANG>",
-        "table_points": <diem_toi_da_cua_bang>,
-        "row_grading_strategy": "<PARTIAL_BY_COLUMN|ALL_OR_NOTHING>",
-        "missing_row_penalty": <muc_tru_khi_thieu_1_dong>,
-        "columns_config": [
-          {
-            "name": "<TEN_COT>",
-            "is_primary_key": <true_or_false>,
-            "points": <muc_tru_khi_cot_nay_sai>,
-            "match_type": "<EXACT|IGNORE_CASE_AND_SPACE|NUMERIC_TOLERANCE>"
-          }
-        ],
-        "expected_data": [
-          {
-            "<TEN_COT_1>": "<GIA_TRI>",
-            "<TEN_COT_2>": <GIA_TRI>
-          }
-        ]
-      }
-    ]
-  }
+  "grading_rules": [
+    {
+      "rule_name": "<TEN_RULE>",
+      "target": "<TABLE|COLUMN|DATA_TYPE|PRIMARY_KEY|FOREIGN_KEY|CONSTRAINT_LOCAL|COLUMN_ORDER|ROW|CELL_VALUE|ROW_ORDER>",
+      "condition": "<IS_MISSING|IS_EXTRA|IS_NULL|NOT_EQUAL|OUT_OF_ORDER|TYPE_MISMATCH|LENGTH_MISMATCH|REFERENCE_ERROR>",
+      "modifiers": ["<TO_LOWERCASE|TRIM_WHITESPACE|REMOVE_ALL_WHITESPACE|REMOVE_DIACRITICS|REMOVE_SPECIAL_CHARS|CAST_TO_STRING|CAST_TO_FLOAT|ROUND_TO_INT|ROUND_2_DECIMALS|MATCH_FAMILY_TYPE|SORT_ASC>"],
+      "action": "<DEDUCT_POINTS|DEDUCT_PERCENTAGE|FAIL_ITEM|FAIL_ALL|IGNORE>",
+      "penalty_value": <SO_DUONG>
+    }
+  ],
+  "tables": [
+    {
+      "table_name": "<TEN_BANG>",
+      "table_points": <SO_DUONG_OPTIONAL>,
+      "row_grading_strategy": "<PARTIAL_BY_COLUMN|ALL_OR_NOTHING>",
+      "missing_row_penalty": <SO_DUONG_OPTIONAL>,
+      "columns_config": [
+        {
+          "name": "<TEN_COT>",
+          "is_primary_key": <true_or_false>,
+          "is_graded": <true_or_false>,
+          "points": <SO_DUONG_OPTIONAL>,
+          "match_type": "<EXACT|IGNORE_CASE_AND_SPACE|NUMERIC_TOLERANCE>"
+        }
+      ],
+      "expected_data": [
+        {
+          "<TEN_COT_1>": "<GIA_TRI>",
+          "<TEN_COT_2>": <GIA_TRI>
+        }
+      ]
+    }
+  ]
 }
 
-=== QUY TAC BAT BUOC (DEDUCTION) ===
+=== QUY TAC QUAN TRONG ===
 - Day la rubric TRU DIEM, KHONG phai rubric cong diem.
-- table_points la diem toi da cua bang.
-- Bai lam bat dau tu diem toi da, sai dau tru do.
-- Thieu 1 dong tru missing_row_penalty.
-- Neu row_grading_strategy = PARTIAL_BY_COLUMN:
-  moi cot sai tru theo columns_config[].points cua cot do.
-- Neu row_grading_strategy = ALL_OR_NOTHING:
-  sai 1 cot trong dong thi tru missing_row_penalty cho dong do.
-- Gia tri columns_config[].points phai > 0 cho cac cot duoc cham.
-- Mỗi bang phai co it nhat 1 cot PK (is_primary_key=true) de doi chieu dong.
-- Tong table_points cua tat ca bang phai bang %.2f (cho phep lech toi da 0.01 do lam tron).
+- Dung rule_name (KHONG dung rule_id).
+- Cho phep "rule dac biet" mo ta bang text. Rule dac biet toi thieu:
+  {
+    "rule_name": "<TEN_RULE>",
+    "description": "<MO_TA_QUY_TAC_DAC_BIET_BANG_NGON_NGU_TU_NHIEN>"
+  }
+- Rule dac biet co the kem action/penalty_value neu muon tru diem truc tiep.
+- tables co cau truc LINH HOAT: cac field con trong table duoc phep co hoac khong tuy ngu canh.
+- Neu rule yeu cau dieu chinh doi so khop du lieu, duoc phep cap nhat columns_config, expected_data, match_type, missing_row_penalty...
+- KHONG tao cac khoi cu sau trong JSON moi:
+  - grading_payload.grading_settings
+  - allow_extra_rows
+  - penalty_per_extra_row
+  - expected_datasets
 
-=== QUY TRINH ===
-1. Liet ke tat ca bang co INSERT trong SQL dap an.
-2. Trich day du expected_data cho tung bang.
-3. Chon cot PK hop ly de match dong.
-4. Gan row_grading_strategy:
-   - PARTIAL_BY_COLUMN cho bang co nhieu cot can cham.
-   - ALL_OR_NOTHING cho bang can dung tron dong.
-5. Phan bo table_points hop ly va dam bao tong dung bang tong diem cau hoi.
-6. Tra ve JSON hoan chinh.
+=== NGUYEN TAC PHAN BO DIEM ===
+- Neu co table_points thi tong table_points nen xap xi %.2f (lech toi da 0.01 do lam tron).
+- Neu bai can cham theo quy tac tong quat va khong can chi tiet tung bang, co the bo qua table_points.
+- penalty_value phai >= 0.
 
 === KIEM TRA TRUOC KHI TRA VE ===
-- Khong thieu bang nao trong tables[].
-- Moi bang co table_name, table_points, missing_row_penalty, columns_config, expected_data.
-- Moi cot trong columns_config co name, is_primary_key, points, match_type hop le.
-- table_points > 0 va missing_row_penalty > 0.
-- Tong table_points = total_points.
-- Chi tra ve JSON.
+- JSON hop le, chi tra ve JSON.
+- Co question_category = INSERT_DATA.
+- Co grading_rules (it nhat 1 rule).
+- Moi rule deu co rule_name.
+- Neu co tables thi moi phan tu phai co table_name.

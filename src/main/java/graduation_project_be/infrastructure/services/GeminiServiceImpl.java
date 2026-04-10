@@ -2,6 +2,9 @@ package graduation_project_be.infrastructure.services;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.services.GeminiService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,10 +22,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 public class GeminiServiceImpl implements GeminiService {
+    private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([^\"]+)\"");
 
     private static final String GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
@@ -42,11 +48,15 @@ public class GeminiServiceImpl implements GeminiService {
 
     @Value("classpath:prompts/select_query_rubric_prompt.txt")
     private Resource selectQueryRubricPromptResource;
+    
+    @Value("classpath:prompts/specification_schema_prompt.txt")
+    private Resource specificationSchemaPromptResource;
 
     private String systemPromptTemplate;
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
     private String selectQueryRubricPromptTemplate;
+    private String specificationSchemaPromptTemplate;
 
     public GeminiServiceImpl(@Value("${spring.application.gemini.api-key}") String apiKey) {
         this.apiKey = apiKey;
@@ -61,6 +71,7 @@ public class GeminiServiceImpl implements GeminiService {
             this.createTableRubricPromptTemplate = StreamUtils.copyToString(createTableRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.insertDataRubricPromptTemplate = StreamUtils.copyToString(insertDataRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.selectQueryRubricPromptTemplate = StreamUtils.copyToString(selectQueryRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.specificationSchemaPromptTemplate = StreamUtils.copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -323,5 +334,208 @@ public class GeminiServiceImpl implements GeminiService {
                   : "Không có ngữ cảnh bổ sung từ câu trước",
                 totalPoints,
                 totalPoints);
+    }
+
+    @Override
+    public JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API key is missing. Cannot generate schema.");
+            return null;
+        }
+
+        HttpClient client = getOrCreateHttpClient();
+        if (client == null) {
+            return null;
+        }
+
+        String currentSchemaText = (currentSchemaJson == null || currentSchemaJson.isNull())
+                ? "[]"
+                : currentSchemaJson.toString();
+
+        String prompt = String.format(
+                specificationSchemaPromptTemplate,
+                currentSchemaText,
+                specificationDescription == null ? "" : specificationDescription.trim());
+
+        try {
+            String requestBody = buildSchemaJsonRequestBody(prompt, 64000);
+            log.info("Calling Gemini for specification schema generation. Description length={}",
+                    specificationDescription == null ? 0 : specificationDescription.length());
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(GEMINI_URL + apiKey))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(60))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                String body = response.body();
+                log.error("Gemini API error {} while generating schema. Response snippet: {}",
+                        response.statusCode(), safeSnippet(body, 1200));
+                throw mapGeminiSchemaError(response.statusCode(), body);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode candidate = root.path("candidates").get(0);
+            if (candidate == null || candidate.isMissingNode()) {
+                log.error("Gemini schema response does not contain candidates. Raw response snippet: {}",
+                        safeSnippet(response.body(), 1200));
+                return null;
+            }
+
+            String text = candidate
+                    .path("content")
+                    .path("parts").get(0)
+                    .path("text").asText();
+
+            if (text == null || text.isBlank()) {
+                log.error("Gemini schema response text is empty. Raw candidate: {}",
+                        safeSnippet(candidate.toString(), 1200));
+                return null;
+            }
+
+            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+            JsonNode parsed = objectMapper.readTree(text);
+            if (!parsed.isArray()) {
+                log.error("Gemini schema response is not JSON array. Parsed snippet: {}",
+                        safeSnippet(parsed.toString(), 1200));
+                return null;
+            }
+
+            log.info("Gemini schema generation succeeded. tables={}", parsed.size());
+            return parsed;
+        } catch (Exception e) {
+            if (e instanceof BadRequestException badRequestException) {
+                throw badRequestException;
+            }
+            log.error("Failed to generate specification schema: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private BadRequestException mapGeminiSchemaError(int statusCode, String responseBody) {
+        String providerMessage = extractGeminiProviderMessage(responseBody);
+        if (statusCode == 429) {
+            String retryDelay = extractRetryDelay(responseBody);
+            String retryHint = retryDelay == null ? "" : " Vui lòng thử lại sau " + retryDelay + ".";
+            return new BadRequestException(
+                    "Hệ thống AI đang vượt quota (Gemini 429)." + retryHint
+                            + " Nếu lỗi lặp lại, hãy kiểm tra billing/quota của Gemini."
+            );
+        }
+
+        if (providerMessage != null && !providerMessage.isBlank()) {
+            return new BadRequestException("Không thể sinh schema từ AI: " + providerMessage);
+        }
+
+        return new BadRequestException(
+                "Không thể sinh schema từ AI (Gemini HTTP " + statusCode + "). Vui lòng thử lại sau."
+        );
+    }
+
+    private String extractGeminiProviderMessage(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode body = objectMapper.readTree(responseBody);
+            String message = body.path("error").path("message").asText(null);
+            if (message == null || message.isBlank()) {
+                return null;
+            }
+            return safeSnippet(message, 300);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String extractRetryDelay(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+        Matcher matcher = RETRY_DELAY_PATTERN.matcher(responseBody);
+        if (!matcher.find()) {
+            return null;
+        }
+        return matcher.group(1);
+    }
+
+    private String safeSnippet(String value, int maxLen) {
+        if (value == null) {
+            return "null";
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= maxLen) {
+            return normalized;
+        }
+        return normalized.substring(0, maxLen) + "...(truncated)";
+    }
+
+    private String buildSchemaJsonRequestBody(String prompt, int maxOutputTokens) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            ArrayNode contents = root.putArray("contents");
+            ObjectNode content = contents.addObject();
+            ArrayNode parts = content.putArray("parts");
+            parts.addObject().put("text", prompt);
+
+            ObjectNode generationConfig = root.putObject("generationConfig");
+            generationConfig.put("temperature", 0.1);
+            generationConfig.put("maxOutputTokens", maxOutputTokens);
+            generationConfig.put("responseMimeType", "application/json");
+            generationConfig.set("responseSchema", buildSpecificationSchemaResponseSchema());
+
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build Gemini schema request body", e);
+        }
+    }
+
+    private ObjectNode buildSpecificationSchemaResponseSchema() {
+        ObjectNode rootArray = objectMapper.createObjectNode();
+        rootArray.put("type", "ARRAY");
+
+        ObjectNode tableObject = objectMapper.createObjectNode();
+        tableObject.put("type", "OBJECT");
+        rootArray.set("items", tableObject);
+
+        ObjectNode tableProps = tableObject.putObject("properties");
+        tableProps.putObject("tableName").put("type", "STRING");
+
+        ObjectNode columnsArray = tableProps.putObject("columns");
+        columnsArray.put("type", "ARRAY");
+
+        ObjectNode columnObject = objectMapper.createObjectNode();
+        columnObject.put("type", "OBJECT");
+        columnsArray.set("items", columnObject);
+
+        ObjectNode columnProps = columnObject.putObject("properties");
+        columnProps.putObject("columnName").put("type", "STRING");
+        columnProps.putObject("dataType").put("type", "STRING");
+        columnProps.putObject("primaryKey").put("type", "BOOLEAN");
+        columnProps.putObject("foreignKey").put("type", "BOOLEAN");
+        columnProps.putObject("referencesTable").put("type", "STRING").put("nullable", true);
+        columnProps.putObject("referencesColumn").put("type", "STRING").put("nullable", true);
+        columnProps.putObject("nullable").put("type", "BOOLEAN");
+        columnProps.putObject("unique").put("type", "BOOLEAN");
+        columnProps.putObject("autoIncrement").put("type", "BOOLEAN");
+
+        ArrayNode requiredColumnFields = columnObject.putArray("required");
+        requiredColumnFields.add("columnName");
+        requiredColumnFields.add("dataType");
+        requiredColumnFields.add("primaryKey");
+        requiredColumnFields.add("foreignKey");
+        requiredColumnFields.add("referencesTable");
+        requiredColumnFields.add("referencesColumn");
+        requiredColumnFields.add("nullable");
+        requiredColumnFields.add("unique");
+        requiredColumnFields.add("autoIncrement");
+
+        ArrayNode requiredTableFields = tableObject.putArray("required");
+        requiredTableFields.add("tableName");
+        requiredTableFields.add("columns");
+
+        return rootArray;
     }
 }

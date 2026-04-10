@@ -15,4 +15,6 @@ public interface ExamRepository {
     List<Exam> findByClassId(Long classId);
 
     List<Exam> findPublishedExamsByStudentId(Long studentId);
+
+    boolean existsBySpecificationId(Long specificationId);
 }

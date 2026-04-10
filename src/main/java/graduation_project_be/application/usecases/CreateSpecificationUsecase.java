@@ -23,14 +23,19 @@ public class CreateSpecificationUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
+
     @Transactional
     public SpecificationResponse execute(CreateSpecificationRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
         LocalDateTime now = LocalDateTime.now();
         boolean hasDdlScript = request.ddlScript() != null && !request.ddlScript().isBlank();
+        boolean hasSchemaJson = request.schemaJson() != null && !request.schemaJson().isNull();
 
         if (!hasDdlScript) {
             throw new BadRequestException("ddlScript must be provided");
+        }
+        if (!hasSchemaJson) {
+            throw new BadRequestException("schemaJson must be provided");
         }
 
         validateSpecificationSchema(request, currentUserId);
@@ -50,7 +55,7 @@ public class CreateSpecificationUsecase {
         ExamSpecification specification = ExamSpecification.builder()
                 .name(request.name())
                 .ddlScript(request.ddlScript())
-                .schemaJson(request.schemaJson() == null ? null : request.schemaJson().toString())
+                .schemaJson(request.schemaJson().toString())
                 .description(request.description())
                 .createdBy(currentUserId)
                 .datasets(datasets)

@@ -310,7 +310,10 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService) {
-        return new CreateSpecificationUsecase(examSpecificationRepository, currentUserService, examSchemaService);
+        return new CreateSpecificationUsecase(
+                examSpecificationRepository,
+                currentUserService,
+                examSchemaService);
     }
 
     @Bean

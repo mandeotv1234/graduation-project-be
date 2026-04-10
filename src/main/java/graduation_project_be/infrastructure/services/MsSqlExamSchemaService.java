@@ -262,6 +262,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String sql = "SELECT t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, " +
                 "c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, " +
                 "CASE WHEN kcu_pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey, " +
+                "CASE WHEN kcu_uq.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsUnique, " +
+                "CASE WHEN sc.is_identity = 1 THEN 1 ELSE 0 END AS IsIdentity, " +
                 "fk.REFERENCED_TABLE_NAME AS ReferencedTable, " +
                 "fk.REFERENCED_COLUMN_NAME AS ReferencedColumn " +
                 "FROM INFORMATION_SCHEMA.TABLES t " +
@@ -273,6 +275,15 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 +
                 "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_pk " +
                 "    ON kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
+                // Unique constraint
+                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_uq " +
+                "    ON tc_uq.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_uq.TABLE_NAME = t.TABLE_NAME AND tc_uq.CONSTRAINT_TYPE = 'UNIQUE' "
+                +
+                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_uq " +
+                "    ON kcu_uq.CONSTRAINT_NAME = tc_uq.CONSTRAINT_NAME AND kcu_uq.COLUMN_NAME = c.COLUMN_NAME " +
+                // SQL Server identity
+                "LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA " +
+                "LEFT JOIN sys.columns sc ON sc.object_id = st.object_id AND sc.name = c.COLUMN_NAME " +
                 // Foreign key (resolve referenced table/column)
                 "LEFT JOIN ( " +
                 "    SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME, " +
@@ -299,6 +310,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 int maxLength = rs.getInt("CHARACTER_MAXIMUM_LENGTH");
                 boolean isNullable = "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE"));
                 boolean isPrimaryKey = rs.getBoolean("IsPrimaryKey");
+                boolean isUnique = rs.getBoolean("IsUnique");
+                boolean isIdentity = rs.getBoolean("IsIdentity");
                 String referencedTable = rs.getString("ReferencedTable");
                 String referencedColumn = rs.getString("ReferencedColumn");
                 boolean isForeignKey = referencedTable != null && !referencedTable.isBlank();
@@ -319,6 +332,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         .dataType(formattedDataType)
                         .rawDataType(rawDataType)
                         .isPrimaryKey(isPrimaryKey)
+                        // For composite PK, each single column is NOT individually unique.
+                        // We finalize PK-derived uniqueness in a second pass after reading all columns.
+                        .isUnique(isUnique)
+                        .isAutoIncrement(isIdentity)
                         .isForeignKey(isForeignKey)
                         .referencesTable(referencedTable)
                         .referencesColumn(referencedColumn)
@@ -328,7 +345,24 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 table.getColumns().add(column);
             }
 
-            return new ArrayList<>(tableMap.values());
+            List<graduation_project_be.domain.models.TableMetadata> tables = new ArrayList<>(tableMap.values());
+
+            // Apply PK-derived uniqueness only for single-column primary keys.
+            for (graduation_project_be.domain.models.TableMetadata table : tables) {
+                long pkColumnCount = table.getColumns().stream()
+                        .filter(graduation_project_be.domain.models.TableMetadata.ColumnMetadata::isPrimaryKey)
+                        .count();
+
+                if (pkColumnCount == 1) {
+                    table.getColumns().forEach(column -> {
+                        if (column.isPrimaryKey()) {
+                            column.setUnique(true);
+                        }
+                    });
+                }
+            }
+
+            return tables;
         });
     }
 

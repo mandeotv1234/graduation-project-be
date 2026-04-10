@@ -67,11 +67,15 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/specification_schema_prompt.txt")
     private Resource specificationSchemaPromptResource;
 
+    @Value("classpath:prompts/create_table_rules_prompt.txt")
+    private Resource createTableRulesPromptResource;
+
     private String systemPromptTemplate;
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
     private String selectQueryRubricPromptTemplate;
     private String specificationSchemaPromptTemplate;
+    private String createTableRulesPromptTemplate;
 
     public GeminiServiceImpl(@Value("${spring.application.gemini.api-key}") String apiKey) {
         this.apiKey = apiKey;
@@ -87,6 +91,7 @@ public class GeminiServiceImpl implements GeminiService {
             this.insertDataRubricPromptTemplate = StreamUtils.copyToString(insertDataRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.selectQueryRubricPromptTemplate = StreamUtils.copyToString(selectQueryRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.specificationSchemaPromptTemplate = StreamUtils.copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.createTableRulesPromptTemplate = StreamUtils.copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -221,13 +226,27 @@ public class GeminiServiceImpl implements GeminiService {
         HttpClient client = getOrCreateHttpClient();
         if (client == null) return null;
 
-        String basePrompt = "INSERT_DATA".equalsIgnoreCase(questionType)
-            ? buildInsertRubricPrompt(correctQuery, questionContent, totalPoints)
-            : "SELECT_QUERY".equalsIgnoreCase(questionType)
-                ? buildSelectRubricPrompt(correctQuery, questionContent, totalPoints, priorQuestionContext)
-                : buildCreateTableRubricPrompt(correctQuery, questionContent, totalPoints);
+        String basePrompt;
+        if ("CREATE_TABLE_RULES".equalsIgnoreCase(questionType)) {
+            basePrompt = buildCreateTableRulesPrompt(correctQuery, questionContent, totalPoints);
+        } else if ("INSERT_DATA".equalsIgnoreCase(questionType)) {
+            basePrompt = buildInsertRubricPrompt(correctQuery, questionContent, totalPoints);
+        } else if ("SELECT_QUERY".equalsIgnoreCase(questionType)) {
+            basePrompt = buildSelectRubricPrompt(correctQuery, questionContent, totalPoints, priorQuestionContext);
+        } else {
+            basePrompt = buildCreateTableRubricPrompt(correctQuery, questionContent, totalPoints);
+        }
 
         try {
+            if ("CREATE_TABLE_RULES".equalsIgnoreCase(questionType)) {
+                String rubricJson = callGeminiForJson(client, basePrompt);
+                if (rubricJson == null) {
+                    return null;
+                }
+                logGeneratedRubric(questionType, rubricJson);
+                return rubricJson;
+            }
+
             if ("CREATE_TABLE".equalsIgnoreCase(questionType)) {
                 String prompt = basePrompt;
                 String latestJson = null;
@@ -1080,6 +1099,14 @@ public class GeminiServiceImpl implements GeminiService {
 
     private String buildCreateTableRubricPrompt(String correctQuery, String questionContent, double totalPoints) {
         return String.format(createTableRubricPromptTemplate,
+                questionContent != null ? questionContent : "Không có nội dung câu hỏi",
+                correctQuery,
+                totalPoints,
+                totalPoints);
+    }
+
+    private String buildCreateTableRulesPrompt(String correctQuery, String questionContent, double totalPoints) {
+        return String.format(createTableRulesPromptTemplate,
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
                 totalPoints,

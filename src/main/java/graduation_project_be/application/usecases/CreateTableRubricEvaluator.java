@@ -31,7 +31,7 @@ final class CreateTableRubricEvaluator {
         boolean positiveOnlyScoring = settings.path("positive_only_scoring").asBoolean(false);
         boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(
                 settings.path("syntax_error_action").asText("PARTIAL"));
-        boolean deductionMode = isDeductionMode(settings, tables);
+        boolean deductionMode = isDeductionMode(settings, tables, gradingRules);
         boolean skipChildChecksWhenTableMissing = deductionMode
                 && settings.path("skip_child_checks_when_table_missing").asBoolean(true);
 
@@ -321,8 +321,12 @@ final class CreateTableRubricEvaluator {
                 List.copyOf(details));
     }
 
-    static boolean isDeductionMode(JsonNode settings, JsonNode tables) {
+    static boolean isDeductionMode(JsonNode settings, JsonNode tables, JsonNode gradingRules) {
         if (settings.path("deduction_mode").asBoolean(false)) {
+            return true;
+        }
+
+        if (gradingRules != null && gradingRules.isArray() && gradingRules.size() > 0) {
             return true;
         }
 

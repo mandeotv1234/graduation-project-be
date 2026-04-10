@@ -557,6 +557,26 @@ public class ExamController {
                 }
         }
 
+        @PostMapping("/{examId}/build-create-tables")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> buildCreateTables(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid BuildCreateTablesRequestDto requestDto) {
+                try {
+                        BuildCreateTablesResponse result = rubricTestingUsecase.buildCreateTablesFromAnswer(
+                                        examId,
+                                        requestDto.correctQuery());
+                        return ResponseEntity.ok(ResponseDto.of(
+                                        BuildCreateTablesResponseDto.fromResponse(result),
+                                        "OK",
+                                        "Build create tables completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
+                                                        "Lỗi tạo cấu trúc tables CREATE: " + e.getMessage()));
+                }
+        }
+
         @PostMapping("/test-grade")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> testGrade(

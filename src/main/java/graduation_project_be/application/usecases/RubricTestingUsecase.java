@@ -9,6 +9,7 @@ import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequ
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
 import graduation_project_be.application.usecases.request.TestGradeSelectRequest;
+import graduation_project_be.application.usecases.response.BuildCreateTablesResponse;
 import graduation_project_be.application.usecases.response.BuildInsertTablesResponse;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.application.usecases.response.ExecuteSelectTestCaseResponse;
@@ -45,6 +46,8 @@ public class RubricTestingUsecase {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern INSERT_INTO_PATTERN = Pattern.compile(
             "(?i)\\bINSERT\\s+INTO\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
+        private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
+            "(?i)\\bCREATE\\s+TABLE\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
     private final GeminiService geminiService;
     private final ExamSchemaService examSchemaService;
@@ -455,6 +458,156 @@ public class RubricTestingUsecase {
             }
 
             return new BuildInsertTablesResponse(
+                    tables,
+                    preparedCount,
+                    targetTables.size());
+        } finally {
+            try {
+                examSchemaService.dropSchema(schemaName);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    public BuildCreateTablesResponse buildCreateTablesFromAnswer(Long examId, String correctQuery) {
+        if (correctQuery == null || correctQuery.isBlank()) {
+            throw new IllegalArgumentException("Script dap an giao vien (correctQuery) khong duoc de trong.");
+        }
+
+        List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(examId);
+
+        String schemaName = "test_build_create_" + System.currentTimeMillis();
+
+        try {
+            examSchemaService.resetSchema(schemaName);
+
+            String normalizedCorrectSql = normalizeSqlForExecution(correctQuery);
+            if (normalizedCorrectSql.isBlank()) {
+                throw new IllegalArgumentException("SQL dap an khong hop le sau khi chuan hoa.");
+            }
+
+            List<Map<String, Object>> details = new ArrayList<>();
+            int preparedCount = executeExistingAnswersForSchema(
+                    examQuestions,
+                    schemaName,
+                    details,
+                    "BUILD_CREATE",
+                    true,
+                    normalizedCorrectSql);
+
+            List<TableMetadata> baselineMetadata = examSchemaService.extractMetadata(schemaName);
+            Set<String> baselineTableNames = new LinkedHashSet<>();
+            for (TableMetadata tableMetadata : baselineMetadata) {
+                if (tableMetadata == null || tableMetadata.getTableName() == null) {
+                    continue;
+                }
+                baselineTableNames.add(tableMetadata.getTableName().toLowerCase(Locale.ROOT));
+            }
+
+            examSchemaService.executeSql(schemaName, normalizedCorrectSql);
+
+            List<TableMetadata> metadataList = examSchemaService.extractMetadata(schemaName);
+            Map<String, TableMetadata> metadataByName = new LinkedHashMap<>();
+            for (TableMetadata tableMetadata : metadataList) {
+                if (tableMetadata == null || tableMetadata.getTableName() == null) {
+                    continue;
+                }
+                metadataByName.put(
+                        tableMetadata.getTableName().toLowerCase(Locale.ROOT),
+                        tableMetadata);
+            }
+
+            Set<String> targetTables = extractCreatedTableNames(normalizedCorrectSql);
+            if (targetTables.isEmpty()) {
+                targetTables = extractCreatedTableNames(correctQuery);
+            }
+
+            if (targetTables.isEmpty()) {
+                for (TableMetadata tableMetadata : metadataList) {
+                    if (tableMetadata == null || tableMetadata.getTableName() == null) {
+                        continue;
+                    }
+                    String normalizedName = tableMetadata.getTableName().toLowerCase(Locale.ROOT);
+                    if (!baselineTableNames.contains(normalizedName)) {
+                        targetTables.add(tableMetadata.getTableName());
+                    }
+                }
+            }
+
+            if (targetTables.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Khong nhan dien duoc bang CREATE TABLE tu SQL dap an. Vui long kiem tra lai correctQuery.");
+            }
+
+            List<BuildCreateTablesResponse.CreateTableConfig> tables = new ArrayList<>();
+            for (String tableName : targetTables) {
+                String safeTableName;
+                try {
+                    safeTableName = safeIdentifier(tableName, "tableName");
+                } catch (Exception ignored) {
+                    continue;
+                }
+
+                TableMetadata tableMetadata = metadataByName.get(safeTableName.toLowerCase(Locale.ROOT));
+                if (tableMetadata == null) {
+                    continue;
+                }
+
+                List<BuildCreateTablesResponse.CreateColumnConfig> columns = new ArrayList<>();
+                List<String> primaryKeyColumns = new ArrayList<>();
+                Map<String, CreateForeignKeyGroup> foreignKeyGroups = new LinkedHashMap<>();
+
+                for (TableMetadata.ColumnMetadata column : tableMetadata.getColumns()) {
+                    columns.add(new BuildCreateTablesResponse.CreateColumnConfig(
+                            column.getColumnName(),
+                            column.getRawDataType(),
+                            column.isNullable()));
+
+                    if (column.isPrimaryKey()) {
+                        primaryKeyColumns.add(column.getColumnName());
+                    }
+
+                    String referencesTable = column.getReferencesTable();
+                    if (!column.isForeignKey() || referencesTable == null || referencesTable.isBlank()) {
+                        continue;
+                    }
+
+                    String groupKey = referencesTable.trim().toLowerCase(Locale.ROOT);
+                    CreateForeignKeyGroup group = foreignKeyGroups.computeIfAbsent(
+                            groupKey,
+                            key -> new CreateForeignKeyGroup(referencesTable.trim()));
+                    group.columns().add(column.getColumnName());
+
+                    String referencesColumn = column.getReferencesColumn();
+                    if (referencesColumn != null && !referencesColumn.isBlank()) {
+                        group.referencesColumns().add(referencesColumn);
+                    }
+                }
+
+                List<BuildCreateTablesResponse.CreateConstraintConfig> constraints = new ArrayList<>();
+                if (!primaryKeyColumns.isEmpty()) {
+                    constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                            "PRIMARY_KEY",
+                            List.copyOf(primaryKeyColumns),
+                            null,
+                            null));
+                }
+
+                for (CreateForeignKeyGroup group : foreignKeyGroups.values()) {
+                    constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                            "FOREIGN_KEY",
+                            List.copyOf(group.columns()),
+                            group.referencesTable(),
+                            group.referencesColumns().isEmpty() ? null : List.copyOf(group.referencesColumns())));
+                }
+
+                tables.add(new BuildCreateTablesResponse.CreateTableConfig(
+                        tableMetadata.getTableName(),
+                        columns,
+                        constraints));
+            }
+
+            return new BuildCreateTablesResponse(
                     tables,
                     preparedCount,
                     targetTables.size());
@@ -2249,6 +2402,48 @@ public class RubricTestingUsecase {
         }
 
         return tableNames;
+    }
+
+    private Set<String> extractCreatedTableNames(String sql) {
+        Set<String> tableNames = new LinkedHashSet<>();
+        if (sql == null || sql.isBlank()) {
+            return tableNames;
+        }
+
+        Matcher matcher = CREATE_TABLE_PATTERN.matcher(sql);
+        while (matcher.find()) {
+            String rawIdentifier = matcher.group(1);
+            String tableName = extractLastIdentifier(rawIdentifier);
+            if (tableName != null && !tableName.isBlank()) {
+                tableNames.add(tableName);
+            }
+        }
+
+        return tableNames;
+    }
+
+    private static final class CreateForeignKeyGroup {
+        private final String referencesTable;
+        private final List<String> columns;
+        private final List<String> referencesColumns;
+
+        private CreateForeignKeyGroup(String referencesTable) {
+            this.referencesTable = referencesTable;
+            this.columns = new ArrayList<>();
+            this.referencesColumns = new ArrayList<>();
+        }
+
+        private String referencesTable() {
+            return referencesTable;
+        }
+
+        private List<String> columns() {
+            return columns;
+        }
+
+        private List<String> referencesColumns() {
+            return referencesColumns;
+        }
     }
 
     private String extractLastIdentifier(String identifier) {

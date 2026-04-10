@@ -71,6 +71,7 @@ public class GetExamSpecificationUsecase {
                     .name(specification.getName())
                     .ddlScript(specification.getDdlScript())
                     .schemaJson(specification.getSchemaJson())
+                    .schemaDiagram(specification.getSchemaDiagram())
                     .description(specification.getDescription())
                     .entities(specification.getEntities()) // Preserving entities!
                     .datasets(visibleDatasets)

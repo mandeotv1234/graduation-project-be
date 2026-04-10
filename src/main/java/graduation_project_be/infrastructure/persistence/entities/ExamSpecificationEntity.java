@@ -31,6 +31,9 @@ public class ExamSpecificationEntity {
     @Column(name = "schema_json", columnDefinition = "TEXT")
     private String schemaJson;
 
+    @Column(name = "schema_diagram", columnDefinition = "TEXT")
+    private String schemaDiagram;
+
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
@@ -59,6 +62,7 @@ public class ExamSpecificationEntity {
                 .name(name)
                 .ddlScript(ddlScript)
                 .schemaJson(schemaJson)
+                .schemaDiagram(schemaDiagram)
                 .description(description)
                 .entities(entityModels)
                 .datasets(datasets == null ? List.of() : datasets.stream().map(SpecDatasetEntity::toModel).toList())
@@ -74,6 +78,7 @@ public class ExamSpecificationEntity {
                 .name(model.getName())
                 .ddlScript(model.getDdlScript())
                 .schemaJson(model.getSchemaJson())
+                .schemaDiagram(model.getSchemaDiagram())
                 .description(model.getDescription())
                 .createdBy(model.getCreatedBy())
                 .createdAt(model.getCreatedAt())

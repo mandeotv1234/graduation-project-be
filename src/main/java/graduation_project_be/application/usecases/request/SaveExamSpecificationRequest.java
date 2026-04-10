@@ -6,7 +6,7 @@ public record SaveExamSpecificationRequest(
         Long examId,
         String name,
         String ddlScript,
-        String schemaJson,
+        String schemaDiagram,
         String description,
         List<SpecEntityRequest> entities,
         List<SpecDatasetRequest> datasets) {

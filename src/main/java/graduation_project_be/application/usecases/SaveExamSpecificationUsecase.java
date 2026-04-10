@@ -58,9 +58,10 @@ public class SaveExamSpecificationUsecase {
 
         ExamSpecification specification = ExamSpecification.builder()
                 .id(specificationId)
-                .name(request.name())
+                .name(current.getName())
                 .ddlScript(request.ddlScript())
-                .schemaJson(request.schemaJson())
+                .schemaJson(current.getSchemaJson())
+                .schemaDiagram(request.schemaDiagram())
                 .description(request.description())
                 .entities(entities)
                 .datasets(datasets)

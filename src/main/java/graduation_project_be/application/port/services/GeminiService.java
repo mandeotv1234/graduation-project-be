@@ -23,3 +23,4 @@ public interface GeminiService {
 
     record GeneratedQuestion(String correctQuery, String verifyScript) {}
 }
+

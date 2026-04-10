@@ -30,15 +30,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -154,6 +157,9 @@ public class GradeExamUsecase {
                                     specification, schemaName, question, studentQuery);
                             isCorrect = decision.isCorrect();
                             errorMessage = decision.errorMessage();
+                            if (submission != null) {
+                                submission.setScoreEarned(decision.scoreEarned());
+                            }
                         } else {
                             try {
                                 examSchemaService.executeSql(schemaName, studentQuery);
@@ -193,6 +199,7 @@ public class GradeExamUsecase {
                 BigDecimal scoreEarned;
                 if (question.getQuestionType() == QuestionType.CREATE_TABLE
                         || question.getQuestionType() == QuestionType.INSERT_DATA
+                    || question.getQuestionType() == QuestionType.SELECT_QUERY
                         || question.getQuestionType() == QuestionType.STORED_PROCEDURE
                         || question.getQuestionType() == QuestionType.FUNCTION
                         || question.getQuestionType() == QuestionType.TRIGGER) {
@@ -434,8 +441,7 @@ public class GradeExamUsecase {
         }
 
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(question.getGradingRubric());
+            JsonNode root = objectMapper.readTree(question.getGradingRubric());
             String action = root
                     .path("grading_payload")
                     .path("grading_settings")
@@ -446,221 +452,6 @@ public class GradeExamUsecase {
             log.warn("Cannot parse syntax_error_action for Q{}: {}", question.getId(), e.getMessage());
             return false;
         }
-    }
-
-    /**
-     * Grade CREATE TABLE using the JSON rubric stored in question.gradingRubric.
-     * Extracts actual table metadata from the student schema and scores against rubric rules.
-     */
-    private boolean gradeCreateTableByRubric(String schemaName, ExamQuestion question, ExamSubmission submission) {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        com.fasterxml.jackson.databind.JsonNode rubric;
-        try {
-            rubric = mapper.readTree(question.getGradingRubric());
-        } catch (Exception e) {
-            throw new RuntimeException("Invalid rubric JSON: " + e.getMessage());
-        }
-
-        List<TableMetadata> actualTables = examSchemaService.extractMetadata(schemaName);
-        com.fasterxml.jackson.databind.JsonNode payload = rubric.path("grading_payload");
-        com.fasterxml.jackson.databind.JsonNode settings = payload.path("grading_settings");
-        boolean caseSensitive = settings.path("case_sensitive_names").asBoolean(false);
-        boolean positiveOnlyScoring = settings.path("positive_only_scoring").asBoolean(false);
-        boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(
-            settings.path("syntax_error_action").asText("PARTIAL"));
-
-        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
-        BigDecimal earnedTotal = BigDecimal.ZERO;
-        StringBuilder errorBuilder = new StringBuilder();
-        boolean allPassed = true;
-
-        com.fasterxml.jackson.databind.JsonNode tables = payload.path("tables");
-        for (int i = 0; i < tables.size(); i++) {
-            com.fasterxml.jackson.databind.JsonNode rubricTable = tables.get(i);
-            String expectedName = rubricTable.path("expected_name").asText("");
-            double existencePoints = rubricTable.path("existence_points").asDouble(0);
-            String missingAction = rubricTable.path("missing_penalty_action").asText("SKIP_TABLE");
-
-            // Find actual table
-            TableMetadata actualTable = actualTables.stream()
-                    .filter(t -> caseSensitive
-                            ? t.getTableName().equals(expectedName)
-                            : t.getTableName().equalsIgnoreCase(expectedName))
-                    .findFirst().orElse(null);
-
-            if (actualTable == null) {
-                allPassed = false;
-                errorBuilder.append(String.format("Thiếu bảng %s. ", expectedName));
-                if ("SKIP_TABLE".equals(missingAction)) {
-                    continue; // 0 points for this table
-                }
-                continue;
-            }
-
-            // Table exists → award existence points
-            earnedTotal = earnedTotal.add(BigDecimal.valueOf(existencePoints));
-
-            // Grade columns
-            com.fasterxml.jackson.databind.JsonNode rubricCols = rubricTable.path("columns");
-            for (int j = 0; j < rubricCols.size(); j++) {
-                com.fasterxml.jackson.databind.JsonNode rc = rubricCols.get(j);
-                String colName = rc.path("name").asText("");
-                String expectedType = rc.path("expected_type").asText("");
-                double colPoints = rc.path("points").asDouble(0);
-                double typePenalty = rc.path("type_mismatch_penalty").asDouble(0);
-
-                ColumnMetadata actualCol = actualTable.getColumns().stream()
-                        .filter(c -> caseSensitive
-                                ? c.getColumnName().equals(colName)
-                                : c.getColumnName().equalsIgnoreCase(colName))
-                        .findFirst().orElse(null);
-
-                if (actualCol == null) {
-                    allPassed = false;
-                    if (positiveOnlyScoring) {
-                        errorBuilder.append(String.format("Bảng %s: thiếu cột %s (không cộng điểm mục này). ", expectedName, colName));
-                    } else {
-                        errorBuilder.append(String.format("Bảng %s: thiếu cột %s (-%s đ). ", expectedName, colName, colPoints));
-                    }
-                } else {
-                    // Check type
-                    boolean typeMatch = matchesSqlType(actualCol.getRawDataType(), expectedType);
-                    if (typeMatch) {
-                        earnedTotal = earnedTotal.add(BigDecimal.valueOf(colPoints));
-                    } else {
-                        double awarded = positiveOnlyScoring
-                                ? 0
-                                : Math.max(0, colPoints - typePenalty);
-                        earnedTotal = earnedTotal.add(BigDecimal.valueOf(awarded));
-                        allPassed = false;
-                        if (positiveOnlyScoring) {
-                            errorBuilder.append(String.format("Bảng %s: cột %s sai kiểu (Kỳ vọng: %s, Thực tế: %s, không cộng điểm mục này). ",
-                                    expectedName, colName, expectedType, actualCol.getDataType()));
-                        } else {
-                            errorBuilder.append(String.format("Bảng %s: cột %s sai kiểu (Kỳ vọng: %s, Thực tế: %s, -%s đ). ",
-                                    expectedName, colName, expectedType, actualCol.getDataType(), typePenalty));
-                        }
-                    }
-                }
-            }
-
-            // Grade constraints
-            com.fasterxml.jackson.databind.JsonNode rubricConstraints = rubricTable.path("constraints");
-            for (int j = 0; j < rubricConstraints.size(); j++) {
-                com.fasterxml.jackson.databind.JsonNode rc = rubricConstraints.get(j);
-                String cType = rc.path("type").asText("");
-                double cPoints = rc.path("points").asDouble(0);
-                double cPenalty = rc.path("missing_penalty").asDouble(0);
-
-                boolean constraintFound = false;
-
-                switch (cType) {
-                    case "PRIMARY_KEY":
-                        com.fasterxml.jackson.databind.JsonNode pkCols = rc.path("columns");
-                        constraintFound = true;
-                        for (int k = 0; k < pkCols.size(); k++) {
-                            String pkColName = pkCols.get(k).asText();
-                            boolean pkMatch = actualTable.getColumns().stream()
-                                    .anyMatch(c -> (caseSensitive
-                                            ? c.getColumnName().equals(pkColName)
-                                            : c.getColumnName().equalsIgnoreCase(pkColName))
-                                            && c.isPrimaryKey());
-                            if (!pkMatch) {
-                                constraintFound = false;
-                                break;
-                            }
-                        }
-                        break;
-                    case "FOREIGN_KEY":
-                        String refTable = rc.path("references_table").asText("");
-                        com.fasterxml.jackson.databind.JsonNode fkCols = rc.path("columns");
-                        constraintFound = true;
-                        for (int k = 0; k < fkCols.size(); k++) {
-                            String fkColName = fkCols.get(k).asText();
-                            boolean fkMatch = actualTable.getColumns().stream()
-                                    .anyMatch(c -> (caseSensitive
-                                            ? c.getColumnName().equals(fkColName)
-                                            : c.getColumnName().equalsIgnoreCase(fkColName))
-                                            && c.isForeignKey()
-                                            && (caseSensitive
-                                                ? refTable.equals(c.getReferencesTable())
-                                                : refTable.equalsIgnoreCase(c.getReferencesTable())));
-                            if (!fkMatch) {
-                                constraintFound = false;
-                                break;
-                            }
-                        }
-                        break;
-                    default:
-                        // UNIQUE, CHECK, DEFAULT — cannot easily verify from metadata alone, assume present
-                        constraintFound = true;
-                        break;
-                }
-
-                if (constraintFound) {
-                    earnedTotal = earnedTotal.add(BigDecimal.valueOf(cPoints));
-                } else {
-                    allPassed = false;
-                    double awarded = positiveOnlyScoring
-                            ? 0
-                            : Math.max(0, cPoints - cPenalty);
-                    earnedTotal = earnedTotal.add(BigDecimal.valueOf(awarded));
-                    if (positiveOnlyScoring) {
-                        errorBuilder.append(String.format("Bảng %s: thiếu ràng buộc %s (không cộng điểm mục này). ", expectedName, cType));
-                    } else {
-                        errorBuilder.append(String.format("Bảng %s: thiếu ràng buộc %s (-%s đ). ", expectedName, cType, cPenalty));
-                    }
-                }
-            }
-        }
-
-        earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
-        if (failAllMode && !allPassed) {
-            earnedTotal = BigDecimal.ZERO;
-            if (errorBuilder.length() > 0) {
-                errorBuilder.insert(0, "Rubric đang để FAIL_ALL: có lỗi nên câu này bị 0 điểm toàn bộ. ");
-            } else {
-                errorBuilder.append("Rubric đang để FAIL_ALL: có lỗi nên câu này bị 0 điểm toàn bộ.");
-            }
-        }
-        if (earnedTotal.compareTo(totalPoints) > 0) earnedTotal = totalPoints;
-        if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) earnedTotal = BigDecimal.ZERO;
-
-        if (submission != null) {
-            submission.setScoreEarned(earnedTotal);
-            if (!allPassed) {
-                submission.setErrorMessage(errorBuilder.toString().trim());
-            }
-        }
-
-        return allPassed;
-    }
-
-    private boolean matchesSqlType(String actualType, String expectedType) {
-        return normalizeSqlType(actualType).equals(normalizeSqlType(expectedType));
-    }
-
-    private String normalizeSqlType(String sqlType) {
-        if (sqlType == null) {
-            return "";
-        }
-
-        String normalized = sqlType.trim().toUpperCase(Locale.ROOT);
-        if (normalized.isBlank()) {
-            return "";
-        }
-
-        int parenIndex = normalized.indexOf('(');
-        if (parenIndex >= 0) {
-            normalized = normalized.substring(0, parenIndex);
-        }
-
-        int spaceIndex = normalized.indexOf(' ');
-        if (spaceIndex >= 0) {
-            normalized = normalized.substring(0, spaceIndex);
-        }
-
-        return normalized.trim();
     }
 
     private boolean gradeCreateTableByRubricV2(String schemaName, ExamQuestion question, ExamSubmission submission) {
@@ -790,312 +581,207 @@ public class GradeExamUsecase {
             throw new RuntimeException("Invalid rubric JSON: " + e.getMessage());
         }
 
-        JsonNode payload = rubric.path("grading_payload");
+        JsonNode payload = resolveInsertPayload(rubric);
         JsonNode settings = payload.path("grading_settings");
+        JsonNode gradingRules = resolveInsertGradingRules(rubric, payload);
         boolean trimSpaces = readBooleanSetting(settings.path("trim_string_spaces"), true);
         boolean caseInsensitive = readBooleanSetting(settings.path("case_insensitive_data"), false);
+        boolean hasLegacyExtraRowSettings = hasLegacyInsertExtraRowSettings(settings);
         boolean allowExtraRows = readBooleanSetting(settings.path("allow_extra_rows"), false);
         double penaltyPerExtraRow = Math.max(0d, readDoubleSetting(settings.path("penalty_per_extra_row"), 0.1d));
-        boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(settings.path("syntax_error_action").asText("PARTIAL"));
+        boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(settings.path("syntax_error_action").asText("PARTIAL"))
+            || hasInsertFailAllRule(gradingRules);
 
-        boolean deductionModeInsert = true;
-        if (deductionModeInsert) {
-            BigDecimal totalPointsDed = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
-            BigDecimal earnedTotalDed = BigDecimal.ZERO;
-            StringBuilder errorBuilderDed = new StringBuilder();
-            boolean allPassedDed = true;
+        return gradeInsertDataByRubricDeduction(
+                schemaName,
+                question,
+                submission,
+                rubric,
+                payload,
+                gradingRules,
+                trimSpaces,
+                caseInsensitive,
+                hasLegacyExtraRowSettings,
+                allowExtraRows,
+                penaltyPerExtraRow,
+                failAllMode);
+    }
 
-            JsonNode datasetsDed = payload.path("tables");
-            if (datasetsDed.isMissingNode() || !datasetsDed.isArray() || datasetsDed.size() == 0) {
-                datasetsDed = payload.path("expected_datasets");
-            }
-
-            for (int i = 0; i < datasetsDed.size(); i++) {
-                JsonNode dataset = datasetsDed.get(i);
-                String tableName = dataset.path("table_name").asText("").trim();
-                if (tableName.isBlank()) {
-                    continue;
-                }
-
-                double tablePoints = Math.max(0d, dataset.path("table_points").asDouble(0));
-                JsonNode expectedRows = dataset.path("expected_data");
-                if (expectedRows == null || expectedRows.isMissingNode() || !expectedRows.isArray()) {
-                    expectedRows = dataset.path("rows");
-                }
-                if (expectedRows == null || expectedRows.isMissingNode() || !expectedRows.isArray() || expectedRows.size() == 0) {
-                    earnedTotalDed = earnedTotalDed.add(BigDecimal.valueOf(tablePoints));
-                    continue;
-                }
-
-                double rowPenalty = dataset.path("missing_row_penalty").asDouble(0);
-                if (rowPenalty <= 0) {
-                    rowPenalty = dataset.path("points_per_row").asDouble(0);
-                }
-                if (rowPenalty <= 0) {
-                    rowPenalty = tablePoints / Math.max(1, expectedRows.size());
-                }
-                rowPenalty = Math.max(0d, rowPenalty);
-
-                boolean allOrNothing = "ALL_OR_NOTHING".equalsIgnoreCase(
-                        dataset.path("row_grading_strategy").asText("PARTIAL_BY_COLUMN"));
-
-                List<String> columnsToGrade = new ArrayList<>();
-                List<String> primaryKeys = new ArrayList<>();
-                Map<String, Double> columnPenalties = new HashMap<>();
-                Map<String, String> columnMatchTypes = new HashMap<>();
-
-                JsonNode columnsConfig = dataset.path("columns_config");
-                if (columnsConfig.isArray()) {
-                    for (int c = 0; c < columnsConfig.size(); c++) {
-                        JsonNode cc = columnsConfig.get(c);
-                        String columnName = cc.path("name").asText("").trim();
-                        if (columnName.isBlank()) {
-                            continue;
-                        }
-                        columnsToGrade.add(columnName);
-                        columnPenalties.put(columnName, Math.max(0d, cc.path("points").asDouble(0)));
-                        columnMatchTypes.put(columnName, cc.path("match_type").asText("EXACT"));
-                        if (cc.path("is_primary_key").asBoolean(false)) {
-                            primaryKeys.add(columnName);
-                        }
-                    }
-                }
-
-                if (primaryKeys.isEmpty()) {
-                    JsonNode pksNode = dataset.path("primary_keys");
-                    if (pksNode.isArray()) {
-                        for (int p = 0; p < pksNode.size(); p++) {
-                            String pk = pksNode.get(p).asText("").trim();
-                            if (!pk.isBlank()) {
-                                primaryKeys.add(pk);
-                            }
-                        }
-                    }
-                }
-
-                if (columnsToGrade.isEmpty()) {
-                    JsonNode columnsToGradeNode = dataset.path("columns_to_grade");
-                    if (columnsToGradeNode.isArray()) {
-                        for (int c = 0; c < columnsToGradeNode.size(); c++) {
-                            String col = columnsToGradeNode.get(c).asText("").trim();
-                            if (!col.isBlank()) {
-                                columnsToGrade.add(col);
-                            }
-                        }
-                    }
-                }
-
-                if (columnsToGrade.isEmpty()) {
-                    expectedRows.get(0).fieldNames().forEachRemaining(columnsToGrade::add);
-                }
-
-                if (columnsToGrade.isEmpty()) {
-                    earnedTotalDed = earnedTotalDed.add(BigDecimal.valueOf(tablePoints));
-                    continue;
-                }
-
-                double fallbackColPenalty = rowPenalty / Math.max(1, columnsToGrade.size());
-                for (String col : columnsToGrade) {
-                    columnPenalties.putIfAbsent(col, fallbackColPenalty);
-                    columnMatchTypes.putIfAbsent(col, "EXACT");
-                }
-
-                List<Map<String, Object>> actualRows;
-                try {
-                    actualRows = examSchemaService.executeAdminSql("SELECT * FROM [" + schemaName + "]." + tableName).getResultSet();
-                } catch (Exception e) {
-                    allPassedDed = false;
-                    errorBuilderDed.append(String.format("Bang %s bi loi hoac khong ton tai. ", tableName));
-                    continue;
-                }
-
-                double earnedTable = tablePoints;
-                boolean[] usedActualRows = new boolean[actualRows.size()];
-
-                for (int r = 0; r < expectedRows.size(); r++) {
-                    JsonNode expectedRow = expectedRows.get(r);
-                    Map<String, Object> actualRow = null;
-                    int actualRowIdx = -1;
-
-                    for (int idx = 0; idx < actualRows.size(); idx++) {
-                        if (usedActualRows[idx]) {
-                            continue;
-                        }
-                        Map<String, Object> candidate = actualRows.get(idx);
-                        boolean pkMatch = true;
-                        if (!primaryKeys.isEmpty()) {
-                            for (String pk : primaryKeys) {
-                                String cVal = normalizeValueStr(
-                                        getRowValueIgnoreCase(candidate, pk),
-                                        trimSpaces,
-                                        caseInsensitive);
-                                String eVal = normalizeValueStr(
-                                        getExpectedValueAsText(expectedRow, pk),
-                                        trimSpaces,
-                                        caseInsensitive);
-                                if (!valuesEqual(cVal, eVal)) {
-                                    pkMatch = false;
-                                    break;
-                                }
-                            }
-                        } else {
-                            pkMatch = false;
-                            for (String col : columnsToGrade) {
-                                String cVal = normalizeValueStr(
-                                        getRowValueIgnoreCase(candidate, col),
-                                        trimSpaces,
-                                        caseInsensitive);
-                                String eVal = normalizeValueStr(
-                                        getExpectedValueAsText(expectedRow, col),
-                                        trimSpaces,
-                                        caseInsensitive);
-                                String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
-                                if (valuesEqualByMatchType(cVal, eVal, matchType)) {
-                                    pkMatch = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (pkMatch) {
-                            actualRow = candidate;
-                            actualRowIdx = idx;
-                            break;
-                        }
-                    }
-
-                    if (actualRow == null) {
-                        allPassedDed = false;
-                        earnedTable = Math.max(0, earnedTable - rowPenalty);
-                        continue;
-                    }
-
-                    usedActualRows[actualRowIdx] = true;
-                    double rowDeduction = 0;
-                    boolean rowMismatch = false;
-
-                    for (String col : columnsToGrade) {
-                        String aVal = normalizeValueStr(
-                                getRowValueIgnoreCase(actualRow, col),
-                                trimSpaces,
-                                caseInsensitive);
-                        String eVal = normalizeValueStr(
-                                getExpectedValueAsText(expectedRow, col),
-                                trimSpaces,
-                                caseInsensitive);
-                        String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
-                        if (!valuesEqualByMatchType(aVal, eVal, matchType)) {
-                            rowMismatch = true;
-                            if (!allOrNothing) {
-                                rowDeduction += columnPenalties.getOrDefault(col, fallbackColPenalty);
-                            }
-                        }
-                    }
-
-                    if (rowMismatch) {
-                        allPassedDed = false;
-                        double deduction = allOrNothing ? rowPenalty : rowDeduction;
-                        earnedTable = Math.max(0, earnedTable - deduction);
-                    }
-                }
-
-                int extraRows = 0;
-                for (boolean used : usedActualRows) {
-                    if (!used) {
-                        extraRows++;
-                    }
-                }
-
-                if (extraRows > 0) {
-                    allPassedDed = false;
-                    if (allowExtraRows) {
-                        double penalty = tablePoints * penaltyPerExtraRow * extraRows;
-                        earnedTable = Math.max(0, earnedTable - penalty);
-                    } else {
-                        earnedTable = 0;
-                    }
-                }
-
-                earnedTotalDed = earnedTotalDed.add(BigDecimal.valueOf(earnedTable));
-            }
-
-            earnedTotalDed = earnedTotalDed.setScale(2, RoundingMode.HALF_UP);
-            if (failAllMode && !allPassedDed) {
-                earnedTotalDed = BigDecimal.ZERO;
-                if (errorBuilderDed.length() > 0) {
-                    errorBuilderDed.insert(0, "Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo. ");
-                } else {
-                    errorBuilderDed.append("Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo.");
-                }
-            }
-            if (earnedTotalDed.compareTo(totalPointsDed) > 0) earnedTotalDed = totalPointsDed;
-            if (earnedTotalDed.compareTo(BigDecimal.ZERO) < 0) earnedTotalDed = BigDecimal.ZERO;
-
-            if (submission != null) {
-                submission.setScoreEarned(earnedTotalDed);
-                if (!allPassedDed) {
-                    submission.setErrorMessage(errorBuilderDed.toString().trim());
-                }
-            }
-
-            return allPassedDed;
-        }
-
+    private boolean gradeInsertDataByRubricDeduction(
+            String schemaName,
+            ExamQuestion question,
+            ExamSubmission submission,
+            JsonNode rubric,
+            JsonNode payload,
+            JsonNode gradingRules,
+            boolean trimSpaces,
+            boolean caseInsensitive,
+            boolean hasLegacyExtraRowSettings,
+            boolean allowExtraRows,
+            double penaltyPerExtraRow,
+            boolean failAllMode) {
         BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
         BigDecimal earnedTotal = BigDecimal.ZERO;
         StringBuilder errorBuilder = new StringBuilder();
         boolean allPassed = true;
+        boolean failAllTriggered = false;
 
-        JsonNode datasets = payload.path("expected_datasets");
-        if (datasets.isMissingNode()) {
-            datasets = payload.path("tables"); // Fallback to older format if 'expected_datasets' not used
-        }
+        JsonNode datasets = resolveInsertDatasets(rubric, payload);
+        int datasetCount = datasets.isArray() ? datasets.size() : 0;
+        double defaultTablePoints = datasetCount > 0
+                ? totalPoints.doubleValue() / datasetCount
+                : 0d;
+
+        JsonNode missingRowRule = findInsertRule(gradingRules, "ROW", "IS_MISSING");
+        JsonNode extraRowRule = findInsertRule(gradingRules, "ROW", "IS_EXTRA");
+        JsonNode cellNotEqualRule = findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
+        JsonNode cellNullRule = findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
+        JsonNode rowOrderRule = findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+
+        JsonNode rowMatchModifiers = firstNonEmptyModifiers(
+                extractInsertRuleModifiers(missingRowRule),
+                extractInsertRuleModifiers(cellNotEqualRule));
+        JsonNode cellCompareModifiers = extractInsertRuleModifiers(cellNotEqualRule);
+        JsonNode cellNullModifiers = firstNonEmptyModifiers(
+                extractInsertRuleModifiers(cellNullRule),
+                cellCompareModifiers);
 
         for (int i = 0; i < datasets.size(); i++) {
             JsonNode dataset = datasets.get(i);
-            String tableName = dataset.path("table_name").asText();
-            double tablePoints = dataset.path("table_points").asDouble(0);
-            double pointsPerRow = dataset.path("points_per_row").asDouble(0);
-            double rowPenalty = dataset.path("missing_row_penalty").asDouble(pointsPerRow);
-            if (rowPenalty <= 0) {
-                rowPenalty = pointsPerRow;
-            }
-            
-            JsonNode pksNode = dataset.path("primary_keys");
-            List<String> primaryKeys = new ArrayList<>();
-            for (int j = 0; j < pksNode.size(); j++) {
-                primaryKeys.add(pksNode.get(j).asText());
+            String tableName = dataset.path("table_name").asText("").trim();
+            if (tableName.isBlank()) {
+                continue;
             }
 
-            JsonNode columnsToGradeNode = dataset.path("columns_to_grade");
-            List<String> columnsToGrade = new ArrayList<>();
-            for (int j = 0; j < columnsToGradeNode.size(); j++) {
-                columnsToGrade.add(columnsToGradeNode.get(j).asText());
+            double tablePoints = Math.max(0d, dataset.path("table_points").asDouble(0d));
+            if (tablePoints <= 0d) {
+                tablePoints = Math.max(0d, defaultTablePoints);
             }
 
-            JsonNode expectedRows = dataset.path("rows");
-            if (expectedRows == null || expectedRows.size() == 0 || expectedRows.isMissingNode()) {
+            JsonNode expectedRows = dataset.path("expected_data");
+            if (expectedRows == null || expectedRows.isMissingNode() || !expectedRows.isArray()) {
+                expectedRows = dataset.path("rows");
+            }
+            if (expectedRows == null || expectedRows.isMissingNode() || !expectedRows.isArray() || expectedRows.size() == 0) {
                 earnedTotal = earnedTotal.add(BigDecimal.valueOf(tablePoints));
                 continue;
             }
 
-            // Retrieve all rows from the student's schema for this table
-            List<Map<String, Object>> actualRows = new ArrayList<>();
+            double rowPenalty = dataset.path("missing_row_penalty").asDouble(0d);
+            if (rowPenalty <= 0d) {
+                rowPenalty = dataset.path("points_per_row").asDouble(0d);
+            }
+            if (rowPenalty <= 0d) {
+                Double rowRulePenalty = resolveInsertRulePenaltyPoints(
+                        gradingRules,
+                        "ROW",
+                        "IS_MISSING",
+                        tablePoints);
+                if (rowRulePenalty != null && rowRulePenalty > 0d) {
+                    rowPenalty = rowRulePenalty;
+                }
+            }
+            if (rowPenalty <= 0d) {
+                rowPenalty = tablePoints / Math.max(1, expectedRows.size());
+            }
+            rowPenalty = Math.max(0d, rowPenalty);
+
+            boolean allOrNothing = "ALL_OR_NOTHING".equalsIgnoreCase(
+                    dataset.path("row_grading_strategy").asText("PARTIAL_BY_COLUMN"));
+
+            List<String> columnsToGrade = new ArrayList<>();
+            List<String> primaryKeys = new ArrayList<>();
+            Map<String, Double> columnPenalties = new HashMap<>();
+            Map<String, String> columnMatchTypes = new HashMap<>();
+
+            JsonNode columnsConfig = dataset.path("columns_config");
+            if (columnsConfig.isArray()) {
+                for (int c = 0; c < columnsConfig.size(); c++) {
+                    JsonNode cc = columnsConfig.get(c);
+                    String columnName = cc.path("name").asText("").trim();
+                    if (columnName.isBlank()) {
+                        continue;
+                    }
+
+                    if (cc.path("is_graded").asBoolean(true)) {
+                        columnsToGrade.add(columnName);
+                        columnPenalties.put(columnName, Math.max(0d, cc.path("points").asDouble(0d)));
+                        columnMatchTypes.put(columnName, cc.path("match_type").asText("EXACT"));
+                    }
+
+                    if (cc.path("is_primary_key").asBoolean(false)) {
+                        primaryKeys.add(columnName);
+                    }
+                }
+            }
+
+            if (primaryKeys.isEmpty()) {
+                JsonNode pksNode = dataset.path("primary_keys");
+                if (pksNode.isArray()) {
+                    for (int p = 0; p < pksNode.size(); p++) {
+                        String pk = pksNode.get(p).asText("").trim();
+                        if (!pk.isBlank()) {
+                            primaryKeys.add(pk);
+                        }
+                    }
+                }
+            }
+
+            if (columnsToGrade.isEmpty()) {
+                JsonNode columnsToGradeNode = dataset.path("columns_to_grade");
+                if (columnsToGradeNode.isArray()) {
+                    for (int c = 0; c < columnsToGradeNode.size(); c++) {
+                        String col = columnsToGradeNode.get(c).asText("").trim();
+                        if (!col.isBlank()) {
+                            columnsToGrade.add(col);
+                        }
+                    }
+                }
+            }
+
+            if (columnsToGrade.isEmpty() && expectedRows.size() > 0) {
+                expectedRows.get(0).fieldNames().forEachRemaining(columnsToGrade::add);
+            }
+
+            if (columnsToGrade.isEmpty()) {
+                earnedTotal = earnedTotal.add(BigDecimal.valueOf(tablePoints));
+                continue;
+            }
+
+            double fallbackColPenalty = rowPenalty / Math.max(1, columnsToGrade.size());
+            Double cellRulePenalty = resolveInsertRulePenaltyPoints(
+                    gradingRules,
+                    "CELL_VALUE",
+                    "NOT_EQUAL",
+                    tablePoints);
+            if (cellRulePenalty != null && cellRulePenalty > 0d) {
+                fallbackColPenalty = cellRulePenalty;
+            }
+
+            for (String col : columnsToGrade) {
+                columnPenalties.putIfAbsent(col, fallbackColPenalty);
+                columnMatchTypes.putIfAbsent(col, "EXACT");
+            }
+
+            List<Map<String, Object>> actualRows;
             try {
                 actualRows = examSchemaService.executeAdminSql("SELECT * FROM [" + schemaName + "]." + tableName).getResultSet();
             } catch (Exception e) {
                 allPassed = false;
-                errorBuilder.append(String.format("Bảng %s bị lỗi hoặc không tồn tại. ", tableName));
-                continue; // 0 points for this table
+                errorBuilder.append(String.format("Bang %s bi loi hoac khong ton tai. ", tableName));
+                continue;
             }
 
             double earnedTable = tablePoints;
             boolean[] usedActualRows = new boolean[actualRows.size()];
+            List<Integer> matchedActualIndexes = new ArrayList<>();
 
-            for (int j = 0; j < expectedRows.size(); j++) {
-                JsonNode expectedRow = expectedRows.get(j);
+            int missingRows = 0;
+            int wrongCells = 0;
+            int outOfOrderRows = 0;
 
-                // Find matching row by primary key
+            for (int r = 0; r < expectedRows.size(); r++) {
+                JsonNode expectedRow = expectedRows.get(r);
                 Map<String, Object> actualRow = null;
                 int actualRowIdx = -1;
 
@@ -1105,41 +791,40 @@ public class GradeExamUsecase {
                     }
 
                     Map<String, Object> candidate = actualRows.get(idx);
-                    boolean pkMatch = true;
-                    if (primaryKeys.isEmpty()) {
-                        pkMatch = false;
-                        for (String col : columnsToGrade) {
-                            String cVal = normalizeValueStr(
-                                    getRowValueIgnoreCase(candidate, col),
+                    boolean rowMatched;
+
+                    if (!primaryKeys.isEmpty()) {
+                        rowMatched = true;
+                        for (String pk : primaryKeys) {
+                            if (!valuesEqualByMatchTypeWithModifiers(
+                                    getRowValueIgnoreCase(candidate, pk),
+                                    getExpectedValueAsText(expectedRow, pk),
+                                    "EXACT",
+                                    rowMatchModifiers,
                                     trimSpaces,
-                                    caseInsensitive);
-                            String eVal = normalizeValueStr(
-                                    getExpectedValueAsText(expectedRow, col),
-                                    trimSpaces,
-                                    caseInsensitive);
-                            if (valuesEqual(cVal, eVal)) {
-                                pkMatch = true;
+                                    caseInsensitive)) {
+                                rowMatched = false;
                                 break;
                             }
                         }
                     } else {
-                        for (String pk : primaryKeys) {
-                            String cVal = normalizeValueStr(
-                                    getRowValueIgnoreCase(candidate, pk),
+                        rowMatched = false;
+                        for (String col : columnsToGrade) {
+                            String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
+                            if (valuesEqualByMatchTypeWithModifiers(
+                                    getRowValueIgnoreCase(candidate, col),
+                                    getExpectedValueAsText(expectedRow, col),
+                                    matchType,
+                                    rowMatchModifiers,
                                     trimSpaces,
-                                    caseInsensitive);
-                            String eVal = normalizeValueStr(
-                                    getExpectedValueAsText(expectedRow, pk),
-                                    trimSpaces,
-                                    caseInsensitive);
-                            if (!valuesEqual(cVal, eVal)) {
-                                pkMatch = false;
+                                    caseInsensitive)) {
+                                rowMatched = true;
                                 break;
                             }
                         }
                     }
 
-                    if (pkMatch) {
+                    if (rowMatched) {
                         actualRow = candidate;
                         actualRowIdx = idx;
                         break;
@@ -1147,43 +832,105 @@ public class GradeExamUsecase {
                 }
 
                 if (actualRow == null) {
-                    allPassed = false;
-                    List<String> pkVals = primaryKeys.stream()
-                        .map(pk -> pk + "=" + expectedRow.path(pk).asText())
-                        .toList();
-                    errorBuilder.append(String.format("Bảng %s: Thiếu dòng có %s. ", tableName, String.join(", ", pkVals)));
+                    InsertRuleDecision missingDecision = resolveInsertRuleDecision(missingRowRule, tablePoints, rowPenalty);
+                    if (!missingDecision.ignore()) {
+                        allPassed = false;
+                        missingRows++;
+                        if (missingDecision.failAll()) {
+                            failAllTriggered = true;
+                            earnedTable = 0d;
+                            break;
+                        }
+                        earnedTable = applyInsertPenalty(earnedTable, missingDecision.penaltyPoints(), 1);
+                    }
                     continue;
                 }
 
                 usedActualRows[actualRowIdx] = true;
+                matchedActualIndexes.add(actualRowIdx);
 
-                // Row found, check cols
-                boolean rowMatch = true;
-                List<String> wrongCols = new ArrayList<>();
+                double rowDeduction = 0d;
+                boolean rowHasDeduction = false;
+                boolean rowFailAll = false;
 
                 for (String col : columnsToGrade) {
-                    String aVal = normalizeValueStr(
-                            getRowValueIgnoreCase(actualRow, col),
+                    Object actualRawValue = getRowValueIgnoreCase(actualRow, col);
+                    String expectedRawValue = getExpectedValueAsText(expectedRow, col);
+                    String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
+
+                    boolean nullViolation = false;
+                    if (cellNullRule != null) {
+                        String normalizedActualForNull = applyInsertModifiers(
+                                normalizeValueStr(actualRawValue, trimSpaces, caseInsensitive),
+                                cellNullModifiers);
+                        String normalizedExpectedForNull = applyInsertModifiers(
+                                normalizeValueStr(expectedRawValue, trimSpaces, caseInsensitive),
+                                cellNullModifiers);
+                        nullViolation = !isNullLike(normalizedExpectedForNull) && isNullLike(normalizedActualForNull);
+                    }
+
+                    boolean isEqual = valuesEqualByMatchTypeWithModifiers(
+                            actualRawValue,
+                            expectedRawValue,
+                            matchType,
+                            cellCompareModifiers,
                             trimSpaces,
                             caseInsensitive);
-                    String eVal = normalizeValueStr(
-                            getExpectedValueAsText(expectedRow, col),
-                            trimSpaces,
-                            caseInsensitive);
-                    if (!valuesEqual(aVal, eVal)) {
-                        rowMatch = false;
-                        wrongCols.add(col + " (Kỳ vọng: " + eVal + ", Thực tế: " + aVal + ")");
+
+                    if (!nullViolation && isEqual) {
+                        continue;
+                    }
+
+                    JsonNode activeRule = nullViolation && cellNullRule != null
+                            ? cellNullRule
+                            : cellNotEqualRule;
+                    double defaultPenalty = columnPenalties.getOrDefault(col, fallbackColPenalty);
+                    InsertRuleDecision cellDecision = resolveInsertRuleDecision(activeRule, tablePoints, defaultPenalty);
+
+                    if (cellDecision.ignore()) {
+                        continue;
+                    }
+
+                    allPassed = false;
+                    wrongCells++;
+
+                    if (cellDecision.failAll()) {
+                        rowFailAll = true;
+                        break;
+                    }
+
+                    rowHasDeduction = true;
+                    if (allOrNothing) {
+                        rowDeduction = Math.max(rowDeduction, Math.max(rowPenalty, cellDecision.penaltyPoints()));
+                    } else {
+                        rowDeduction += cellDecision.penaltyPoints();
                     }
                 }
 
-                if (rowMatch) {
-                    earnedTable += pointsPerRow;
-                } else {
-                    allPassed = false;
-                    List<String> pkVals = primaryKeys.stream()
-                        .map(pk -> pk + "=" + expectedRow.path(pk).asText())
-                        .toList();
-                    errorBuilder.append(String.format("Bảng %s: Dòng %s có cột bị sai: %s. ", tableName, String.join(", ", pkVals), String.join("; ", wrongCols)));
+                if (rowFailAll) {
+                    failAllTriggered = true;
+                    earnedTable = 0d;
+                    break;
+                }
+
+                if (rowHasDeduction && rowDeduction > 0d) {
+                    earnedTable = applyInsertPenalty(earnedTable, rowDeduction, 1);
+                }
+            }
+
+            if (earnedTable > 0d && rowOrderRule != null && !hasInsertModifier(rowOrderRule, "SORT_ASC")) {
+                outOfOrderRows = countInsertOutOfOrderViolations(matchedActualIndexes);
+                if (outOfOrderRows > 0) {
+                    InsertRuleDecision rowOrderDecision = resolveInsertRuleDecision(rowOrderRule, tablePoints, rowPenalty);
+                    if (!rowOrderDecision.ignore()) {
+                        allPassed = false;
+                        if (rowOrderDecision.failAll()) {
+                            failAllTriggered = true;
+                            earnedTable = 0d;
+                        } else {
+                            earnedTable = applyInsertPenalty(earnedTable, rowOrderDecision.penaltyPoints(), outOfOrderRows);
+                        }
+                    }
                 }
             }
 
@@ -1194,48 +941,302 @@ public class GradeExamUsecase {
                 }
             }
 
-            if (extraRows > 0) {
-                allPassed = false;
-                if (allowExtraRows) {
-                    double penalty = tablePoints * penaltyPerExtraRow * extraRows;
-                    earnedTable = Math.max(0, earnedTable - penalty);
-                    errorBuilder.append(String.format(
-                            "Bảng %s: dư %d dòng, bị trừ %.2f điểm (allow_extra_rows=true). ",
-                            tableName,
-                            extraRows,
-                            penalty));
+            if (earnedTable > 0d && extraRows > 0) {
+                if (!hasLegacyExtraRowSettings && extraRowRule != null && extraRowRule.isObject()) {
+                    double defaultExtraPenalty = Math.max(rowPenalty, tablePoints * penaltyPerExtraRow);
+                    InsertRuleDecision extraDecision = resolveInsertRuleDecision(extraRowRule, tablePoints, defaultExtraPenalty);
+
+                    if (!extraDecision.ignore()) {
+                        allPassed = false;
+                        if (extraDecision.failAll()) {
+                            failAllTriggered = true;
+                            earnedTable = 0d;
+                        } else {
+                            earnedTable = applyInsertPenalty(earnedTable, extraDecision.penaltyPoints(), extraRows);
+                        }
+                    }
                 } else {
-                    earnedTable = 0;
-                    errorBuilder.append(String.format(
-                            "Bảng %s: dư %d dòng và không cho phép dư dòng (allow_extra_rows=false). ",
-                            tableName,
-                            extraRows));
+                    allPassed = false;
+                    if (allowExtraRows) {
+                        double penalty = tablePoints * penaltyPerExtraRow * extraRows;
+                        earnedTable = applyInsertPenalty(earnedTable, penalty, 1);
+                    } else {
+                        earnedTable = 0d;
+                    }
                 }
             }
 
-            earnedTotal = earnedTotal.add(BigDecimal.valueOf(earnedTable));
+            if (missingRows > 0 || wrongCells > 0 || extraRows > 0 || outOfOrderRows > 0) {
+                double tableDeduction = Math.max(0d, tablePoints - Math.max(0d, earnedTable));
+                errorBuilder.append(String.format(
+                        Locale.ROOT,
+                        "Bang %s: thieu %d dong, sai %d o, du %d dong, sai thu tu %d dong, tru %.2f diem. ",
+                        tableName,
+                        missingRows,
+                        wrongCells,
+                        extraRows,
+                        outOfOrderRows,
+                        tableDeduction));
+            }
+
+            earnedTotal = earnedTotal.add(BigDecimal.valueOf(Math.max(0d, earnedTable)));
         }
 
         earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
-        if (failAllMode && !allPassed) {
+        if ((failAllMode && !allPassed) || failAllTriggered) {
             earnedTotal = BigDecimal.ZERO;
             if (errorBuilder.length() > 0) {
-                errorBuilder.insert(0, "Rubric đang để FAIL_ALL: có lỗi nên câu này bị 0 điểm toàn bộ. ");
+                errorBuilder.insert(0, "Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo. ");
             } else {
-                errorBuilder.append("Rubric đang để FAIL_ALL: có lỗi nên câu này bị 0 điểm toàn bộ.");
+                errorBuilder.append("Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo.");
             }
         }
+
         if (earnedTotal.compareTo(totalPoints) > 0) earnedTotal = totalPoints;
         if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) earnedTotal = BigDecimal.ZERO;
 
         if (submission != null) {
             submission.setScoreEarned(earnedTotal);
-            if (!allPassed) {
+            if (!allPassed || failAllTriggered) {
                 submission.setErrorMessage(errorBuilder.toString().trim());
             }
         }
 
-        return allPassed;
+        return allPassed && !failAllTriggered;
+    }
+
+    private record InsertRuleDecision(String action, double penaltyPoints, boolean ignore, boolean failAll) {
+    }
+
+    private InsertRuleDecision resolveInsertRuleDecision(JsonNode ruleNode, double tablePoints, double defaultPenaltyPoints) {
+        String action = ruleNode != null ? ruleNode.path("action").asText("").trim() : "";
+        if (action.isBlank()) {
+            action = "DEDUCT_POINTS";
+        }
+
+        String normalizedAction = action.toUpperCase(Locale.ROOT);
+        double safeDefaultPenalty = Math.max(0d, defaultPenaltyPoints);
+        double penaltyValue = ruleNode != null
+                ? readDoubleSetting(ruleNode.path("penalty_value"), -1d)
+                : -1d;
+
+        switch (normalizedAction) {
+            case "IGNORE":
+                return new InsertRuleDecision(normalizedAction, 0d, true, false);
+            case "FAIL_ALL":
+                return new InsertRuleDecision(normalizedAction, Math.max(0d, tablePoints), false, true);
+            case "FAIL_ITEM":
+                return new InsertRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
+            case "DEDUCT_PERCENTAGE": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, tablePoints * penaltyValue / 100d)
+                        : safeDefaultPenalty;
+                return new InsertRuleDecision(normalizedAction, penalty, false, false);
+            }
+            case "DEDUCT_POINTS": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, penaltyValue)
+                        : safeDefaultPenalty;
+                return new InsertRuleDecision(normalizedAction, penalty, false, false);
+            }
+            default:
+                return new InsertRuleDecision("DEDUCT_POINTS", safeDefaultPenalty, false, false);
+        }
+    }
+
+    private double applyInsertPenalty(double earnedTable, double penaltyPoints, int violationCount) {
+        if (violationCount <= 0 || penaltyPoints <= 0d) {
+            return earnedTable;
+        }
+        return Math.max(0d, earnedTable - (penaltyPoints * violationCount));
+    }
+
+    private JsonNode extractInsertRuleModifiers(JsonNode ruleNode) {
+        if (ruleNode == null || !ruleNode.isObject()) {
+            return objectMapper.createArrayNode();
+        }
+
+        JsonNode modifiers = ruleNode.path("modifiers");
+        return modifiers.isArray() ? modifiers : objectMapper.createArrayNode();
+    }
+
+    private JsonNode firstNonEmptyModifiers(JsonNode primary, JsonNode fallback) {
+        if (primary != null && primary.isArray() && primary.size() > 0) {
+            return primary;
+        }
+        if (fallback != null && fallback.isArray() && fallback.size() > 0) {
+            return fallback;
+        }
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean hasInsertModifier(JsonNode ruleNode, String expectedModifier) {
+        if (expectedModifier == null || expectedModifier.isBlank()) {
+            return false;
+        }
+
+        JsonNode modifiers = extractInsertRuleModifiers(ruleNode);
+        for (JsonNode modifierNode : modifiers) {
+            if (expectedModifier.equalsIgnoreCase(modifierNode.asText(""))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean valuesEqualByMatchTypeWithModifiers(
+            Object actualValue,
+            Object expectedValue,
+            String matchType,
+            JsonNode modifiers,
+            boolean trimSpaces,
+            boolean caseInsensitive) {
+        String normalizedActual = normalizeValueStr(actualValue, trimSpaces, caseInsensitive);
+        String normalizedExpected = normalizeValueStr(expectedValue, trimSpaces, caseInsensitive);
+
+        String modifiedActual = applyInsertModifiers(normalizedActual, modifiers);
+        String modifiedExpected = applyInsertModifiers(normalizedExpected, modifiers);
+
+        return valuesEqualByMatchType(modifiedActual, modifiedExpected, matchType);
+    }
+
+    private String applyInsertModifiers(String value, JsonNode modifiers) {
+        if (value == null) {
+            return null;
+        }
+
+        if (modifiers == null || !modifiers.isArray() || modifiers.isEmpty()) {
+            return value;
+        }
+
+        String current = value;
+        for (JsonNode modifierNode : modifiers) {
+            String modifier = modifierNode.asText("").trim().toUpperCase(Locale.ROOT);
+            if (modifier.isBlank()) {
+                continue;
+            }
+
+            switch (modifier) {
+                case "TO_LOWERCASE":
+                    current = current.toLowerCase(Locale.ROOT);
+                    break;
+                case "TRIM_WHITESPACE":
+                    current = current.trim();
+                    break;
+                case "REMOVE_ALL_WHITESPACE":
+                    current = current.replaceAll("\\s+", "");
+                    break;
+                case "REMOVE_DIACRITICS": {
+                    String normalized = Normalizer.normalize(current, Normalizer.Form.NFD);
+                    current = normalized.replaceAll("\\p{M}+", "");
+                    break;
+                }
+                case "REMOVE_SPECIAL_CHARS":
+                    current = current.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\s]", "");
+                    break;
+                case "CAST_TO_STRING":
+                    current = String.valueOf(current);
+                    break;
+                case "CAST_TO_FLOAT":
+                    current = canonicalizeNumber(current, -1);
+                    break;
+                case "ROUND_TO_INT":
+                    current = canonicalizeNumber(current, 0);
+                    break;
+                case "ROUND_2_DECIMALS":
+                    current = canonicalizeNumber(current, 2);
+                    break;
+                case "SORT_ASC":
+                    current = sortTokensAscending(current);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return current;
+    }
+
+    private String sortTokensAscending(String value) {
+        String trimmed = value == null ? null : value.trim();
+        if (trimmed == null || trimmed.isBlank()) {
+            return trimmed;
+        }
+
+        boolean commaSeparated = trimmed.contains(",");
+        String[] rawTokens = commaSeparated
+                ? trimmed.split("\\s*,\\s*")
+                : trimmed.split("\\s+");
+        if (rawTokens.length <= 1) {
+            return trimmed;
+        }
+
+        List<String> tokens = new ArrayList<>();
+        for (String rawToken : rawTokens) {
+            if (rawToken == null) {
+                continue;
+            }
+            String token = rawToken.trim();
+            if (!token.isEmpty()) {
+                tokens.add(token);
+            }
+        }
+
+        if (tokens.size() <= 1) {
+            return trimmed;
+        }
+
+        tokens.sort(String.CASE_INSENSITIVE_ORDER);
+        return String.join(commaSeparated ? "," : " ", tokens);
+    }
+
+    private String canonicalizeNumber(String value, int targetScale) {
+        if (value == null) {
+            return null;
+        }
+
+        BigDecimal decimal = parseDecimal(value.trim());
+        if (decimal == null) {
+            return value;
+        }
+
+        if (targetScale >= 0) {
+            decimal = decimal.setScale(targetScale, RoundingMode.HALF_UP);
+        }
+
+        return decimal.stripTrailingZeros().toPlainString();
+    }
+
+    private boolean isNullLike(String value) {
+        if (value == null) {
+            return true;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isEmpty() || "NULL".equalsIgnoreCase(trimmed);
+    }
+
+    private int countInsertOutOfOrderViolations(List<Integer> matchedActualIndexes) {
+        if (matchedActualIndexes == null || matchedActualIndexes.size() <= 1) {
+            return 0;
+        }
+
+        int maxSeen = -1;
+        int violations = 0;
+        for (Integer actualIdx : matchedActualIndexes) {
+            if (actualIdx == null || actualIdx < 0) {
+                continue;
+            }
+
+            if (actualIdx < maxSeen) {
+                violations++;
+            } else {
+                maxSeen = actualIdx;
+            }
+        }
+
+        return violations;
     }
 
     private String normalizeValueStr(Object val, boolean trimSpaces, boolean caseInsensitive) {
@@ -1372,6 +1373,129 @@ public class GradeExamUsecase {
         return defaultValue;
     }
 
+    private JsonNode resolveInsertPayload(JsonNode rubric) {
+        if (rubric == null || rubric.isMissingNode() || rubric.isNull()) {
+            return objectMapper.createObjectNode();
+        }
+
+        JsonNode payload = rubric.path("grading_payload");
+        if (payload != null && payload.isObject()) {
+            return payload;
+        }
+
+        return rubric;
+    }
+
+    private JsonNode resolveInsertDatasets(JsonNode rubric, JsonNode payload) {
+        JsonNode[] candidates = new JsonNode[] {
+                payload.path("tables"),
+                payload.path("expected_datasets"),
+                rubric.path("tables"),
+                rubric.path("expected_datasets")
+        };
+
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && candidate.isArray() && candidate.size() > 0) {
+                return candidate;
+            }
+        }
+
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && candidate.isArray()) {
+                return candidate;
+            }
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private JsonNode resolveInsertGradingRules(JsonNode rubric, JsonNode payload) {
+        JsonNode[] candidates = new JsonNode[] {
+                payload.path("grading_rules"),
+                rubric.path("grading_rules")
+        };
+
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && candidate.isArray()) {
+                return candidate;
+            }
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean hasLegacyInsertExtraRowSettings(JsonNode settings) {
+        if (settings == null || settings.isMissingNode() || settings.isNull()) {
+            return false;
+        }
+        return settings.path("allow_extra_rows").isValueNode()
+                || settings.path("penalty_per_extra_row").isValueNode();
+    }
+
+    private boolean hasInsertFailAllRule(JsonNode gradingRules) {
+        if (!gradingRules.isArray()) {
+            return false;
+        }
+
+        for (JsonNode ruleNode : gradingRules) {
+            if (!ruleNode.isObject()) {
+                continue;
+            }
+            if ("FAIL_ALL".equalsIgnoreCase(ruleNode.path("action").asText(""))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private Double resolveInsertRulePenaltyPoints(
+            JsonNode gradingRules,
+            String target,
+            String condition,
+            double tablePoints) {
+        JsonNode ruleNode = findInsertRule(gradingRules, target, condition);
+        if (ruleNode == null) {
+            return null;
+        }
+
+        String action = ruleNode.path("action").asText("").trim();
+        if (action.isBlank()) {
+            return null;
+        }
+
+        double penaltyValue = Math.max(0d, readDoubleSetting(ruleNode.path("penalty_value"), 0d));
+        if ("DEDUCT_POINTS".equalsIgnoreCase(action)) {
+            return penaltyValue;
+        }
+
+        if ("DEDUCT_PERCENTAGE".equalsIgnoreCase(action)) {
+            return Math.max(0d, tablePoints * penaltyValue / 100d);
+        }
+
+        return null;
+    }
+
+    private JsonNode findInsertRule(JsonNode gradingRules, String target, String condition) {
+        if (!gradingRules.isArray()) {
+            return null;
+        }
+
+        for (JsonNode ruleNode : gradingRules) {
+            if (!ruleNode.isObject()) {
+                continue;
+            }
+
+            String ruleTarget = ruleNode.path("target").asText("").trim();
+            String ruleCondition = ruleNode.path("condition").asText("").trim();
+            if (target.equalsIgnoreCase(ruleTarget) && condition.equalsIgnoreCase(ruleCondition)) {
+                return ruleNode;
+            }
+        }
+
+        return null;
+    }
+
     private GradeDecision gradeSelectAcrossDatasets(
             ExamSpecification specification,
             String schemaName,
@@ -1387,34 +1511,125 @@ public class GradeExamUsecase {
             return GradeDecision.fail("Specification has no ddlScript");
         }
 
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+
         List<SpecDataset> activeDatasets = specification.getDatasets() == null ? List.of()
                 : specification.getDatasets().stream()
                         .filter(SpecDataset::isActive)
                         .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
                         .toList();
 
-        if (activeDatasets.isEmpty()) {
-            return gradeSelectWithSingleDataset(
-                    schemaName, specification.getDdlScript(), null,
-                    "fallback-no-dataset", question, studentQuery);
-        }
+        JsonNode selectRules = resolveSelectGradingRules(question);
+        boolean hasRuleBasedScoring = hasSelectGradingRules(selectRules);
 
-        for (SpecDataset dataset : activeDatasets) {
-            String datasetLabel = "dataset[" + dataset.getId() + ":" + dataset.getName() + "]";
-            GradeDecision decision = gradeSelectWithSingleDataset(
-                    schemaName, specification.getDdlScript(), dataset.getDataScript(),
-                    datasetLabel, question, studentQuery);
-            if (!decision.isCorrect()) {
-                return decision;
+        List<SelectDatasetSpec> datasetsToGrade = new ArrayList<>();
+        if (activeDatasets.isEmpty()) {
+            datasetsToGrade.add(new SelectDatasetSpec("fallback-no-dataset", null));
+        } else {
+            for (SpecDataset dataset : activeDatasets) {
+                String datasetLabel = "dataset[" + dataset.getId() + ":" + dataset.getName() + "]";
+                datasetsToGrade.add(new SelectDatasetSpec(datasetLabel, dataset.getDataScript()));
             }
         }
 
-        return GradeDecision.pass();
+        if (!hasRuleBasedScoring) {
+            for (SelectDatasetSpec datasetSpec : datasetsToGrade) {
+                SelectDatasetDecision decision = gradeSelectWithSingleDatasetStrict(
+                        schemaName,
+                        specification.getDdlScript(),
+                        datasetSpec.datasetScript(),
+                        datasetSpec.datasetLabel(),
+                        question,
+                        studentQuery);
+                if (!decision.allChecksPassed()) {
+                    return GradeDecision.fail(decision.errorMessage());
+                }
+            }
+            return GradeDecision.pass(totalPoints);
+        }
+
+        BigDecimal earnedTotal = BigDecimal.ZERO;
+        BigDecimal distributedPoints = BigDecimal.ZERO;
+        StringBuilder errorBuilder = new StringBuilder();
+        boolean allPassed = true;
+        boolean failAllTriggered = false;
+
+        BigDecimal baseDatasetPoints = totalPoints;
+        if (!datasetsToGrade.isEmpty()) {
+            baseDatasetPoints = totalPoints.divide(
+                    BigDecimal.valueOf(datasetsToGrade.size()),
+                    8,
+                    RoundingMode.HALF_UP);
+        }
+
+        for (int i = 0; i < datasetsToGrade.size(); i++) {
+            SelectDatasetSpec datasetSpec = datasetsToGrade.get(i);
+            BigDecimal datasetMaxPoints = (i == datasetsToGrade.size() - 1)
+                    ? totalPoints.subtract(distributedPoints)
+                    : baseDatasetPoints;
+            if (datasetMaxPoints.compareTo(BigDecimal.ZERO) < 0) {
+                datasetMaxPoints = BigDecimal.ZERO;
+            }
+            distributedPoints = distributedPoints.add(datasetMaxPoints);
+
+            SelectDatasetDecision decision = gradeSelectWithSingleDatasetByRules(
+                    schemaName,
+                    specification.getDdlScript(),
+                    datasetSpec.datasetScript(),
+                    datasetSpec.datasetLabel(),
+                    question,
+                    studentQuery,
+                    selectRules,
+                    datasetMaxPoints);
+
+            if (decision.executionFailed()) {
+                return GradeDecision.fail(decision.errorMessage());
+            }
+
+            earnedTotal = earnedTotal.add(decision.earnedPoints());
+            if (!decision.allChecksPassed()) {
+                allPassed = false;
+            }
+            if (decision.failAllTriggered()) {
+                failAllTriggered = true;
+            }
+            if (decision.errorMessage() != null && !decision.errorMessage().isBlank()) {
+                appendSelectIssue(errorBuilder, decision.errorMessage());
+            }
+        }
+
+        if (failAllTriggered) {
+            allPassed = false;
+            earnedTotal = BigDecimal.ZERO;
+            appendSelectIssue(errorBuilder,
+                    "Rubric SELECT co rule FAIL_ALL: cau nay bi 0 diem toan bo.");
+        }
+
+        if (earnedTotal.compareTo(totalPoints) > 0) {
+            earnedTotal = totalPoints;
+        }
+        if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) {
+            earnedTotal = BigDecimal.ZERO;
+        }
+        earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
+
+        if (allPassed && earnedTotal.compareTo(totalPoints.setScale(2, RoundingMode.HALF_UP)) >= 0) {
+            return GradeDecision.pass(earnedTotal);
+        }
+
+        String errorMessage = errorBuilder.length() > 0
+                ? errorBuilder.toString().trim()
+                : "Kết quả SELECT không khớp rubric chấm điểm.";
+        return GradeDecision.partial(earnedTotal, errorMessage);
     }
 
-    private GradeDecision gradeSelectWithSingleDataset(
-            String schemaName, String ddlScript, String datasetScript,
-            String datasetLabel, ExamQuestion question, String studentQuery) {
+    private SelectDatasetDecision gradeSelectWithSingleDatasetStrict(
+            String schemaName,
+            String ddlScript,
+            String datasetScript,
+            String datasetLabel,
+            ExamQuestion question,
+            String studentQuery) {
         try {
             examSchemaService.resetSchema(schemaName);
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
@@ -1422,21 +1637,664 @@ public class GradeExamUsecase {
             List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery).getResultSet();
             List<Map<String, Object>> expected = examSchemaService.executeSql(schemaName, question.getCorrectQuery()).getResultSet();
 
-            boolean requireStrictOrder = question.getCorrectQuery() != null 
+            boolean requireStrictOrder = question.getCorrectQuery() != null
                     && question.getCorrectQuery().toUpperCase().contains("ORDER BY");
 
             if (!compareResultSetsStrict(actual, expected, requireStrictOrder)) {
-                return GradeDecision.fail("SELECT result mismatch on " + datasetLabel);
+                return SelectDatasetDecision.strictMismatch("SELECT result mismatch on " + datasetLabel);
             }
-            return GradeDecision.pass();
+            return SelectDatasetDecision.strictPass();
         } catch (Exception e) {
-            return GradeDecision.fail("Failed on " + datasetLabel + ": " + e.getMessage());
+            return SelectDatasetDecision.executionFailure("Failed on " + datasetLabel + ": " + e.getMessage());
         }
     }
 
-    private record GradeDecision(boolean isCorrect, String errorMessage) {
-        static GradeDecision pass() { return new GradeDecision(true, null); }
-        static GradeDecision fail(String message) { return new GradeDecision(false, message); }
+    private SelectDatasetDecision gradeSelectWithSingleDatasetByRules(
+            String schemaName,
+            String ddlScript,
+            String datasetScript,
+            String datasetLabel,
+            ExamQuestion question,
+            String studentQuery,
+            JsonNode gradingRules,
+            BigDecimal datasetMaxPoints) {
+        try {
+            examSchemaService.resetSchema(schemaName);
+            examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
+
+            List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery).getResultSet();
+            List<Map<String, Object>> expected = examSchemaService.executeSql(schemaName, question.getCorrectQuery()).getResultSet();
+
+            boolean requireStrictOrder = question.getCorrectQuery() != null
+                    && question.getCorrectQuery().toUpperCase().contains("ORDER BY");
+
+            if (compareResultSetsStrict(actual, expected, requireStrictOrder)) {
+                return SelectDatasetDecision.ruleResult(true, false, null, datasetMaxPoints);
+            }
+
+            List<String> expectedColumns = extractSelectColumns(expected);
+            List<String> actualColumns = extractSelectColumns(actual);
+            List<String> comparisonColumns = !expectedColumns.isEmpty() ? expectedColumns : actualColumns;
+
+            int expectedRowsCount = expected == null ? 0 : expected.size();
+            int actualRowsCount = actual == null ? 0 : actual.size();
+            int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
+            int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
+
+            int missingColumns = countMissingColumns(expectedColumns, actualColumns);
+            int extraColumns = countExtraColumns(expectedColumns, actualColumns);
+            int columnOrderViolations = (!expectedColumns.isEmpty() && !actualColumns.isEmpty()
+                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) ? 1 : 0;
+
+            JsonNode rowOrderRule = findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+            int rowOrderViolations = 0;
+            if (requireStrictOrder && rowOrderRule != null && !hasInsertModifier(rowOrderRule, "SORT_ASC")) {
+                rowOrderViolations = countSelectRowOrderViolations(actual, expected, comparisonColumns);
+                if (rowOrderViolations == 0) {
+                    rowOrderViolations = 1;
+                }
+            }
+
+            JsonNode cellNotEqualRule = findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
+            JsonNode cellNullRule = findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
+            JsonNode cellCompareModifiers = firstNonEmptyModifiers(
+                    extractInsertRuleModifiers(cellNotEqualRule),
+                    extractInsertRuleModifiers(cellNullRule));
+
+            List<SelectRowPair> rowPairs = buildSelectRowPairs(
+                    actual,
+                    expected,
+                    comparisonColumns,
+                    requireStrictOrder,
+                    cellCompareModifiers);
+            int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
+            int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+
+            double datasetPoints = datasetMaxPoints.doubleValue();
+            int expectedColumnsCount = Math.max(1, comparisonColumns.size());
+            int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
+            double rowPenaltyDefault = datasetPoints / expectedRowsForPenalty;
+            double columnPenaltyDefault = datasetPoints / expectedColumnsCount;
+            double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
+
+            List<SelectRuleApplication> applications = List.of(
+                    applySelectRule(gradingRules, "ROW", "IS_MISSING", missingRows,
+                            datasetMaxPoints, rowPenaltyDefault,
+                            "thieu " + missingRows + " dong"),
+                    applySelectRule(gradingRules, "ROW", "IS_EXTRA", extraRows,
+                            datasetMaxPoints, rowPenaltyDefault,
+                            "du " + extraRows + " dong"),
+                    applySelectRule(gradingRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
+                            datasetMaxPoints, cellPenaltyDefault,
+                            "sai " + wrongCells + " o du lieu"),
+                    applySelectRule(gradingRules, "CELL_VALUE", "IS_NULL", nullViolations,
+                            datasetMaxPoints, cellPenaltyDefault,
+                            "co " + nullViolations + " o gia tri rong"),
+                    applySelectRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
+                            datasetMaxPoints, rowPenaltyDefault,
+                            "sai thu tu " + rowOrderViolations + " dong"),
+                    applySelectRule(gradingRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
+                            datasetMaxPoints, columnPenaltyDefault,
+                            "sai thu tu cot ket qua"),
+                    applySelectRule(gradingRules, "COLUMN", "IS_MISSING", missingColumns,
+                            datasetMaxPoints, columnPenaltyDefault,
+                            "thieu " + missingColumns + " cot"),
+                    applySelectRule(gradingRules, "COLUMN", "IS_EXTRA", extraColumns,
+                            datasetMaxPoints, columnPenaltyDefault,
+                            "du " + extraColumns + " cot"));
+
+            double earned = datasetPoints;
+            int matchedRuleCount = 0;
+            boolean failAllTriggered = false;
+            StringBuilder issueBuilder = new StringBuilder();
+
+            for (SelectRuleApplication application : applications) {
+                if (!application.violationPresent()) {
+                    continue;
+                }
+
+                if (application.ruleMatched()) {
+                    matchedRuleCount++;
+                }
+
+                if (application.failAllTriggered()) {
+                    failAllTriggered = true;
+                }
+
+                if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                    earned -= application.deduction().doubleValue();
+                }
+
+                if (application.message() != null && !application.message().isBlank()) {
+                    appendSelectIssue(issueBuilder, application.message());
+                }
+            }
+
+            if (failAllTriggered) {
+                earned = 0d;
+            } else if (matchedRuleCount == 0) {
+                earned = 0d;
+                appendSelectIssue(issueBuilder,
+                        "Khong co grading_rules phu hop de danh gia cac sai lech tren " + datasetLabel + ".");
+            }
+
+            if (earned < 0d) {
+                earned = 0d;
+            }
+            if (earned > datasetPoints) {
+                earned = datasetPoints;
+            }
+
+                BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
+                BigDecimal delta = datasetMaxPoints.subtract(earnedPoints).abs();
+                boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
+            String message = issueBuilder.length() == 0
+                    ? "SELECT result mismatch on " + datasetLabel
+                    : "[" + datasetLabel + "] " + issueBuilder.toString().trim();
+
+            return SelectDatasetDecision.ruleResult(
+                    allChecksPassed,
+                    failAllTriggered,
+                    allChecksPassed ? null : message,
+                    earnedPoints);
+        } catch (Exception e) {
+            return SelectDatasetDecision.executionFailure("Failed on " + datasetLabel + ": " + e.getMessage());
+        }
+    }
+
+    private JsonNode resolveSelectGradingRules(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return objectMapper.createArrayNode();
+        }
+
+        try {
+            JsonNode rubric = objectMapper.readTree(question.getGradingRubric());
+            JsonNode payload = rubric.path("grading_payload");
+
+            JsonNode[] candidates = new JsonNode[] {
+                    payload.path("grading_rules"),
+                    rubric.path("grading_rules")
+            };
+
+            for (JsonNode candidate : candidates) {
+                if (candidate != null && candidate.isArray()) {
+                    return candidate;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Cannot parse grading_rules for SELECT Q{}: {}", question.getId(), e.getMessage());
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean hasSelectGradingRules(JsonNode gradingRules) {
+        if (gradingRules == null || !gradingRules.isArray()) {
+            return false;
+        }
+
+        for (JsonNode ruleNode : gradingRules) {
+            if (!ruleNode.isObject()) {
+                continue;
+            }
+            String target = ruleNode.path("target").asText("").trim();
+            String condition = ruleNode.path("condition").asText("").trim();
+            if (!target.isBlank() && !condition.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> extractSelectColumns(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(rows.get(0).keySet());
+    }
+
+    private int countMissingColumns(List<String> expectedColumns, List<String> actualColumns) {
+        if (expectedColumns == null || expectedColumns.isEmpty()) {
+            return 0;
+        }
+
+        Set<String> actualSet = new HashSet<>();
+        if (actualColumns != null) {
+            for (String actual : actualColumns) {
+                if (actual != null) {
+                    actualSet.add(actual.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        int missing = 0;
+        for (String expected : expectedColumns) {
+            if (expected == null) {
+                continue;
+            }
+            if (!actualSet.contains(expected.toLowerCase(Locale.ROOT))) {
+                missing++;
+            }
+        }
+        return missing;
+    }
+
+    private int countExtraColumns(List<String> expectedColumns, List<String> actualColumns) {
+        if (actualColumns == null || actualColumns.isEmpty()) {
+            return 0;
+        }
+
+        Set<String> expectedSet = new HashSet<>();
+        if (expectedColumns != null) {
+            for (String expected : expectedColumns) {
+                if (expected != null) {
+                    expectedSet.add(expected.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        int extra = 0;
+        for (String actual : actualColumns) {
+            if (actual == null) {
+                continue;
+            }
+            if (!expectedSet.contains(actual.toLowerCase(Locale.ROOT))) {
+                extra++;
+            }
+        }
+        return extra;
+    }
+
+    private boolean sameColumnOrderIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
+        if (expectedColumns == null || actualColumns == null) {
+            return false;
+        }
+        if (expectedColumns.size() != actualColumns.size()) {
+            return false;
+        }
+        for (int i = 0; i < expectedColumns.size(); i++) {
+            String expected = expectedColumns.get(i);
+            String actual = actualColumns.get(i);
+            if (expected == null && actual == null) {
+                continue;
+            }
+            if (expected == null || actual == null || !expected.equalsIgnoreCase(actual)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int countSelectRowOrderViolations(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            List<String> columns) {
+        if (actualRows == null || expectedRows == null) {
+            return 0;
+        }
+
+        int limit = Math.min(actualRows.size(), expectedRows.size());
+        int violations = 0;
+        for (int i = 0; i < limit; i++) {
+            String actualSig = buildSelectRowSignature(actualRows.get(i), columns);
+            String expectedSig = buildSelectRowSignature(expectedRows.get(i), columns);
+            if (!actualSig.equals(expectedSig)) {
+                violations++;
+            }
+        }
+        return violations;
+    }
+
+    private String buildSelectRowSignature(Map<String, Object> row, List<String> columns) {
+        if (row == null) {
+            return "";
+        }
+
+        StringBuilder signature = new StringBuilder();
+        if (columns != null && !columns.isEmpty()) {
+            for (String column : columns) {
+                signature.append(normalizeValue(getRowValueIgnoreCase(row, column))).append("|||");
+            }
+            return signature.toString().toLowerCase(Locale.ROOT);
+        }
+
+        for (Object value : row.values()) {
+            signature.append(normalizeValue(value)).append("|||");
+        }
+        return signature.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private List<SelectRowPair> buildSelectRowPairs(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            List<String> columns,
+            boolean strictOrdering,
+            JsonNode cellModifiers) {
+        if (actualRows == null || expectedRows == null || columns == null || columns.isEmpty()) {
+            return List.of();
+        }
+
+        List<SelectRowPair> pairs = new ArrayList<>();
+        if (strictOrdering) {
+            int limit = Math.min(actualRows.size(), expectedRows.size());
+            for (int i = 0; i < limit; i++) {
+                pairs.add(new SelectRowPair(actualRows.get(i), expectedRows.get(i)));
+            }
+            return pairs;
+        }
+
+        List<Map<String, Object>> remainingActualRows = new ArrayList<>(actualRows);
+        for (Map<String, Object> expectedRow : expectedRows) {
+            int matchedIndex = findBestSelectRowMatchIndex(
+                    remainingActualRows,
+                    expectedRow,
+                    columns,
+                    cellModifiers);
+            if (matchedIndex < 0) {
+                continue;
+            }
+
+            Map<String, Object> matchedRow = remainingActualRows.remove(matchedIndex);
+            pairs.add(new SelectRowPair(matchedRow, expectedRow));
+        }
+
+        return pairs;
+    }
+
+    private int findBestSelectRowMatchIndex(
+            List<Map<String, Object>> actualRows,
+            Map<String, Object> expectedRow,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (actualRows == null || actualRows.isEmpty()) {
+            return -1;
+        }
+
+        int bestIndex = -1;
+        int bestScore = -1;
+        for (int i = 0; i < actualRows.size(); i++) {
+            int score = scoreSelectRowMatch(actualRows.get(i), expectedRow, columns, cellModifiers);
+            if (score > bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+        return bestIndex;
+    }
+
+    private int scoreSelectRowMatch(
+            Map<String, Object> actualRow,
+            Map<String, Object> expectedRow,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (actualRow == null || expectedRow == null || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int score = 0;
+        for (String column : columns) {
+            Object actualValue = getRowValueIgnoreCase(actualRow, column);
+            Object expectedValue = getRowValueIgnoreCase(expectedRow, column);
+            if (valuesEqualByMatchTypeWithModifiers(
+                    actualValue,
+                    expectedValue,
+                    "EXACT",
+                    cellModifiers,
+                    false,
+                    false)) {
+                score++;
+            }
+        }
+        return score;
+    }
+
+    private int countSelectCellMismatches(
+            List<SelectRowPair> rowPairs,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int mismatches = 0;
+        for (SelectRowPair rowPair : rowPairs) {
+            for (String column : columns) {
+                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
+                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
+
+                boolean equals = valuesEqualByMatchTypeWithModifiers(
+                        actualValue,
+                        expectedValue,
+                        "EXACT",
+                        cellModifiers,
+                        false,
+                        false);
+                if (!equals) {
+                    mismatches++;
+                }
+            }
+        }
+
+        return mismatches;
+    }
+
+    private int countSelectNullViolations(
+            List<SelectRowPair> rowPairs,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int nullViolations = 0;
+        for (SelectRowPair rowPair : rowPairs) {
+            for (String column : columns) {
+                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
+                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
+
+                String normalizedActual = applyInsertModifiers(
+                        normalizeValueStr(actualValue, false, false),
+                        cellModifiers);
+                String normalizedExpected = applyInsertModifiers(
+                        normalizeValueStr(expectedValue, false, false),
+                        cellModifiers);
+
+                if (!isNullLike(normalizedExpected) && isNullLike(normalizedActual)) {
+                    nullViolations++;
+                }
+            }
+        }
+
+        return nullViolations;
+    }
+
+    private SelectRuleApplication applySelectRule(
+            JsonNode gradingRules,
+            String target,
+            String condition,
+            int violationCount,
+            BigDecimal datasetMaxPoints,
+            double defaultPenaltyPerViolation,
+            String violationSummary) {
+        if (violationCount <= 0) {
+            return SelectRuleApplication.noViolation();
+        }
+
+        JsonNode ruleNode = findInsertRule(gradingRules, target, condition);
+        if (ruleNode == null) {
+            return SelectRuleApplication.unmatchedViolation();
+        }
+
+        SelectRuleDecision decision = resolveSelectRuleDecision(
+                ruleNode,
+                datasetMaxPoints,
+                defaultPenaltyPerViolation);
+
+        String ruleLabel = selectRuleLabel(target, condition);
+        if (decision.ignore()) {
+            String message = String.format(
+                    Locale.ROOT,
+                    "Rule %s bo qua vi pham (%s).",
+                    ruleLabel,
+                    violationSummary);
+            return SelectRuleApplication.matchedViolation(false, BigDecimal.ZERO, message);
+        }
+
+        if (decision.failAll()) {
+            String message = String.format(
+                    Locale.ROOT,
+                    "Rule %s kich hoat FAIL_ALL (%s).",
+                    ruleLabel,
+                    violationSummary);
+            return SelectRuleApplication.matchedViolation(true, BigDecimal.ZERO, message);
+        }
+
+        BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
+                .multiply(BigDecimal.valueOf(violationCount));
+
+        String message = buildSelectRuleMessage(
+                ruleLabel,
+                violationSummary,
+                deduction,
+                decision.action());
+        return SelectRuleApplication.matchedViolation(false, deduction, message);
+    }
+
+    private SelectRuleDecision resolveSelectRuleDecision(
+            JsonNode ruleNode,
+            BigDecimal datasetMaxPoints,
+            double defaultPenaltyPerViolation) {
+        String action = ruleNode != null ? ruleNode.path("action").asText("").trim() : "";
+        if (action.isBlank()) {
+            action = "DEDUCT_POINTS";
+        }
+
+        String normalizedAction = action.toUpperCase(Locale.ROOT);
+        double safeDefaultPenalty = Math.max(0d, defaultPenaltyPerViolation);
+        double penaltyValue = ruleNode != null
+                ? readDoubleSetting(ruleNode.path("penalty_value"), -1d)
+                : -1d;
+
+        switch (normalizedAction) {
+            case "IGNORE":
+                return new SelectRuleDecision(normalizedAction, 0d, true, false);
+            case "FAIL_ALL":
+                return new SelectRuleDecision(normalizedAction, 0d, false, true);
+            case "FAIL_ITEM":
+                return new SelectRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
+            case "DEDUCT_PERCENTAGE": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, datasetMaxPoints.doubleValue() * penaltyValue / 100d)
+                        : safeDefaultPenalty;
+                return new SelectRuleDecision(normalizedAction, penalty, false, false);
+            }
+            case "DEDUCT_POINTS": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, penaltyValue)
+                        : safeDefaultPenalty;
+                return new SelectRuleDecision(normalizedAction, penalty, false, false);
+            }
+            default:
+                return new SelectRuleDecision("DEDUCT_POINTS", safeDefaultPenalty, false, false);
+        }
+    }
+
+    private String selectRuleLabel(String target, String condition) {
+        return target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
+    }
+
+    private String buildSelectRuleMessage(
+            String ruleLabel,
+            String violationSummary,
+            BigDecimal deduction,
+            String action) {
+        String formattedDeduction = deduction.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        return String.format(
+                Locale.ROOT,
+                "Rule %s (%s, action=%s): tru %s diem.",
+                ruleLabel,
+                violationSummary,
+                action,
+                formattedDeduction);
+    }
+
+    private void appendSelectIssue(StringBuilder builder, String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append(' ');
+        }
+        builder.append(message.trim());
+    }
+
+    private record SelectDatasetSpec(String datasetLabel, String datasetScript) {
+    }
+
+    private record SelectRowPair(Map<String, Object> actualRow, Map<String, Object> expectedRow) {
+    }
+
+    private record SelectRuleDecision(String action, double penaltyPerViolation, boolean ignore, boolean failAll) {
+    }
+
+    private record SelectRuleApplication(
+            boolean violationPresent,
+            boolean ruleMatched,
+            boolean failAllTriggered,
+            BigDecimal deduction,
+            String message) {
+        static SelectRuleApplication noViolation() {
+            return new SelectRuleApplication(false, false, false, BigDecimal.ZERO, null);
+        }
+
+        static SelectRuleApplication unmatchedViolation() {
+            return new SelectRuleApplication(true, false, false, BigDecimal.ZERO, null);
+        }
+
+        static SelectRuleApplication matchedViolation(boolean failAllTriggered, BigDecimal deduction, String message) {
+            return new SelectRuleApplication(true, true, failAllTriggered, deduction, message);
+        }
+    }
+
+    private record SelectDatasetDecision(
+            boolean executionFailed,
+            boolean allChecksPassed,
+            boolean failAllTriggered,
+            String errorMessage,
+            BigDecimal earnedPoints) {
+        static SelectDatasetDecision strictPass() {
+            return new SelectDatasetDecision(false, true, false, null, BigDecimal.ZERO);
+        }
+
+        static SelectDatasetDecision strictMismatch(String message) {
+            return new SelectDatasetDecision(false, false, false, message, BigDecimal.ZERO);
+        }
+
+        static SelectDatasetDecision executionFailure(String message) {
+            return new SelectDatasetDecision(true, false, false, message, BigDecimal.ZERO);
+        }
+
+        static SelectDatasetDecision ruleResult(
+                boolean allChecksPassed,
+                boolean failAllTriggered,
+                String errorMessage,
+                BigDecimal earnedPoints) {
+            return new SelectDatasetDecision(false, allChecksPassed, failAllTriggered, errorMessage, earnedPoints);
+        }
+    }
+
+    private record GradeDecision(boolean isCorrect, String errorMessage, BigDecimal scoreEarned) {
+        static GradeDecision pass(BigDecimal scoreEarned) {
+            return new GradeDecision(true, null, scoreEarned == null ? BigDecimal.ZERO : scoreEarned);
+        }
+
+        static GradeDecision fail(String message) {
+            return new GradeDecision(false, message, BigDecimal.ZERO);
+        }
+
+        static GradeDecision partial(BigDecimal scoreEarned, String message) {
+            return new GradeDecision(false, message, scoreEarned == null ? BigDecimal.ZERO : scoreEarned);
+        }
     }
 
     private boolean gradeByTestCases(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {

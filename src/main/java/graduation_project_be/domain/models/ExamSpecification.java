@@ -17,6 +17,7 @@ public class ExamSpecification {
     private String name;
     private String ddlScript;
     private String schemaJson;
+    private String schemaDiagram;
     private String description;
     private List<SpecEntity> entities;
     private List<SpecDataset> datasets;

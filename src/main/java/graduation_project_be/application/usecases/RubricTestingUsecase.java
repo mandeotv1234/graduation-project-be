@@ -5,10 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
+import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
 import graduation_project_be.application.usecases.request.TestGradeSelectRequest;
+import graduation_project_be.application.usecases.response.BuildInsertTablesResponse;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
+import graduation_project_be.application.usecases.response.ExecuteSelectTestCaseResponse;
+import graduation_project_be.application.usecases.response.RubricTestGradeResponse;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
@@ -17,18 +21,30 @@ import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @RequiredArgsConstructor
 public class RubricTestingUsecase {
 
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
+    private static final Pattern INSERT_TABLE_ISSUE_PATTERN = Pattern.compile(
+            "Bang\\s+([^:]+):\\s*thieu\\s+(\\d+)\\s+dong,\\s*sai\\s+(\\d+)\\s+o,\\s*du\\s+(\\d+)\\s+dong,\\s*sai\\s+thu\\s+tu\\s+(\\d+)\\s+dong(?:,\\s*tru\\s+([0-9]+(?:\\.[0-9]+)?)\\s*diem)?\\.",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern INSERT_INTO_PATTERN = Pattern.compile(
+            "(?i)\\bINSERT\\s+INTO\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
     private final GeminiService geminiService;
     private final ExamSchemaService examSchemaService;
@@ -74,7 +90,7 @@ public class RubricTestingUsecase {
                 priorQuestionContext);
     }
 
-    public Map<String, Object> testGradeInsert(TestGradeInsertRequest request) {
+    public RubricTestGradeResponse testGradeInsert(TestGradeInsertRequest request) {
         String correctQuery = request.correctQuery();
         String studentQuery = request.studentQuery();
         String gradingRubric = request.gradingRubric();
@@ -92,9 +108,9 @@ public class RubricTestingUsecase {
 
         try {
             JsonNode rubric = objectMapper.readTree(gradingRubric);
-            JsonNode payload = rubric.path("grading_payload");
+            JsonNode payload = resolveInsertPayload(rubric);
             JsonNode settings = payload.path("grading_settings");
-            String seedSchemaScript = payload.path("seed_schema_script").asText("");
+            String seedSchemaScript = payload.path("seed_schema_script").asText(rubric.path("seed_schema_script").asText(""));
             String dependsOnQuestionIdRaw = settings.path("depends_on_question_id").asText("").trim();
             boolean useConstraintWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(true);
             List<Map<String, Object>> details = new ArrayList<>();
@@ -237,22 +253,27 @@ public class RubricTestingUsecase {
                 gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission);
             }
 
+            double earnedPoints = fakeSubmission.getScoreEarned() != null
+                    ? fakeSubmission.getScoreEarned().doubleValue()
+                    : 0d;
+            double totalDeduction = Math.max(0d, totalPoints - earnedPoints);
+
             boolean allPassed = fakeSubmission.getScoreEarned() != null
                     && fakeSubmission.getScoreEarned().compareTo(BigDecimal.valueOf(totalPoints)) >= 0;
 
             if (fakeSubmission.getErrorMessage() != null && !fakeSubmission.getErrorMessage().isBlank()) {
-                details.add(Map.of("type", "error", "message", fakeSubmission.getErrorMessage(), "points", 0));
+                appendInsertErrorDetails(details, fakeSubmission.getErrorMessage(), totalDeduction);
             } else if (allPassed && details.isEmpty()) {
                 details.add(Map.of("type", "success", "message", "Tất cả dữ liệu đều chính xác", "points", totalPoints));
             }
 
-            return Map.of(
-                    "earnedPoints", fakeSubmission.getScoreEarned() != null
-                            ? fakeSubmission.getScoreEarned().doubleValue()
-                            : 0,
-                    "totalPoints", totalPoints,
-                    "allPassed", allPassed,
-                    "details", details);
+                return RubricTestGradeResponse.of(
+                    fakeSubmission.getScoreEarned() != null
+                        ? fakeSubmission.getScoreEarned().doubleValue()
+                        : 0,
+                    totalPoints,
+                    allPassed,
+                    details);
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử: " + e.getMessage(), e);
@@ -268,7 +289,184 @@ public class RubricTestingUsecase {
         }
     }
 
-    public Map<String, Object> testGradeSelect(TestGradeSelectRequest request) {
+    public ExecuteSelectTestCaseResponse executeSelectTestCase(ExecuteSelectQueryRequest request) {
+        String correctQuery = request.correctQuery();
+        String setupDependencyId = request.setupDependencyId();
+        String setupCustomScript = request.setupCustomScript();
+
+        if (correctQuery == null || correctQuery.isBlank()) {
+            throw new IllegalArgumentException("Script đáp án giáo viên (correctQuery) không được để trống.");
+        }
+
+        List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
+
+        String caseSchema = "test_grade_run_tc_" + System.currentTimeMillis();
+        try {
+            examSchemaService.resetSchema(caseSchema);
+
+            List<Map<String, Object>> details = new ArrayList<>();
+            int bootstrappedTables = executeExistingAnswersForSchema(
+                    examQuestions,
+                    caseSchema,
+                    details,
+                    "RUN_TC",
+                    true);
+
+            if (setupDependencyId != null && !setupDependencyId.isBlank()) {
+                if (setupDependencyId.matches("\\d+")) {
+                    try {
+                        Long depId = Long.valueOf(setupDependencyId);
+                        ExamQuestionResponse depQuestion = examQuestions.stream()
+                                .filter(q -> q.id() != null && q.id().equals(depId))
+                                .findFirst()
+                                .orElse(null);
+                        if (depQuestion != null && depQuestion.correctQuery() != null
+                                && !depQuestion.correctQuery().isBlank()) {
+                            examSchemaService.executeSql(
+                                    caseSchema,
+                                    normalizeSqlForExecution(depQuestion.correctQuery()));
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+            }
+
+            if (setupCustomScript != null && !setupCustomScript.isBlank()) {
+                if (containsForbiddenSchemaDdl(setupCustomScript)) {
+                    throw new IllegalArgumentException(
+                            "setup_custom_script không được chứa CREATE/DROP TABLE hoặc ALTER TABLE ngoài CHECK/NOCHECK CONSTRAINT.");
+                }
+                clearAllDataInSchema(caseSchema);
+                executeSetupScriptWithFkFallback(caseSchema, setupCustomScript, "RUN_TC", details);
+            }
+
+            List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
+
+                List<ExecuteSelectTestCaseResponse.ColumnConfig> columnsConfig = new ArrayList<>();
+            List<List<String>> rows = new ArrayList<>();
+
+            if (teacherRows != null && !teacherRows.isEmpty()) {
+                Map<String, Object> firstRow = teacherRows.get(0);
+                for (String colName : firstRow.keySet()) {
+                    columnsConfig.add(new ExecuteSelectTestCaseResponse.ColumnConfig(colName, "NVARCHAR"));
+                }
+
+                for (Map<String, Object> rowMap : teacherRows) {
+                    List<String> rowList = new ArrayList<>();
+                    for (String colName : firstRow.keySet()) {
+                        Object val = rowMap.get(colName);
+                        rowList.add(val == null ? "" : String.valueOf(val));
+                    }
+                    rows.add(rowList);
+                }
+            }
+
+            return new ExecuteSelectTestCaseResponse(columnsConfig, rows);
+        } finally {
+            try {
+                examSchemaService.dropSchema(caseSchema);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    public BuildInsertTablesResponse buildInsertTablesFromAnswer(Long examId, String correctQuery) {
+        if (correctQuery == null || correctQuery.isBlank()) {
+            throw new IllegalArgumentException("Script đáp án giáo viên (correctQuery) không được để trống.");
+        }
+
+        List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(examId);
+
+        String schemaName = "test_build_insert_" + System.currentTimeMillis();
+        String safeSchema = safeIdentifier(schemaName, "schemaName");
+
+        try {
+            examSchemaService.resetSchema(schemaName);
+
+            String normalizedCorrectSql = normalizeSqlForExecution(correctQuery);
+            if (normalizedCorrectSql.isBlank()) {
+                throw new IllegalArgumentException("SQL đáp án không hợp lệ sau khi chuẩn hóa.");
+            }
+
+            List<Map<String, Object>> details = new ArrayList<>();
+            int preparedCount = executeExistingAnswersForSchema(
+                    examQuestions,
+                    schemaName,
+                    details,
+                    "BUILD_INSERT",
+                    false,
+                    normalizedCorrectSql);
+
+            examSchemaService.executeSql(schemaName, normalizedCorrectSql);
+
+            Set<String> targetTables = extractInsertedTableNames(normalizedCorrectSql);
+            if (targetTables.isEmpty()) {
+                targetTables = extractInsertedTableNames(correctQuery);
+            }
+
+            if (targetTables.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Không nhận diện được bảng INSERT từ SQL đáp án. Vui lòng kiểm tra cú pháp INSERT INTO.");
+            }
+
+            List<TableMetadata> metadataList = examSchemaService.extractMetadata(schemaName);
+            Map<String, TableMetadata> metadataByName = new LinkedHashMap<>();
+            for (TableMetadata tableMetadata : metadataList) {
+                if (tableMetadata == null || tableMetadata.getTableName() == null) {
+                    continue;
+                }
+                metadataByName.put(
+                        tableMetadata.getTableName().toLowerCase(Locale.ROOT),
+                        tableMetadata);
+            }
+
+            List<BuildInsertTablesResponse.InsertTableConfig> tables = new ArrayList<>();
+            for (String tableName : targetTables) {
+                String safeTableName;
+                try {
+                    safeTableName = safeIdentifier(tableName, "tableName");
+                } catch (Exception ignored) {
+                    continue;
+                }
+
+                TableMetadata tableMetadata = metadataByName.get(safeTableName.toLowerCase(Locale.ROOT));
+                if (tableMetadata == null) {
+                    continue;
+                }
+
+                List<Map<String, Object>> expectedData = examSchemaService.executeAdminSql(
+                        "SELECT * FROM [" + safeSchema + "].[" + safeTableName + "]")
+                        .getResultSet();
+
+                List<BuildInsertTablesResponse.InsertColumnConfig> columnsConfig = new ArrayList<>();
+                for (TableMetadata.ColumnMetadata column : tableMetadata.getColumns()) {
+                    columnsConfig.add(new BuildInsertTablesResponse.InsertColumnConfig(
+                            column.getColumnName(),
+                            column.isPrimaryKey(),
+                            true,
+                            "EXACT"));
+                }
+
+                tables.add(new BuildInsertTablesResponse.InsertTableConfig(
+                        tableMetadata.getTableName(),
+                        "PARTIAL_BY_COLUMN",
+                        columnsConfig,
+                        expectedData == null ? List.of() : expectedData));
+            }
+
+            return new BuildInsertTablesResponse(
+                    tables,
+                    preparedCount,
+                    targetTables.size());
+        } finally {
+            try {
+                examSchemaService.dropSchema(schemaName);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    public RubricTestGradeResponse testGradeSelect(TestGradeSelectRequest request) {
         String studentQuery = request.studentQuery();
         String correctQuery = request.correctQuery();
         String gradingRubric = request.gradingRubric();
@@ -278,6 +476,8 @@ public class RubricTestingUsecase {
             JsonNode rubric = objectMapper.readTree(gradingRubric);
             JsonNode payload = rubric.path("grading_payload");
             JsonNode globalRules = payload.path("global_grading_rules");
+            JsonNode selectRules = resolveSelectGradingRules(rubric, payload);
+            boolean hasRuleBasedScoring = hasSelectGradingRules(selectRules);
             JsonNode testCases = payload.path("test_cases");
 
             boolean strictOrdering = readBoolean(globalRules.path("strict_ordering"), false);
@@ -300,21 +500,89 @@ public class RubricTestingUsecase {
 
             List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
             List<Map<String, Object>> details = new ArrayList<>();
+                AtomicBoolean wrongColumnOrderFlag = new AtomicBoolean(false);
 
             if (testCases.isMissingNode() || !testCases.isArray() || testCases.size() == 0) {
-                return Map.of(
-                        "earnedPoints", 0,
-                        "totalPoints", totalPoints,
-                        "allPassed", false,
-                        "details", List.of(Map.of(
-                                "type", "error",
-                                "message", "Rubric SELECT không có test_cases",
-                                "points", 0)));
+                if (hasRuleBasedScoring && !correctQuery.isBlank()) {
+                    String baselineSchema = "test_grade_select_rule_base_" + System.currentTimeMillis();
+                    try {
+                        examSchemaService.resetSchema(baselineSchema);
+                        int baselinePrepared = executeExistingAnswersForSchema(
+                                examQuestions,
+                                baselineSchema,
+                                details,
+                                "RULE_BASE");
+
+                        List<Map<String, Object>> expectedBaseline = examSchemaService.executeSql(
+                                baselineSchema,
+                                correctQuery).getResultSet();
+                        List<Map<String, Object>> actualBaseline = examSchemaService.executeSql(
+                                baselineSchema,
+                                studentQuery).getResultSet();
+
+                        List<String> expectedColumns = new ArrayList<>();
+                        List<List<String>> expectedRows = new ArrayList<>();
+                        if (expectedBaseline != null && !expectedBaseline.isEmpty()) {
+                            expectedColumns.addAll(expectedBaseline.get(0).keySet());
+                            for (Map<String, Object> map : expectedBaseline) {
+                                expectedRows.add(toRowValues(map, expectedColumns));
+                            }
+                        }
+
+                        BigDecimal maxPoints = BigDecimal.valueOf(totalPoints);
+                        BigDecimal earned = evaluateSelectCase(
+                                "RULE_BASE",
+                                "Dữ liệu từ đáp án các câu trước (đã chạy " + baselinePrepared + " đáp án)",
+                                maxPoints,
+                                expectedRows.size(),
+                                expectedColumns,
+                                expectedRows,
+                                actualBaseline,
+                                strictOrdering,
+                                allowPartialRowCredit,
+                                extraRowPenalty,
+                                details,
+                                wrongColumnOrderFlag,
+                                selectRules,
+                                true);
+
+                        BigDecimal normalizedEarned = earned.setScale(2, RoundingMode.HALF_UP);
+                        boolean allPassed = normalizedEarned.compareTo(maxPoints.setScale(2, RoundingMode.HALF_UP)) >= 0;
+
+                        return RubricTestGradeResponse.of(
+                                normalizedEarned.doubleValue(),
+                                totalPoints,
+                                allPassed,
+                                details);
+                    } catch (Exception baselineEx) {
+                        return RubricTestGradeResponse.of(
+                                0,
+                                totalPoints,
+                                false,
+                                List.of(Map.of(
+                                        "type", "error",
+                                        "message", "Lỗi chấm SELECT theo grading_rules: " + baselineEx.getMessage(),
+                                        "points", 0)));
+                    } finally {
+                        try {
+                            examSchemaService.dropSchema(baselineSchema);
+                        } catch (Exception ignore) {
+                        }
+                    }
+                }
+
+                return RubricTestGradeResponse.of(
+                    0,
+                    totalPoints,
+                    false,
+                    List.of(Map.of(
+                        "type", "error",
+                        "message", "Rubric SELECT không có test_cases",
+                        "points", 0)));
             }
 
             BigDecimal earnedTotal = BigDecimal.ZERO;
             boolean allPassed = true;
-            AtomicBoolean wrongColumnOrderFlag = new AtomicBoolean(false);
 
             if (!correctQuery.isBlank()) {
                 String baselineSchema = "test_grade_select_baseline_" + System.currentTimeMillis();
@@ -354,7 +622,9 @@ public class RubricTestingUsecase {
                             allowPartialRowCredit,
                             extraRowPenalty,
                             details,
-                            wrongColumnOrderFlag);
+                            wrongColumnOrderFlag,
+                            selectRules,
+                            hasRuleBasedScoring);
 
                     earnedTotal = earnedTotal.add(baselineEarned);
                     if (baselineEarned.compareTo(baselineMaxPoints) < 0) {
@@ -502,7 +772,9 @@ public class RubricTestingUsecase {
                             allowPartialRowCredit,
                             extraRowPenalty,
                             details,
-                            wrongColumnOrderFlag);
+                            wrongColumnOrderFlag,
+                            selectRules,
+                            hasRuleBasedScoring);
 
                     earnedTotal = earnedTotal.add(caseEarned);
                     if (caseEarned.compareTo(caseMaxPoints) < 0) {
@@ -532,7 +804,7 @@ public class RubricTestingUsecase {
                 }
             }
 
-            if (wrongColumnOrderFlag.get() && wrongColumnOrderPenalty > 0) {
+            if (!hasRuleBasedScoring && wrongColumnOrderFlag.get() && wrongColumnOrderPenalty > 0) {
                 BigDecimal penalty = BigDecimal.valueOf(wrongColumnOrderPenalty);
                 earnedTotal = earnedTotal.subtract(penalty);
                 details.add(Map.of(
@@ -550,18 +822,18 @@ public class RubricTestingUsecase {
                 earnedTotal = BigDecimal.ZERO;
             }
 
-            return Map.of(
-                    "earnedPoints", earnedTotal.doubleValue(),
-                    "totalPoints", totalPoints,
-                    "allPassed", allPassed,
-                    "details", details);
+                return RubricTestGradeResponse.of(
+                    earnedTotal.doubleValue(),
+                    totalPoints,
+                    allPassed,
+                    details);
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử SELECT: " + e.getMessage(), e);
         }
     }
 
-    public Map<String, Object> testGradeCreateTable(TestGradeCreateTableRequest request) {
+    public RubricTestGradeResponse testGradeCreateTable(TestGradeCreateTableRequest request) {
         String correctQuery = request.correctQuery();
         String studentQuery = request.studentQuery();
         String gradingRubric = request.gradingRubric();
@@ -579,13 +851,13 @@ public class RubricTestingUsecase {
             try {
                 examSchemaService.executeSql(studentSchema, studentQuery);
             } catch (Exception e) {
-                return Map.of(
-                        "earnedPoints", 0,
-                        "totalPoints", totalPoints,
-                        "allPassed", false,
-                        "details", List.of(
-                                Map.of("type", "error", "message",
-                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+                return RubricTestGradeResponse.of(
+                    0,
+                    totalPoints,
+                    false,
+                    List.of(
+                        Map.of("type", "error", "message",
+                            "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
             }
 
             return executeRubricGradingV2(
@@ -829,7 +1101,22 @@ public class RubricTestingUsecase {
             boolean allowPartialRowCredit,
             double extraRowPenalty,
             List<Map<String, Object>> details,
-            AtomicBoolean wrongColumnOrderFlag) {
+            AtomicBoolean wrongColumnOrderFlag,
+            JsonNode selectRules,
+            boolean hasRuleBasedScoring) {
+        if (hasRuleBasedScoring) {
+            return evaluateSelectCaseByRules(
+                    caseId,
+                    caseName,
+                    caseMaxPoints,
+                    expectedColumns,
+                    expectedRows,
+                    actualRows,
+                    strictOrdering,
+                    selectRules,
+                    details);
+        }
+
         if (expectedRows == null) {
             expectedRows = List.of();
         }
@@ -909,6 +1196,862 @@ public class RubricTestingUsecase {
                 "points", earned.setScale(2, RoundingMode.HALF_UP).doubleValue()));
 
         return earned;
+    }
+
+    private BigDecimal evaluateSelectCaseByRules(
+            String caseId,
+            String caseName,
+            BigDecimal caseMaxPoints,
+            List<String> expectedColumns,
+            List<List<String>> expectedRows,
+            List<Map<String, Object>> actualRows,
+            boolean strictOrdering,
+            JsonNode selectRules,
+            List<Map<String, Object>> details) {
+        List<List<String>> safeExpectedRows = expectedRows == null ? List.of() : expectedRows;
+        List<Map<String, Object>> safeActualRows = actualRows == null ? List.of() : actualRows;
+
+        List<String> actualColumns = safeActualRows.isEmpty()
+                ? new ArrayList<>()
+                : new ArrayList<>(safeActualRows.get(0).keySet());
+
+        List<String> effectiveExpectedColumns = new ArrayList<>();
+        if (expectedColumns != null) {
+            for (String column : expectedColumns) {
+                if (column != null && !column.isBlank()) {
+                    effectiveExpectedColumns.add(column);
+                }
+            }
+        }
+        if (effectiveExpectedColumns.isEmpty() && !actualColumns.isEmpty()) {
+            effectiveExpectedColumns = new ArrayList<>(actualColumns);
+        }
+
+        List<Map<String, Object>> expectedRowMaps = buildExpectedRowMaps(effectiveExpectedColumns, safeExpectedRows);
+        List<String> comparisonColumns = !effectiveExpectedColumns.isEmpty()
+                ? new ArrayList<>(effectiveExpectedColumns)
+                : new ArrayList<>(actualColumns);
+        if (comparisonColumns.isEmpty() && !expectedRowMaps.isEmpty()) {
+            comparisonColumns.addAll(expectedRowMaps.get(0).keySet());
+        }
+
+        if (compareSelectResultStrict(safeActualRows, expectedRowMaps, strictOrdering, comparisonColumns)) {
+            BigDecimal full = caseMaxPoints.setScale(2, RoundingMode.HALF_UP);
+            details.add(Map.of(
+                    "type", "success",
+                    "message", "[" + caseId + "] " + caseName + ": " + full
+                            + "/" + caseMaxPoints.setScale(2, RoundingMode.HALF_UP) + " điểm",
+                    "points", full.doubleValue()));
+            return caseMaxPoints;
+        }
+
+        int expectedRowsCount = expectedRowMaps.size();
+        int actualRowsCount = safeActualRows.size();
+        int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
+        int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
+
+        int missingColumns = countMissingColumnsIgnoreCase(effectiveExpectedColumns, actualColumns);
+        int extraColumns = countExtraColumnsIgnoreCase(effectiveExpectedColumns, actualColumns);
+        int columnOrderViolations = (!effectiveExpectedColumns.isEmpty() && !actualColumns.isEmpty()
+                && !sameColumnOrder(effectiveExpectedColumns, actualColumns)) ? 1 : 0;
+
+        JsonNode rowOrderRule = findSelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
+        int rowOrderViolations = 0;
+        if (strictOrdering && rowOrderRule != null && !hasSelectModifier(rowOrderRule, "SORT_ASC")) {
+            rowOrderViolations = countSelectRowOrderViolations(safeActualRows, expectedRowMaps, comparisonColumns);
+            if (rowOrderViolations == 0) {
+                rowOrderViolations = 1;
+            }
+        }
+
+        JsonNode cellNotEqualRule = findSelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
+        JsonNode cellNullRule = findSelectRule(selectRules, "CELL_VALUE", "IS_NULL");
+        JsonNode cellCompareModifiers = firstNonEmptyArray(
+                extractSelectRuleModifiers(cellNotEqualRule),
+                extractSelectRuleModifiers(cellNullRule));
+
+        List<SelectRowPair> rowPairs = buildSelectRowPairs(
+                safeActualRows,
+                expectedRowMaps,
+                comparisonColumns,
+                strictOrdering,
+                cellCompareModifiers);
+        int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
+        int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+
+        double casePoints = caseMaxPoints.doubleValue();
+        int expectedColumnsCount = Math.max(1, comparisonColumns.size());
+        int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
+        double rowPenaltyDefault = casePoints / expectedRowsForPenalty;
+        double columnPenaltyDefault = casePoints / expectedColumnsCount;
+        double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
+
+        List<SelectRuleApplication> applications = List.of(
+                applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
+                        caseMaxPoints, rowPenaltyDefault,
+                        "thieu " + missingRows + " dong"),
+                applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
+                        caseMaxPoints, rowPenaltyDefault,
+                        "du " + extraRows + " dong"),
+                applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
+                        caseMaxPoints, cellPenaltyDefault,
+                        "sai " + wrongCells + " o du lieu"),
+                applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
+                        caseMaxPoints, cellPenaltyDefault,
+                        "co " + nullViolations + " o gia tri rong"),
+                applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
+                        caseMaxPoints, rowPenaltyDefault,
+                        "sai thu tu " + rowOrderViolations + " dong"),
+                applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
+                        caseMaxPoints, columnPenaltyDefault,
+                        "sai thu tu cot ket qua"),
+                applySelectRule(selectRules, "COLUMN", "IS_MISSING", missingColumns,
+                        caseMaxPoints, columnPenaltyDefault,
+                        "thieu " + missingColumns + " cot"),
+                applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
+                        caseMaxPoints, columnPenaltyDefault,
+                        "du " + extraColumns + " cot"));
+
+        double earned = casePoints;
+        int matchedRuleCount = 0;
+        boolean failAllTriggered = false;
+        StringBuilder issueBuilder = new StringBuilder();
+
+        for (SelectRuleApplication application : applications) {
+            if (!application.violationPresent()) {
+                continue;
+            }
+
+            if (application.ruleMatched()) {
+                matchedRuleCount++;
+            }
+
+            if (application.failAllTriggered()) {
+                failAllTriggered = true;
+            }
+
+            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                earned -= application.deduction().doubleValue();
+            }
+
+            if (application.message() != null && !application.message().isBlank()) {
+                appendSelectIssue(issueBuilder, application.message());
+            }
+        }
+
+        if (failAllTriggered) {
+            earned = 0d;
+        } else if (matchedRuleCount == 0) {
+            earned = 0d;
+            appendSelectIssue(issueBuilder,
+                    "Khong co grading_rules phu hop de danh gia cac sai lech tren " + caseId + ".");
+        }
+
+        if (earned < 0d) {
+            earned = 0d;
+        }
+        if (earned > casePoints) {
+            earned = casePoints;
+        }
+
+        BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
+        BigDecimal delta = caseMaxPoints.subtract(earnedPoints).abs();
+        boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
+
+        BigDecimal roundedEarned = earnedPoints.setScale(2, RoundingMode.HALF_UP);
+        String scoreMessage = "[" + caseId + "] " + caseName + ": " + roundedEarned
+                + "/" + caseMaxPoints.setScale(2, RoundingMode.HALF_UP) + " điểm";
+        details.add(Map.of(
+                "type", allChecksPassed ? "success" : "warning",
+                "message", scoreMessage,
+                "points", roundedEarned.doubleValue()));
+
+        if (!allChecksPassed) {
+            String issueMessage = issueBuilder.length() == 0
+                    ? "Kết quả SELECT không khớp rubric chấm điểm."
+                    : issueBuilder.toString().trim();
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "[" + caseId + "] " + issueMessage,
+                    "points", 0));
+        }
+
+        return earnedPoints;
+    }
+
+    private JsonNode resolveSelectGradingRules(JsonNode rubric, JsonNode payload) {
+        JsonNode[] candidates = new JsonNode[] {
+                payload.path("grading_rules"),
+                rubric.path("grading_rules")
+        };
+
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && candidate.isArray()) {
+                return candidate;
+            }
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean hasSelectGradingRules(JsonNode gradingRules) {
+        if (gradingRules == null || !gradingRules.isArray()) {
+            return false;
+        }
+
+        for (JsonNode ruleNode : gradingRules) {
+            if (!ruleNode.isObject()) {
+                continue;
+            }
+            String target = ruleNode.path("target").asText("").trim();
+            String condition = ruleNode.path("condition").asText("").trim();
+            if (!target.isBlank() && !condition.isBlank()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private JsonNode findSelectRule(JsonNode gradingRules, String target, String condition) {
+        if (gradingRules == null || !gradingRules.isArray()) {
+            return null;
+        }
+
+        for (JsonNode ruleNode : gradingRules) {
+            if (!ruleNode.isObject()) {
+                continue;
+            }
+            String ruleTarget = ruleNode.path("target").asText("").trim();
+            String ruleCondition = ruleNode.path("condition").asText("").trim();
+            if (target.equalsIgnoreCase(ruleTarget) && condition.equalsIgnoreCase(ruleCondition)) {
+                return ruleNode;
+            }
+        }
+
+        return null;
+    }
+
+    private JsonNode extractSelectRuleModifiers(JsonNode ruleNode) {
+        if (ruleNode == null || !ruleNode.isObject()) {
+            return objectMapper.createArrayNode();
+        }
+
+        JsonNode modifiers = ruleNode.path("modifiers");
+        return modifiers.isArray() ? modifiers : objectMapper.createArrayNode();
+    }
+
+    private JsonNode firstNonEmptyArray(JsonNode primary, JsonNode fallback) {
+        if (primary != null && primary.isArray() && primary.size() > 0) {
+            return primary;
+        }
+        if (fallback != null && fallback.isArray() && fallback.size() > 0) {
+            return fallback;
+        }
+        return objectMapper.createArrayNode();
+    }
+
+    private boolean hasSelectModifier(JsonNode ruleNode, String expectedModifier) {
+        if (expectedModifier == null || expectedModifier.isBlank()) {
+            return false;
+        }
+
+        JsonNode modifiers = extractSelectRuleModifiers(ruleNode);
+        for (JsonNode modifierNode : modifiers) {
+            if (expectedModifier.equalsIgnoreCase(modifierNode.asText(""))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private List<Map<String, Object>> buildExpectedRowMaps(
+            List<String> expectedColumns,
+            List<List<String>> expectedRows) {
+        List<Map<String, Object>> rowMaps = new ArrayList<>();
+        if (expectedRows == null || expectedRows.isEmpty()) {
+            return rowMaps;
+        }
+
+        for (List<String> expectedRow : expectedRows) {
+            Map<String, Object> rowMap = new LinkedHashMap<>();
+            int expectedSize = expectedRow == null ? 0 : expectedRow.size();
+
+            for (int i = 0; i < expectedSize; i++) {
+                String key;
+                if (expectedColumns != null && i < expectedColumns.size()) {
+                    key = expectedColumns.get(i);
+                } else {
+                    key = "col_" + i;
+                }
+                rowMap.put(key, expectedRow.get(i));
+            }
+
+            rowMaps.add(rowMap);
+        }
+
+        return rowMaps;
+    }
+
+    private boolean compareSelectResultStrict(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            boolean requireStrictOrder,
+            List<String> comparisonColumns) {
+        if (actualRows == null || expectedRows == null) {
+            return false;
+        }
+        if (actualRows.size() != expectedRows.size()) {
+            return false;
+        }
+
+        List<String> actualSignatures = new ArrayList<>();
+        for (Map<String, Object> actualRow : actualRows) {
+            actualSignatures.add(buildSelectRowSignature(actualRow, comparisonColumns));
+        }
+
+        List<String> expectedSignatures = new ArrayList<>();
+        for (Map<String, Object> expectedRow : expectedRows) {
+            expectedSignatures.add(buildSelectRowSignature(expectedRow, comparisonColumns));
+        }
+
+        if (!requireStrictOrder) {
+            Collections.sort(actualSignatures);
+            Collections.sort(expectedSignatures);
+        }
+
+        return actualSignatures.equals(expectedSignatures);
+    }
+
+    private int countMissingColumnsIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
+        if (expectedColumns == null || expectedColumns.isEmpty()) {
+            return 0;
+        }
+
+        Set<String> actualSet = new HashSet<>();
+        if (actualColumns != null) {
+            for (String column : actualColumns) {
+                if (column != null) {
+                    actualSet.add(column.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        int missing = 0;
+        for (String expected : expectedColumns) {
+            if (expected == null) {
+                continue;
+            }
+            if (!actualSet.contains(expected.toLowerCase(Locale.ROOT))) {
+                missing++;
+            }
+        }
+        return missing;
+    }
+
+    private int countExtraColumnsIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
+        if (actualColumns == null || actualColumns.isEmpty()) {
+            return 0;
+        }
+
+        Set<String> expectedSet = new HashSet<>();
+        if (expectedColumns != null) {
+            for (String expected : expectedColumns) {
+                if (expected != null) {
+                    expectedSet.add(expected.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+
+        int extra = 0;
+        for (String actual : actualColumns) {
+            if (actual == null) {
+                continue;
+            }
+            if (!expectedSet.contains(actual.toLowerCase(Locale.ROOT))) {
+                extra++;
+            }
+        }
+        return extra;
+    }
+
+    private int countSelectRowOrderViolations(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            List<String> columns) {
+        if (actualRows == null || expectedRows == null) {
+            return 0;
+        }
+
+        int limit = Math.min(actualRows.size(), expectedRows.size());
+        int violations = 0;
+        for (int i = 0; i < limit; i++) {
+            String actualSig = buildSelectRowSignature(actualRows.get(i), columns);
+            String expectedSig = buildSelectRowSignature(expectedRows.get(i), columns);
+            if (!actualSig.equals(expectedSig)) {
+                violations++;
+            }
+        }
+        return violations;
+    }
+
+    private String buildSelectRowSignature(Map<String, Object> row, List<String> columns) {
+        if (row == null) {
+            return "";
+        }
+
+        StringBuilder signature = new StringBuilder();
+        if (columns != null && !columns.isEmpty()) {
+            for (String column : columns) {
+                signature.append(normalizeSelectValue(getRowValueIgnoreCase(row, column))).append("|||");
+            }
+            return signature.toString().toLowerCase(Locale.ROOT);
+        }
+
+        for (Object value : row.values()) {
+            signature.append(normalizeSelectValue(value)).append("|||");
+        }
+        return signature.toString().toLowerCase(Locale.ROOT);
+    }
+
+    private List<SelectRowPair> buildSelectRowPairs(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            List<String> columns,
+            boolean strictOrdering,
+            JsonNode cellModifiers) {
+        if (actualRows == null || expectedRows == null || columns == null || columns.isEmpty()) {
+            return List.of();
+        }
+
+        List<SelectRowPair> pairs = new ArrayList<>();
+        if (strictOrdering) {
+            int limit = Math.min(actualRows.size(), expectedRows.size());
+            for (int i = 0; i < limit; i++) {
+                pairs.add(new SelectRowPair(actualRows.get(i), expectedRows.get(i)));
+            }
+            return pairs;
+        }
+
+        List<Map<String, Object>> remainingActualRows = new ArrayList<>(actualRows);
+        for (Map<String, Object> expectedRow : expectedRows) {
+            int matchedIndex = findBestSelectRowMatchIndex(
+                    remainingActualRows,
+                    expectedRow,
+                    columns,
+                    cellModifiers);
+            if (matchedIndex < 0) {
+                continue;
+            }
+
+            Map<String, Object> matchedRow = remainingActualRows.remove(matchedIndex);
+            pairs.add(new SelectRowPair(matchedRow, expectedRow));
+        }
+
+        return pairs;
+    }
+
+    private int findBestSelectRowMatchIndex(
+            List<Map<String, Object>> actualRows,
+            Map<String, Object> expectedRow,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (actualRows == null || actualRows.isEmpty()) {
+            return -1;
+        }
+
+        int bestIndex = -1;
+        int bestScore = -1;
+        for (int i = 0; i < actualRows.size(); i++) {
+            int score = scoreSelectRowMatch(actualRows.get(i), expectedRow, columns, cellModifiers);
+            if (score > bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+        return bestIndex;
+    }
+
+    private int scoreSelectRowMatch(
+            Map<String, Object> actualRow,
+            Map<String, Object> expectedRow,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (actualRow == null || expectedRow == null || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int score = 0;
+        for (String column : columns) {
+            Object actualValue = getRowValueIgnoreCase(actualRow, column);
+            Object expectedValue = getRowValueIgnoreCase(expectedRow, column);
+            if (valuesEqualBySelectRule(actualValue, expectedValue, cellModifiers)) {
+                score++;
+            }
+        }
+        return score;
+    }
+
+    private int countSelectCellMismatches(
+            List<SelectRowPair> rowPairs,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int mismatches = 0;
+        for (SelectRowPair rowPair : rowPairs) {
+            for (String column : columns) {
+                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
+                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
+                if (!valuesEqualBySelectRule(actualValue, expectedValue, cellModifiers)) {
+                    mismatches++;
+                }
+            }
+        }
+
+        return mismatches;
+    }
+
+    private int countSelectNullViolations(
+            List<SelectRowPair> rowPairs,
+            List<String> columns,
+            JsonNode cellModifiers) {
+        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
+            return 0;
+        }
+
+        int nullViolations = 0;
+        for (SelectRowPair rowPair : rowPairs) {
+            for (String column : columns) {
+                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
+                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
+
+                String normalizedActual = applySelectModifiers(normalizeSelectValue(actualValue), cellModifiers);
+                String normalizedExpected = applySelectModifiers(normalizeSelectValue(expectedValue), cellModifiers);
+                if (!isNullLikeValue(normalizedExpected) && isNullLikeValue(normalizedActual)) {
+                    nullViolations++;
+                }
+            }
+        }
+
+        return nullViolations;
+    }
+
+    private SelectRuleApplication applySelectRule(
+            JsonNode gradingRules,
+            String target,
+            String condition,
+            int violationCount,
+            BigDecimal caseMaxPoints,
+            double defaultPenaltyPerViolation,
+            String violationSummary) {
+        if (violationCount <= 0) {
+            return SelectRuleApplication.noViolation();
+        }
+
+        JsonNode ruleNode = findSelectRule(gradingRules, target, condition);
+        if (ruleNode == null) {
+            return SelectRuleApplication.unmatchedViolation();
+        }
+
+        SelectRuleDecision decision = resolveSelectRuleDecision(
+                ruleNode,
+                caseMaxPoints,
+                defaultPenaltyPerViolation);
+
+        String ruleLabel = target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
+        if (decision.ignore()) {
+            String message = "Rule " + ruleLabel + " bo qua vi pham (" + violationSummary + ").";
+            return SelectRuleApplication.matchedViolation(false, BigDecimal.ZERO, message);
+        }
+
+        if (decision.failAll()) {
+            String message = "Rule " + ruleLabel + " kich hoat FAIL_ALL (" + violationSummary + ").";
+            return SelectRuleApplication.matchedViolation(true, BigDecimal.ZERO, message);
+        }
+
+        BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
+                .multiply(BigDecimal.valueOf(violationCount));
+
+        String message = buildSelectRuleMessage(ruleLabel, violationSummary, deduction, decision.action());
+        return SelectRuleApplication.matchedViolation(false, deduction, message);
+    }
+
+    private SelectRuleDecision resolveSelectRuleDecision(
+            JsonNode ruleNode,
+            BigDecimal caseMaxPoints,
+            double defaultPenaltyPerViolation) {
+        String action = ruleNode != null ? ruleNode.path("action").asText("").trim() : "";
+        if (action.isBlank()) {
+            action = "DEDUCT_POINTS";
+        }
+
+        double penaltyValue = -1d;
+        if (ruleNode != null) {
+            JsonNode penaltyNode = ruleNode.path("penalty_value");
+            if (penaltyNode.isNumber()) {
+                penaltyValue = penaltyNode.asDouble();
+            } else if (penaltyNode.isTextual()) {
+                penaltyValue = parseDoubleSafe(penaltyNode.asText(""), -1d);
+            }
+        }
+
+        String normalizedAction = action.toUpperCase(Locale.ROOT);
+        double safeDefaultPenalty = Math.max(0d, defaultPenaltyPerViolation);
+
+        switch (normalizedAction) {
+            case "IGNORE":
+                return new SelectRuleDecision(normalizedAction, 0d, true, false);
+            case "FAIL_ALL":
+                return new SelectRuleDecision(normalizedAction, 0d, false, true);
+            case "FAIL_ITEM":
+                return new SelectRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
+            case "DEDUCT_PERCENTAGE": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, caseMaxPoints.doubleValue() * penaltyValue / 100d)
+                        : safeDefaultPenalty;
+                return new SelectRuleDecision(normalizedAction, penalty, false, false);
+            }
+            case "DEDUCT_POINTS": {
+                double penalty = penaltyValue >= 0d
+                        ? Math.max(0d, penaltyValue)
+                        : safeDefaultPenalty;
+                return new SelectRuleDecision(normalizedAction, penalty, false, false);
+            }
+            default:
+                return new SelectRuleDecision("DEDUCT_POINTS", safeDefaultPenalty, false, false);
+        }
+    }
+
+    private String buildSelectRuleMessage(
+            String ruleLabel,
+            String violationSummary,
+            BigDecimal deduction,
+            String action) {
+        String formattedDeduction = deduction
+                .setScale(2, RoundingMode.HALF_UP)
+                .stripTrailingZeros()
+                .toPlainString();
+        return String.format(
+                Locale.ROOT,
+                "Rule %s (%s, action=%s): tru %s diem.",
+                ruleLabel,
+                violationSummary,
+                action,
+                formattedDeduction);
+    }
+
+    private void appendSelectIssue(StringBuilder builder, String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append(' ');
+        }
+        builder.append(message.trim());
+    }
+
+    private Object getRowValueIgnoreCase(Map<String, Object> row, String columnName) {
+        if (row == null || columnName == null) {
+            return null;
+        }
+
+        if (row.containsKey(columnName)) {
+            return row.get(columnName);
+        }
+
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(columnName)) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
+    }
+
+    private boolean valuesEqualBySelectRule(Object actualValue, Object expectedValue, JsonNode modifiers) {
+        String actual = applySelectModifiers(normalizeSelectValue(actualValue), modifiers);
+        String expected = applySelectModifiers(normalizeSelectValue(expectedValue), modifiers);
+
+        if (isNullLikeValue(actual) && isNullLikeValue(expected)) {
+            return true;
+        }
+        if (actual == null || expected == null) {
+            return false;
+        }
+        if (actual.equalsIgnoreCase(expected)) {
+            return true;
+        }
+
+        try {
+            return new BigDecimal(actual).compareTo(new BigDecimal(expected)) == 0;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String normalizeSelectValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+
+        String normalized = String.valueOf(value).trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+
+        try {
+            return new BigDecimal(normalized).stripTrailingZeros().toPlainString();
+        } catch (Exception ignored) {
+            return normalized;
+        }
+    }
+
+    private String applySelectModifiers(String value, JsonNode modifiers) {
+        if (value == null) {
+            return null;
+        }
+        if (modifiers == null || !modifiers.isArray() || modifiers.isEmpty()) {
+            return value;
+        }
+
+        String current = value;
+        for (JsonNode modifierNode : modifiers) {
+            String modifier = modifierNode.asText("").trim().toUpperCase(Locale.ROOT);
+            if (modifier.isBlank()) {
+                continue;
+            }
+
+            switch (modifier) {
+                case "TO_LOWERCASE":
+                    current = current.toLowerCase(Locale.ROOT);
+                    break;
+                case "TRIM_WHITESPACE":
+                    current = current.trim();
+                    break;
+                case "REMOVE_ALL_WHITESPACE":
+                    current = current.replaceAll("\\s+", "");
+                    break;
+                case "REMOVE_DIACRITICS": {
+                    String normalized = Normalizer.normalize(current, Normalizer.Form.NFD);
+                    current = normalized.replaceAll("\\p{M}+", "");
+                    break;
+                }
+                case "REMOVE_SPECIAL_CHARS":
+                    current = current.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\s]", "");
+                    break;
+                case "CAST_TO_STRING":
+                    current = String.valueOf(current);
+                    break;
+                case "CAST_TO_FLOAT":
+                    current = canonicalizeSelectNumber(current, -1);
+                    break;
+                case "ROUND_TO_INT":
+                    current = canonicalizeSelectNumber(current, 0);
+                    break;
+                case "ROUND_2_DECIMALS":
+                    current = canonicalizeSelectNumber(current, 2);
+                    break;
+                case "SORT_ASC":
+                    current = sortSelectTokensAscending(current);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        return current;
+    }
+
+    private String canonicalizeSelectNumber(String value, int targetScale) {
+        if (value == null) {
+            return null;
+        }
+
+        try {
+            BigDecimal decimal = new BigDecimal(value.trim());
+            if (targetScale >= 0) {
+                decimal = decimal.setScale(targetScale, RoundingMode.HALF_UP);
+            }
+            return decimal.stripTrailingZeros().toPlainString();
+        } catch (Exception ignored) {
+            return value;
+        }
+    }
+
+    private String sortSelectTokensAscending(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.isBlank()) {
+            return trimmed;
+        }
+
+        boolean commaSeparated = trimmed.contains(",");
+        String[] rawTokens = commaSeparated
+                ? trimmed.split("\\s*,\\s*")
+                : trimmed.split("\\s+");
+
+        if (rawTokens.length <= 1) {
+            return trimmed;
+        }
+
+        List<String> tokens = new ArrayList<>();
+        for (String token : rawTokens) {
+            if (token == null) {
+                continue;
+            }
+            String normalizedToken = token.trim();
+            if (!normalizedToken.isEmpty()) {
+                tokens.add(normalizedToken);
+            }
+        }
+
+        if (tokens.size() <= 1) {
+            return trimmed;
+        }
+
+        tokens.sort(String.CASE_INSENSITIVE_ORDER);
+        return String.join(commaSeparated ? "," : " ", tokens);
+    }
+
+    private boolean isNullLikeValue(String value) {
+        if (value == null) {
+            return true;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isEmpty() || "NULL".equalsIgnoreCase(trimmed);
+    }
+
+    private record SelectRowPair(Map<String, Object> actualRow, Map<String, Object> expectedRow) {
+    }
+
+    private record SelectRuleDecision(String action, double penaltyPerViolation, boolean ignore, boolean failAll) {
+    }
+
+    private record SelectRuleApplication(
+            boolean violationPresent,
+            boolean ruleMatched,
+            boolean failAllTriggered,
+            BigDecimal deduction,
+            String message) {
+        static SelectRuleApplication noViolation() {
+            return new SelectRuleApplication(false, false, false, BigDecimal.ZERO, null);
+        }
+
+        static SelectRuleApplication unmatchedViolation() {
+            return new SelectRuleApplication(true, false, false, BigDecimal.ZERO, null);
+        }
+
+        static SelectRuleApplication matchedViolation(boolean failAllTriggered, BigDecimal deduction, String message) {
+            return new SelectRuleApplication(true, true, failAllTriggered, deduction, message);
+        }
     }
 
     private int findBestRowMatchIndex(List<List<String>> actualRows, List<String> expectedRow) {
@@ -1021,7 +2164,7 @@ public class RubricTestingUsecase {
         }
     }
 
-    private Map<String, Object> executeRubricGradingV2(
+    private RubricTestGradeResponse executeRubricGradingV2(
             String studentSchema,
             String teacherSchema,
             String gradingRubricJson,
@@ -1030,13 +2173,12 @@ public class RubricTestingUsecase {
         try {
             rubric = objectMapper.readTree(gradingRubricJson);
         } catch (Exception e) {
-            return Map.of(
-                    "earnedPoints", 0,
-                    "totalPoints", totalPoints,
-                    "totalDeductions", 0,
-                    "allPassed", false,
-                    "details", List.of(
-                            Map.of("type", "error", "message", "Rubric JSON khong hop le", "points", 0)));
+                return RubricTestGradeResponse.of(
+                    0,
+                    totalPoints,
+                    false,
+                    List.of(Map.of("type", "error", "message", "Rubric JSON khong hop le", "points", 0)),
+                    0d);
         }
 
         List<TableMetadata> actualTables = examSchemaService.extractMetadata(studentSchema);
@@ -1046,294 +2188,12 @@ public class RubricTestingUsecase {
                         actualTables,
                         BigDecimal.valueOf(totalPoints));
 
-        return Map.of(
-                "earnedPoints", result.earnedPoints().doubleValue(),
-                "totalPoints", totalPoints,
-                "totalDeductions", result.totalDeductions().doubleValue(),
-                "allPassed", result.allPassed(),
-                "details", result.details());
-    }
-
-    private Map<String, Object> executeRubricGrading(
-            String studentSchema,
-            String teacherSchema,
-            String gradingRubricJson,
-            double totalPoints) {
-        JsonNode rubric;
-        try {
-            rubric = objectMapper.readTree(gradingRubricJson);
-        } catch (Exception e) {
-            return Map.of(
-                    "earnedPoints", 0,
-                    "totalPoints", totalPoints,
-                    "allPassed", false,
-                    "details", List.of(
-                            Map.of("type", "error", "message", "Rubric JSON không hợp lệ", "points", 0)));
-        }
-
-        List<TableMetadata> actualTables = examSchemaService.extractMetadata(studentSchema);
-        List<TableMetadata> expectedTables = examSchemaService.extractMetadata(teacherSchema);
-        JsonNode payload = rubric.path("grading_payload");
-        JsonNode settings = payload.path("grading_settings");
-        boolean caseSensitive = settings.path("case_sensitive_names").asBoolean(false);
-        boolean positiveOnlyScoring = settings.path("positive_only_scoring").asBoolean(false);
-        boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(
-                settings.path("syntax_error_action").asText("PARTIAL"));
-
-        List<Map<String, Object>> details = new ArrayList<>();
-        double earned = 0;
-        boolean allPassed = true;
-
-        JsonNode tables = payload.path("tables");
-        for (int i = 0; i < tables.size(); i++) {
-            JsonNode rt = tables.get(i);
-            String expectedName = rt.path("expected_name").asText("");
-            double existPts = rt.path("existence_points").asDouble(0);
-
-            TableMetadata actualTable = actualTables.stream()
-                    .filter(t -> caseSensitive
-                            ? t.getTableName().equals(expectedName)
-                            : t.getTableName().equalsIgnoreCase(expectedName))
-                    .findFirst().orElse(null);
-
-            TableMetadata expectedTable = expectedTables.stream()
-                    .filter(t -> caseSensitive
-                            ? t.getTableName().equals(expectedName)
-                            : t.getTableName().equalsIgnoreCase(expectedName))
-                    .findFirst().orElse(null);
-
-            if (actualTable == null) {
-                allPassed = false;
-                double lost = existPts;
-                JsonNode cols = rt.path("columns");
-                for (int j = 0; j < cols.size(); j++) {
-                    lost += cols.get(j).path("points").asDouble(0);
-                }
-                JsonNode cons = rt.path("constraints");
-                for (int j = 0; j < cons.size(); j++) {
-                    lost += cons.get(j).path("points").asDouble(0);
-                }
-                details.add(Map.of("type", "error", "message",
-                        String.format("Thiếu bảng %s", expectedName),
-                        "points", positiveOnlyScoring ? 0 : -lost));
-                continue;
-            }
-
-            earned += existPts;
-            details.add(Map.of("type", "success", "message",
-                    String.format("Bảng %s tồn tại", expectedName), "points", existPts));
-
-            JsonNode rubricCols = rt.path("columns");
-            for (int j = 0; j < rubricCols.size(); j++) {
-                JsonNode rc = rubricCols.get(j);
-                String colName = rc.path("name").asText("");
-                String expectedType = rc.path("expected_type").asText("");
-                double colPts = rc.path("points").asDouble(0);
-                double typePenalty = rc.path("type_mismatch_penalty").asDouble(0);
-
-                TableMetadata.ColumnMetadata actualCol = actualTable.getColumns().stream()
-                        .filter(c -> caseSensitive
-                                ? c.getColumnName().equals(colName)
-                                : c.getColumnName().equalsIgnoreCase(colName))
-                        .findFirst().orElse(null);
-
-                if (actualCol == null) {
-                    allPassed = false;
-                    details.add(Map.of("type", "error", "message",
-                            String.format("Bảng %s: thiếu cột %s", expectedName, colName),
-                            "points", positiveOnlyScoring ? 0 : -colPts));
-                } else {
-                    boolean typeMatch = matchesSqlType(actualCol.getRawDataType(), expectedType);
-                    if (typeMatch) {
-                        earned += colPts;
-                        details.add(Map.of("type", "success", "message",
-                                String.format("Bảng %s: cột %s (%s) ✓", expectedName, colName, expectedType),
-                                "points", colPts));
-                    } else {
-                        allPassed = false;
-                        double awarded = positiveOnlyScoring
-                                ? 0
-                                : Math.max(0, colPts - typePenalty);
-                        earned += awarded;
-                        details.add(Map.of("type", "warning", "message",
-                                String.format("Bảng %s: cột %s sai kiểu (Kỳ vọng: %s, Thực tế: %s)",
-                                        expectedName, colName, expectedType, actualCol.getDataType()),
-                                "points", positiveOnlyScoring ? 0 : -typePenalty));
-                    }
-                }
-            }
-
-            JsonNode rubricCons = rt.path("constraints");
-            for (int j = 0; j < rubricCons.size(); j++) {
-                JsonNode rc = rubricCons.get(j);
-                String cType = rc.path("type").asText("");
-                double cPts = rc.path("points").asDouble(0);
-                double cPenalty = rc.path("missing_penalty").asDouble(0);
-                boolean found;
-
-                if (("PRIMARY_KEY".equals(cType) || "FOREIGN_KEY".equals(cType))
-                        && expectedTable != null
-                        && !isConstraintExpectedByTeacherSchema(expectedTable, rc, caseSensitive)) {
-                    earned += cPts;
-                    continue;
-                }
-
-                switch (cType) {
-                    case "PRIMARY_KEY":
-                        JsonNode pkCols = rc.path("columns");
-                        found = true;
-                        for (int k = 0; k < pkCols.size(); k++) {
-                            String pk = pkCols.get(k).asText();
-                            boolean matched = actualTable.getColumns().stream()
-                                    .anyMatch(c -> (caseSensitive ? c.getColumnName().equals(pk)
-                                            : c.getColumnName().equalsIgnoreCase(pk)) && c.isPrimaryKey());
-                            if (!matched) {
-                                found = false;
-                                break;
-                            }
-                        }
-                        break;
-                    case "FOREIGN_KEY":
-                        String refTbl = rc.path("references_table").asText("");
-                        JsonNode fkCols = rc.path("columns");
-                        found = true;
-                        for (int k = 0; k < fkCols.size(); k++) {
-                            String fk = fkCols.get(k).asText();
-                            boolean matched = actualTable.getColumns().stream()
-                                    .anyMatch(c -> (caseSensitive ? c.getColumnName().equals(fk)
-                                            : c.getColumnName().equalsIgnoreCase(fk))
-                                            && c.isForeignKey()
-                                            && (caseSensitive ? refTbl.equals(c.getReferencesTable())
-                                            : refTbl.equalsIgnoreCase(c.getReferencesTable())));
-                            if (!matched) {
-                                found = false;
-                                break;
-                            }
-                        }
-                        break;
-                    default:
-                        found = true;
-                        break;
-                }
-
-                JsonNode conColumns = rc.path("columns");
-                StringBuilder colList = new StringBuilder();
-                for (int k = 0; k < conColumns.size(); k++) {
-                    if (k > 0) {
-                        colList.append(", ");
-                    }
-                    colList.append(conColumns.get(k).asText());
-                }
-
-                if (found) {
-                    earned += cPts;
-                    details.add(Map.of("type", "success", "message",
-                            String.format("Bảng %s: ràng buộc %s [%s] ✓", expectedName, cType, colList),
-                            "points", cPts));
-                } else {
-                    allPassed = false;
-                    details.add(Map.of("type", "error", "message",
-                            String.format("Bảng %s: thiếu ràng buộc %s [%s]", expectedName, cType, colList),
-                            "points", positiveOnlyScoring ? 0 : -cPenalty));
-                }
-            }
-        }
-
-        earned = Math.round(earned * 100.0) / 100.0;
-        if (failAllMode && !allPassed) {
-            earned = 0;
-            details.add(Map.of(
-                    "type", "warning",
-                    "message", "Rubric đang để FAIL_ALL: có lỗi nên câu này bị 0 điểm toàn bộ",
-                    "points", 0));
-        }
-        if (earned > totalPoints) {
-            earned = totalPoints;
-        }
-        if (earned < 0) {
-            earned = 0;
-        }
-
-        return Map.of(
-                "earnedPoints", earned,
-                "totalPoints", totalPoints,
-                "allPassed", allPassed,
-                "details", details);
-    }
-
-    private boolean isConstraintExpectedByTeacherSchema(
-            TableMetadata expectedTable,
-            JsonNode constraintNode,
-            boolean caseSensitive) {
-        String type = constraintNode.path("type").asText("");
-        JsonNode columns = constraintNode.path("columns");
-
-        if (!columns.isArray() || columns.size() == 0) {
-            return false;
-        }
-
-        if ("PRIMARY_KEY".equals(type)) {
-            for (int i = 0; i < columns.size(); i++) {
-                String col = columns.get(i).asText("");
-                boolean matched = expectedTable.getColumns().stream()
-                        .anyMatch(c -> (caseSensitive
-                                ? c.getColumnName().equals(col)
-                                : c.getColumnName().equalsIgnoreCase(col))
-                                && c.isPrimaryKey());
-                if (!matched) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        if ("FOREIGN_KEY".equals(type)) {
-            String refTbl = constraintNode.path("references_table").asText("");
-            for (int i = 0; i < columns.size(); i++) {
-                String col = columns.get(i).asText("");
-                boolean matched = expectedTable.getColumns().stream()
-                        .anyMatch(c -> (caseSensitive
-                                ? c.getColumnName().equals(col)
-                                : c.getColumnName().equalsIgnoreCase(col))
-                                && c.isForeignKey()
-                                && (refTbl == null || refTbl.isBlank()
-                                || (caseSensitive
-                                ? refTbl.equals(c.getReferencesTable())
-                                : refTbl.equalsIgnoreCase(c.getReferencesTable()))));
-                if (!matched) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        return true;
-    }
-
-    private boolean matchesSqlType(String actualType, String expectedType) {
-        return normalizeSqlType(actualType).equals(normalizeSqlType(expectedType));
-    }
-
-    private String normalizeSqlType(String sqlType) {
-        if (sqlType == null) {
-            return "";
-        }
-        String normalized = sqlType.trim().toUpperCase(Locale.ROOT);
-        if (normalized.isBlank()) {
-            return "";
-        }
-
-        int parenIndex = normalized.indexOf('(');
-        if (parenIndex >= 0) {
-            normalized = normalized.substring(0, parenIndex);
-        }
-
-        int spaceIndex = normalized.indexOf(' ');
-        if (spaceIndex >= 0) {
-            normalized = normalized.substring(0, spaceIndex);
-        }
-
-        return normalized.trim();
+        return RubricTestGradeResponse.of(
+            result.earnedPoints().doubleValue(),
+            totalPoints,
+            result.allPassed(),
+            result.details(),
+            result.totalDeductions().doubleValue());
     }
 
     private boolean readBoolean(JsonNode node, boolean defaultValue) {
@@ -1358,6 +2218,139 @@ public class RubricTestingUsecase {
             }
         }
         return defaultValue;
+    }
+
+    private JsonNode resolveInsertPayload(JsonNode rubric) {
+        if (rubric == null || rubric.isNull() || rubric.isMissingNode()) {
+            return objectMapper.createObjectNode();
+        }
+
+        JsonNode payload = rubric.path("grading_payload");
+        if (payload != null && payload.isObject()) {
+            return payload;
+        }
+
+        return rubric;
+    }
+
+    private Set<String> extractInsertedTableNames(String sql) {
+        Set<String> tableNames = new LinkedHashSet<>();
+        if (sql == null || sql.isBlank()) {
+            return tableNames;
+        }
+
+        Matcher matcher = INSERT_INTO_PATTERN.matcher(sql);
+        while (matcher.find()) {
+            String rawIdentifier = matcher.group(1);
+            String tableName = extractLastIdentifier(rawIdentifier);
+            if (tableName != null && !tableName.isBlank()) {
+                tableNames.add(tableName);
+            }
+        }
+
+        return tableNames;
+    }
+
+    private String extractLastIdentifier(String identifier) {
+        if (identifier == null) {
+            return "";
+        }
+
+        String normalized = identifier.replaceAll("\\s+", "").trim();
+        if (normalized.isBlank()) {
+            return "";
+        }
+
+        String[] segments = normalized.split("\\.");
+        String last = segments[segments.length - 1].trim();
+
+        if (last.startsWith("[") && last.endsWith("]") && last.length() > 1) {
+            last = last.substring(1, last.length() - 1);
+        }
+        if (last.startsWith("\"") && last.endsWith("\"") && last.length() > 1) {
+            last = last.substring(1, last.length() - 1);
+        }
+
+        return last.trim();
+    }
+
+    private void appendInsertErrorDetails(
+            List<Map<String, Object>> details,
+            String rawMessage,
+            double fallbackTotalDeduction) {
+        if (rawMessage == null || rawMessage.isBlank()) {
+            return;
+        }
+
+        Matcher matcher = INSERT_TABLE_ISSUE_PATTERN.matcher(rawMessage);
+        List<Map<String, Object>> parsedIssues = new ArrayList<>();
+
+        while (matcher.find()) {
+            String tableName = matcher.group(1);
+            int missingRows = parseIntegerSafe(matcher.group(2));
+            int wrongCells = parseIntegerSafe(matcher.group(3));
+            int extraRows = parseIntegerSafe(matcher.group(4));
+            int outOfOrderRows = parseIntegerSafe(matcher.group(5));
+            double deduction = parseDoubleSafe(matcher.group(6), 0d);
+
+            String message = String.format(
+                    Locale.ROOT,
+                    "Bang %s: thieu %d dong, sai %d o, du %d dong, sai thu tu %d dong.",
+                    tableName,
+                    missingRows,
+                    wrongCells,
+                    extraRows,
+                    outOfOrderRows);
+
+            parsedIssues.add(Map.of(
+                    "type", "error",
+                    "message", message,
+                    "points", -roundTo2(deduction)));
+        }
+
+        if (!parsedIssues.isEmpty()) {
+            details.addAll(parsedIssues);
+
+            String remaining = INSERT_TABLE_ISSUE_PATTERN.matcher(rawMessage).replaceAll("").trim();
+            if (!remaining.isBlank()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", remaining,
+                        "points", 0));
+            }
+            return;
+        }
+
+        details.add(Map.of(
+                "type", "error",
+                "message", rawMessage,
+                "points", -roundTo2(Math.max(0d, fallbackTotalDeduction))));
+    }
+
+    private int parseIntegerSafe(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(rawValue.trim());
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private double parseDoubleSafe(String rawValue, double defaultValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(rawValue.trim());
+        } catch (Exception ignored) {
+            return defaultValue;
+        }
+    }
+
+    private double roundTo2(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     private String safeIdentifier(String identifier, String fieldName) {

@@ -459,19 +459,21 @@ public class ExamController {
         // ===== HELPER =====
 
         private String getClientIp(HttpServletRequest request) {
-                // If server.forward-headers-strategy=framework is set, 
-                // getRemoteAddr() will automatically return the client IP from X-Forwarded-For.
-                String remoteAddr = request.getRemoteAddr();
-
-                // Fallback: Manually check X-Real-IP if Nginx is configured with it
-                if (remoteAddr == null || remoteAddr.equals("127.0.0.1") || remoteAddr.startsWith("172.")) {
-                        String realIp = request.getHeader("X-Real-IP");
-                        if (realIp != null && !realIp.isBlank()) {
-                                return realIp;
-                        }
+                // Priority 1: X-Forwarded-For (standard for proxies)
+                String xForwardedFor = request.getHeader("X-Forwarded-For");
+                if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+                        // The first IP in the list is the original client IP
+                        return xForwardedFor.split(",")[0].trim();
                 }
-                
-                return remoteAddr;
+
+                // Priority 2: X-Real-IP (fallback for some Nginx configs)
+                String xRealIp = request.getHeader("X-Real-IP");
+                if (xRealIp != null && !xRealIp.isBlank()) {
+                        return xRealIp;
+                }
+
+                // Priority 3: Last resort (will be Docker Gateway if headers are missing)
+                return request.getRemoteAddr();
         }
 
         // ===== AI RUBRIC GENERATION =====

@@ -459,11 +459,19 @@ public class ExamController {
         // ===== HELPER =====
 
         private String getClientIp(HttpServletRequest request) {
-                String xForwardedFor = request.getHeader("X-Forwarded-For");
-                if (xForwardedFor != null && !xForwardedFor.isBlank()) {
-                        return xForwardedFor.split(",")[0].trim();
+                // If server.forward-headers-strategy=framework is set, 
+                // getRemoteAddr() will automatically return the client IP from X-Forwarded-For.
+                String remoteAddr = request.getRemoteAddr();
+
+                // Fallback: Manually check X-Real-IP if Nginx is configured with it
+                if (remoteAddr == null || remoteAddr.equals("127.0.0.1") || remoteAddr.startsWith("172.")) {
+                        String realIp = request.getHeader("X-Real-IP");
+                        if (realIp != null && !realIp.isBlank()) {
+                                return realIp;
+                        }
                 }
-                return request.getRemoteAddr();
+                
+                return remoteAddr;
         }
 
         // ===== AI RUBRIC GENERATION =====

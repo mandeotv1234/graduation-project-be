@@ -3,7 +3,7 @@ name: CD - Backend Deploy
 on:
   push:
     branches:
-      - develop
+      - fix/GRAD-111-Fix-Client-IP-when-start-session-exam
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

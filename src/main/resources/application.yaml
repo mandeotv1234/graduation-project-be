@@ -6,3 +6,6 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/grad-changelog-master.yaml
 
+server:
+  forward-headers-strategy: framework
+

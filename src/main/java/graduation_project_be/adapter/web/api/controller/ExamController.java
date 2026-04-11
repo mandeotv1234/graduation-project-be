@@ -459,10 +459,20 @@ public class ExamController {
         // ===== HELPER =====
 
         private String getClientIp(HttpServletRequest request) {
+                // Priority 1: X-Forwarded-For (standard for proxies)
                 String xForwardedFor = request.getHeader("X-Forwarded-For");
                 if (xForwardedFor != null && !xForwardedFor.isBlank()) {
+                        // The first IP in the list is the original client IP
                         return xForwardedFor.split(",")[0].trim();
                 }
+
+                // Priority 2: X-Real-IP (fallback for some Nginx configs)
+                String xRealIp = request.getHeader("X-Real-IP");
+                if (xRealIp != null && !xRealIp.isBlank()) {
+                        return xRealIp;
+                }
+
+                // Priority 3: Last resort (will be Docker Gateway if headers are missing)
                 return request.getRemoteAddr();
         }
 

@@ -115,169 +115,200 @@ public class RubricTestingUsecase {
             JsonNode settings = payload.path("grading_settings");
             String seedSchemaScript = payload.path("seed_schema_script").asText(rubric.path("seed_schema_script").asText(""));
             String dependsOnQuestionIdRaw = settings.path("depends_on_question_id").asText("").trim();
-            boolean useConstraintWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(true);
+            boolean explicitWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(false);
+            boolean fallbackTriggered = false;
             List<Map<String, Object>> details = new ArrayList<>();
             List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
 
-            examSchemaService.resetSchema(teacherSchema);
-            examSchemaService.resetSchema(studentSchema);
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                details.clear();
+                examSchemaService.resetSchema(teacherSchema);
+                examSchemaService.resetSchema(studentSchema);
 
-            String currentCorrectNormalized = normalizeSqlForExecution(correctQuery);
-            int teacherPrepared = executeExistingAnswersForSchema(
-                    examQuestions,
-                    teacherSchema,
-                    details,
-                    null,
-                    false,
-                    currentCorrectNormalized);
-            int studentPrepared = executeExistingAnswersForSchema(
-                    examQuestions,
-                    studentSchema,
-                    details,
-                    null,
-                    false,
-                    currentCorrectNormalized);
-            if (teacherPrepared > 0 || studentPrepared > 0) {
-                details.add(Map.of(
-                        "type", "info",
-                        "message", "Đã chạy đáp án các câu hiện có trước khi chấm thử (teacher="
-                                + teacherPrepared + ", student=" + studentPrepared + ")",
-                        "points", 0));
-            }
+                String currentCorrectNormalized = normalizeSqlForExecution(correctQuery);
+                int teacherPrepared = executeExistingAnswersForSchema(
+                        examQuestions,
+                        teacherSchema,
+                        details,
+                        null,
+                        false,
+                        currentCorrectNormalized);
+                int studentPrepared = executeExistingAnswersForSchema(
+                        examQuestions,
+                        studentSchema,
+                        details,
+                        null,
+                        false,
+                        currentCorrectNormalized);
+                if (teacherPrepared > 0 || studentPrepared > 0) {
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", "Đã chạy đáp án các câu hiện có trước khi chấm thử (teacher="
+                                    + teacherPrepared + ", student=" + studentPrepared + ")",
+                            "points", 0));
+                }
 
-            if (!seedSchemaScript.isBlank() && settings.path("inject_seed_schema").asBoolean(false)) {
-                examSchemaService.executeSql(teacherSchema, seedSchemaScript);
-                examSchemaService.executeSql(studentSchema, seedSchemaScript);
-            }
+                if (!seedSchemaScript.isBlank() && settings.path("inject_seed_schema").asBoolean(false)) {
+                    examSchemaService.executeSql(teacherSchema, seedSchemaScript);
+                    examSchemaService.executeSql(studentSchema, seedSchemaScript);
+                }
 
-            if (!dependsOnQuestionIdRaw.isBlank()) {
-                try {
-                    Long dependsOnQuestionId = Long.valueOf(dependsOnQuestionIdRaw);
-                    ExamQuestionResponse dependentQuestion = examQuestions
-                            .stream()
-                            .filter(q -> q.id() != null && q.id().equals(dependsOnQuestionId))
-                            .findFirst()
-                            .orElse(null);
+                if (!dependsOnQuestionIdRaw.isBlank()) {
+                    try {
+                        Long dependsOnQuestionId = Long.valueOf(dependsOnQuestionIdRaw);
+                        ExamQuestionResponse dependentQuestion = examQuestions
+                                .stream()
+                                .filter(q -> q.id() != null && q.id().equals(dependsOnQuestionId))
+                                .findFirst()
+                                .orElse(null);
 
-                    if (dependentQuestion == null) {
+                        if (dependentQuestion == null) {
+                            details.add(Map.of(
+                                    "type", "warning",
+                                    "message", "Không tìm thấy câu phụ thuộc ID=" + dependsOnQuestionId,
+                                    "points", 0));
+                        } else if (dependentQuestion.correctQuery() == null
+                                || dependentQuestion.correctQuery().isBlank()) {
+                            details.add(Map.of(
+                                    "type", "warning",
+                                    "message", "Câu phụ thuộc #" + dependsOnQuestionId
+                                            + " không có correctQuery để khởi tạo dữ liệu",
+                                    "points", 0));
+                        } else {
+                            details.add(Map.of(
+                                    "type", "info",
+                                    "message", "Đã đảm bảo câu phụ thuộc #" + dependsOnQuestionId
+                                            + " nằm trong bước tiền xử lý đáp án",
+                                    "points", 0));
+                        }
+                    } catch (NumberFormatException nfe) {
                         details.add(Map.of(
                                 "type", "warning",
-                                "message", "Không tìm thấy câu phụ thuộc ID=" + dependsOnQuestionId,
+                                "message", "depends_on_question_id không hợp lệ: " + dependsOnQuestionIdRaw,
                                 "points", 0));
-                    } else if (dependentQuestion.correctQuery() == null
-                            || dependentQuestion.correctQuery().isBlank()) {
+                    } catch (Exception depEx) {
                         details.add(Map.of(
                                 "type", "warning",
-                                "message", "Câu phụ thuộc #" + dependsOnQuestionId
-                                        + " không có correctQuery để khởi tạo dữ liệu",
+                                "message", "Không thể xác nhận câu phụ thuộc: " + depEx.getMessage(),
                                 "points", 0));
-                    } else {
+                    }
+                }
+
+                if (fallbackTriggered) {
+                    setAllConstraintsEnabled(teacherSchema, false);
+                    setAllConstraintsEnabled(studentSchema, false);
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", "Chạy bình thường bị lỗi khóa ngoại (FK constraint). Hệ thống TỰ ĐỘNG CHẠY LẠI và BẬT CHẾ ĐỘ WORKAROUND (tạm tắt ràng buộc) để tiếp tục chấm thử.",
+                            "points", 0));
+                } else if (explicitWorkaround) {
+                    setAllConstraintsEnabled(teacherSchema, false);
+                    setAllConstraintsEnabled(studentSchema, false);
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", "Đang tự bật chế độ workaround FK vòng (NOCHECK CONSTRAINT) theo thiết lập rubric",
+                            "points", 0));
+                }
+
+                boolean teacherFailed = false;
+                try {
+                    examSchemaService.executeSql(teacherSchema, correctQuery);
+                } catch (Exception e) {
+                    teacherFailed = true;
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", "Không thể chạy correctQuery trên schema teacher: " + e.getMessage(),
+                            "points", 0));
+                }
+
+                String compileError = null;
+                try {
+                    examSchemaService.executeSql(studentSchema, studentQuery);
+                } catch (Exception e) {
+                    compileError = e.getMessage();
+                }
+
+                if (attempt == 1 && !explicitWorkaround && !fallbackTriggered) {
+                    boolean fkError = false;
+                    if (compileError != null && (compileError.toLowerCase().contains("foreign key")
+                            || compileError.toLowerCase().contains("ràng buộc")
+                            || compileError.toLowerCase().contains("reference")
+                            || compileError.toLowerCase().contains("conflict")
+                            || compileError.toLowerCase().contains("khóa ngoại"))) {
+                        fkError = true;
+                    }
+                    if (!fkError && teacherFailed) {
+                        fkError = true;
+                    }
+                    
+                    if (fkError) {
+                        fallbackTriggered = true;
+                        continue;
+                    }
+                }
+
+                if (explicitWorkaround || fallbackTriggered) {
+                    try {
+                        setAllConstraintsEnabled(teacherSchema, true);
+                    } catch (Exception e) {
                         details.add(Map.of(
-                                "type", "info",
-                                "message", "Đã đảm bảo câu phụ thuộc #" + dependsOnQuestionId
-                                        + " nằm trong bước tiền xử lý đáp án",
+                                "type", "warning",
+                                "message", "Dữ liệu đáp án teacher vi phạm ràng buộc sau khi kiểm tra lại: "
+                                        + e.getMessage(),
                                 "points", 0));
                     }
-                } catch (NumberFormatException nfe) {
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", "depends_on_question_id không hợp lệ: " + dependsOnQuestionIdRaw,
-                            "points", 0));
-                } catch (Exception depEx) {
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", "Không thể xác nhận câu phụ thuộc: " + depEx.getMessage(),
-                            "points", 0));
-                }
-            }
 
-            if (useConstraintWorkaround) {
-                setAllConstraintsEnabled(teacherSchema, false);
-                setAllConstraintsEnabled(studentSchema, false);
-                details.add(Map.of(
-                        "type", "info",
-                        "message", "Đang bật chế độ workaround FK vòng (NOCHECK CONSTRAINT)",
-                        "points", 0));
-            }
-
-            try {
-                examSchemaService.executeSql(teacherSchema, correctQuery);
-            } catch (Exception e) {
-                details.add(Map.of(
-                        "type", "warning",
-                        "message", "Không thể chạy correctQuery trên schema teacher: " + e.getMessage(),
-                        "points", 0));
-            }
-
-            String compileError = null;
-            try {
-                examSchemaService.executeSql(studentSchema, studentQuery);
-            } catch (Exception e) {
-                compileError = e.getMessage();
-            }
-
-            if (useConstraintWorkaround) {
-                try {
-                    setAllConstraintsEnabled(teacherSchema, true);
-                } catch (Exception e) {
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", "Dữ liệu đáp án teacher vi phạm ràng buộc sau khi kiểm tra lại: "
-                                    + e.getMessage(),
-                            "points", 0));
-                }
-
-                try {
-                    setAllConstraintsEnabled(studentSchema, true);
-                } catch (Exception e) {
-                    String constraintError = "Vi phạm ràng buộc sau khi kiểm tra lại dữ liệu: " + e.getMessage();
-                    if (compileError == null || compileError.isBlank()) {
-                        compileError = constraintError;
+                    try {
+                        setAllConstraintsEnabled(studentSchema, true);
+                    } catch (Exception e) {
+                        String constraintError = "Vi phạm ràng buộc sau khi bật lại kiểm tra dữ liệu: " + e.getMessage();
+                        if (compileError == null || compileError.isBlank()) {
+                            compileError = constraintError;
+                        }
                     }
                 }
-            }
 
-            ExamSubmission fakeSubmission = new ExamSubmission();
-            if (compileError != null) {
-                String normalizedCompileError = compileError;
-                if (compileError.contains("FOREIGN KEY constraint")) {
-                    normalizedCompileError = compileError
-                            + " | Gợi ý: Bài làm đang vi phạm thứ tự insert do phụ thuộc khóa ngoại (có thể là phụ thuộc vòng)."
-                            + " Hãy điều chỉnh thứ tự insert hoặc tách bước tạo/liên kết dữ liệu cho phù hợp.";
+                ExamSubmission fakeSubmission = new ExamSubmission();
+                if (compileError != null) {
+                    String normalizedCompileError = compileError;
+                    if (compileError.contains("FOREIGN KEY constraint")) {
+                        normalizedCompileError = compileError
+                                + " | Gợi ý: Bài làm đang vi phạm cập nhật dữ liệu do phụ thuộc khóa ngoại (có thể do cấu trúc). Hãy điều chỉnh lại cho phù hợp.";
+                    }
+
+                    fakeSubmission.setErrorMessage("Lỗi thực thi SQL: " + compileError);
+                    details.add(Map.of(
+                            "type", "error",
+                            "message", "Lỗi thực thi: " + normalizedCompileError,
+                            "points", 0));
+                    fakeSubmission.setScoreEarned(BigDecimal.ZERO);
+                } else {
+                    gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission, fallbackTriggered);
                 }
 
-                fakeSubmission.setErrorMessage("Lỗi thực thi SQL: " + compileError);
-                details.add(Map.of(
-                        "type", "error",
-                        "message", "Lỗi thực thi SQL: " + normalizedCompileError,
-                        "points", 0));
-                fakeSubmission.setScoreEarned(BigDecimal.ZERO);
-            } else {
-                gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission);
-            }
+                double earnedPoints = fakeSubmission.getScoreEarned() != null
+                        ? fakeSubmission.getScoreEarned().doubleValue()
+                        : 0d;
+                double totalDeduction = Math.max(0d, totalPoints - earnedPoints);
 
-            double earnedPoints = fakeSubmission.getScoreEarned() != null
-                    ? fakeSubmission.getScoreEarned().doubleValue()
-                    : 0d;
-            double totalDeduction = Math.max(0d, totalPoints - earnedPoints);
+                boolean allPassed = fakeSubmission.getScoreEarned() != null
+                        && fakeSubmission.getScoreEarned().compareTo(BigDecimal.valueOf(totalPoints)) >= 0;
 
-            boolean allPassed = fakeSubmission.getScoreEarned() != null
-                    && fakeSubmission.getScoreEarned().compareTo(BigDecimal.valueOf(totalPoints)) >= 0;
-
-            if (fakeSubmission.getErrorMessage() != null && !fakeSubmission.getErrorMessage().isBlank()) {
-                appendInsertErrorDetails(details, fakeSubmission.getErrorMessage(), totalDeduction);
-            } else if (allPassed && details.isEmpty()) {
-                details.add(Map.of("type", "success", "message", "Tất cả dữ liệu đều chính xác", "points", totalPoints));
-            }
+                if (fakeSubmission.getErrorMessage() != null && !fakeSubmission.getErrorMessage().isBlank()) {
+                    appendInsertErrorDetails(details, fakeSubmission.getErrorMessage(), totalDeduction);
+                } else if (allPassed && details.isEmpty()) {
+                    details.add(Map.of("type", "success", "message", "Tất cả dữ liệu đều chính xác", "points", totalPoints));
+                }
 
                 return RubricTestGradeResponse.of(
-                    fakeSubmission.getScoreEarned() != null
-                        ? fakeSubmission.getScoreEarned().doubleValue()
-                        : 0,
-                    totalPoints,
-                    allPassed,
-                    details);
-
+                        fakeSubmission.getScoreEarned() != null
+                                ? fakeSubmission.getScoreEarned().doubleValue()
+                                : 0,
+                        totalPoints,
+                        allPassed,
+                        details);
+            }
+            throw new IllegalStateException("Unexpected flow in testGradeInsert");
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử: " + e.getMessage(), e);
         } finally {
@@ -628,102 +659,13 @@ public class RubricTestingUsecase {
         try {
             JsonNode rubric = objectMapper.readTree(gradingRubric);
             JsonNode payload = rubric.path("grading_payload");
-            JsonNode globalRules = payload.path("global_grading_rules");
             JsonNode selectRules = resolveSelectGradingRules(rubric, payload);
-            boolean hasRuleBasedScoring = hasSelectGradingRules(selectRules);
             JsonNode testCases = payload.path("test_cases");
+            JsonNode globalRules = payload.path("global_grading_rules");
 
             boolean strictOrdering = readBoolean(globalRules.path("strict_ordering"), false);
-            boolean allowPartialRowCredit = readBoolean(globalRules.path("allow_partial_row_credit"), true);
-            double wrongColumnOrderPenalty = globalRules.path("wrong_column_order_penalty")
-                    .asDouble(globalRules.path("wrong_column_name_penalty").asDouble(0.1));
-            if (wrongColumnOrderPenalty < 0) {
-                wrongColumnOrderPenalty = 0;
-            }
-            double extraRowPenalty = globalRules.path("extra_row_penalty").asDouble(0.0);
-            double baselineWeightRatio = globalRules.path("baseline_weight_ratio").asDouble(0.0);
-            if (baselineWeightRatio < 0) {
-                baselineWeightRatio = 0;
-            }
-            if (baselineWeightRatio > 1) {
-                baselineWeightRatio = 1;
-            }
-            BigDecimal baselineMaxPoints = BigDecimal.valueOf(totalPoints)
-                    .multiply(BigDecimal.valueOf(baselineWeightRatio));
-
-            List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
-            List<Map<String, Object>> details = new ArrayList<>();
-                AtomicBoolean wrongColumnOrderFlag = new AtomicBoolean(false);
 
             if (testCases.isMissingNode() || !testCases.isArray() || testCases.size() == 0) {
-                if (hasRuleBasedScoring && !correctQuery.isBlank()) {
-                    String baselineSchema = "test_grade_select_rule_base_" + System.currentTimeMillis();
-                    try {
-                        examSchemaService.resetSchema(baselineSchema);
-                        int baselinePrepared = executeExistingAnswersForSchema(
-                                examQuestions,
-                                baselineSchema,
-                                details,
-                                "RULE_BASE");
-
-                        List<Map<String, Object>> expectedBaseline = examSchemaService.executeSql(
-                                baselineSchema,
-                                correctQuery).getResultSet();
-                        List<Map<String, Object>> actualBaseline = examSchemaService.executeSql(
-                                baselineSchema,
-                                studentQuery).getResultSet();
-
-                        List<String> expectedColumns = new ArrayList<>();
-                        List<List<String>> expectedRows = new ArrayList<>();
-                        if (expectedBaseline != null && !expectedBaseline.isEmpty()) {
-                            expectedColumns.addAll(expectedBaseline.get(0).keySet());
-                            for (Map<String, Object> map : expectedBaseline) {
-                                expectedRows.add(toRowValues(map, expectedColumns));
-                            }
-                        }
-
-                        BigDecimal maxPoints = BigDecimal.valueOf(totalPoints);
-                        BigDecimal earned = evaluateSelectCase(
-                                "RULE_BASE",
-                                "Dữ liệu từ đáp án các câu trước (đã chạy " + baselinePrepared + " đáp án)",
-                                maxPoints,
-                                expectedRows.size(),
-                                expectedColumns,
-                                expectedRows,
-                                actualBaseline,
-                                strictOrdering,
-                                allowPartialRowCredit,
-                                extraRowPenalty,
-                                details,
-                                wrongColumnOrderFlag,
-                                selectRules,
-                                true);
-
-                        BigDecimal normalizedEarned = earned.setScale(2, RoundingMode.HALF_UP);
-                        boolean allPassed = normalizedEarned.compareTo(maxPoints.setScale(2, RoundingMode.HALF_UP)) >= 0;
-
-                        return RubricTestGradeResponse.of(
-                                normalizedEarned.doubleValue(),
-                                totalPoints,
-                                allPassed,
-                                details);
-                    } catch (Exception baselineEx) {
-                        return RubricTestGradeResponse.of(
-                                0,
-                                totalPoints,
-                                false,
-                                List.of(Map.of(
-                                        "type", "error",
-                                        "message", "Lỗi chấm SELECT theo grading_rules: " + baselineEx.getMessage(),
-                                        "points", 0)));
-                    } finally {
-                        try {
-                            examSchemaService.dropSchema(baselineSchema);
-                        } catch (Exception ignore) {
-                        }
-                    }
-                }
-
                 return RubricTestGradeResponse.of(
                     0,
                     totalPoints,
@@ -734,78 +676,17 @@ public class RubricTestingUsecase {
                         "points", 0)));
             }
 
-            BigDecimal earnedTotal = BigDecimal.ZERO;
+            BigDecimal totalDeduction = BigDecimal.ZERO;
             boolean allPassed = true;
-
-            if (!correctQuery.isBlank()) {
-                String baselineSchema = "test_grade_select_baseline_" + System.currentTimeMillis();
-                try {
-                    examSchemaService.resetSchema(baselineSchema);
-                    int baselinePrepared = executeExistingAnswersForSchema(
-                            examQuestions,
-                            baselineSchema,
-                            details,
-                            "BASELINE");
-
-                    List<Map<String, Object>> expectedBaseline = examSchemaService.executeSql(
-                            baselineSchema,
-                            correctQuery).getResultSet();
-                    List<Map<String, Object>> actualBaseline = examSchemaService.executeSql(
-                            baselineSchema,
-                            studentQuery).getResultSet();
-
-                    List<String> baselineExpectedColumns = new ArrayList<>();
-                    List<List<String>> baselineExpectedRows = new ArrayList<>();
-                    if (expectedBaseline != null && !expectedBaseline.isEmpty()) {
-                        baselineExpectedColumns.addAll(expectedBaseline.get(0).keySet());
-                        for (Map<String, Object> map : expectedBaseline) {
-                            baselineExpectedRows.add(toRowValues(map, baselineExpectedColumns));
-                        }
-                    }
-
-                    BigDecimal baselineEarned = evaluateSelectCase(
-                            "BASELINE",
-                            "Dữ liệu từ đáp án các câu trước (đã chạy " + baselinePrepared + " đáp án)",
-                            baselineMaxPoints,
-                            baselineExpectedRows.size(),
-                            baselineExpectedColumns,
-                            baselineExpectedRows,
-                            actualBaseline,
-                            strictOrdering,
-                            allowPartialRowCredit,
-                            extraRowPenalty,
-                            details,
-                            wrongColumnOrderFlag,
-                            selectRules,
-                            hasRuleBasedScoring);
-
-                    earnedTotal = earnedTotal.add(baselineEarned);
-                    if (baselineEarned.compareTo(baselineMaxPoints) < 0) {
-                        allPassed = false;
-                    }
-                } catch (Exception baselineEx) {
-                    if (baselineMaxPoints.compareTo(BigDecimal.ZERO) > 0) {
-                        allPassed = false;
-                    }
-                    details.add(Map.of(
-                            "type", "error",
-                            "message", "[BASELINE] Lỗi đối chiếu dữ liệu nền: " + baselineEx.getMessage(),
-                            "points", 0));
-                } finally {
-                    try {
-                        examSchemaService.dropSchema(baselineSchema);
-                    } catch (Exception ignore) {
-                    }
-                }
-            }
+            List<Map<String, Object>> details = new ArrayList<>();
+            List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
 
             for (int i = 0; i < testCases.size(); i++) {
                 JsonNode tc = testCases.get(i);
                 String caseId = tc.path("case_id").asText("TC_" + (i + 1));
                 String caseName = tc.path("case_name").asText(caseId);
-                double weightRatio = tc.path("weight_ratio").asDouble(0.0);
-                BigDecimal caseMaxPoints = BigDecimal.valueOf(totalPoints)
-                        .multiply(BigDecimal.valueOf(weightRatio));
+                double penaltyValue = tc.path("penalty_value").asDouble(1.0);
+                BigDecimal caseMaxPenalty = BigDecimal.valueOf(penaltyValue).setScale(4, RoundingMode.HALF_UP);
 
                 String caseSchema = "test_grade_select_case_" + System.currentTimeMillis() + "_" + i;
                 try {
@@ -874,13 +755,11 @@ public class RubricTestingUsecase {
                     }
 
                     List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery).getResultSet();
-                    int expectedRowCount;
                     List<String> expectedColumns = new ArrayList<>();
                     List<List<String>> expectedRows = new ArrayList<>();
 
                     if (!correctQuery.isBlank()) {
                         List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
-                        expectedRowCount = teacherRows.size();
 
                         if (!teacherRows.isEmpty()) {
                             expectedColumns.addAll(teacherRows.get(0).keySet());
@@ -895,7 +774,6 @@ public class RubricTestingUsecase {
                                 "points", 0));
                     } else {
                         JsonNode expectedResult = tc.path("expected_result");
-                        expectedRowCount = expectedResult.path("expected_row_count").asInt(0);
                         JsonNode columnsConfig = expectedResult.path("columns_config");
                         JsonNode expectedRowsNode = expectedResult.path("rows");
 
@@ -913,25 +791,20 @@ public class RubricTestingUsecase {
                         }
                     }
 
-                    BigDecimal caseEarned = evaluateSelectCase(
+                    BigDecimal caseDeduction = calculateSelectCaseDeductions(
                             caseId,
                             caseName,
-                            caseMaxPoints,
-                            expectedRowCount,
+                            caseMaxPenalty,
                             expectedColumns,
                             expectedRows,
                             actualRows,
                             strictOrdering,
-                            allowPartialRowCredit,
-                            extraRowPenalty,
-                            details,
-                            wrongColumnOrderFlag,
                             selectRules,
-                            hasRuleBasedScoring);
+                            details);
 
-                    earnedTotal = earnedTotal.add(caseEarned);
-                    if (caseEarned.compareTo(caseMaxPoints) < 0) {
+                    if (caseDeduction.compareTo(BigDecimal.ZERO) > 0) {
                         allPassed = false;
+                        totalDeduction = totalDeduction.add(caseDeduction);
                     }
                 } catch (Exception caseEx) {
                     allPassed = false;
@@ -939,7 +812,8 @@ public class RubricTestingUsecase {
                     details.add(Map.of(
                             "type", "error",
                             "message", "[" + caseId + "] Lỗi chạy test case: " + errorMessage,
-                            "points", 0));
+                            "points", -caseMaxPenalty.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+                    totalDeduction = totalDeduction.add(caseMaxPenalty);
 
                     if (errorMessage.contains("Invalid column name")) {
                         details.add(Map.of(
@@ -957,28 +831,20 @@ public class RubricTestingUsecase {
                 }
             }
 
-            if (!hasRuleBasedScoring && wrongColumnOrderFlag.get() && wrongColumnOrderPenalty > 0) {
-                BigDecimal penalty = BigDecimal.valueOf(wrongColumnOrderPenalty);
-                earnedTotal = earnedTotal.subtract(penalty);
-                details.add(Map.of(
-                        "type", "warning",
-                        "message", "[TRỪ ĐIỂM GLOBAL] Sai thứ tự cột kết quả (trừ 1 lần cho toàn bộ câu)",
-                        "points", -penalty.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+            BigDecimal maxPoints = BigDecimal.valueOf(totalPoints);
+            BigDecimal finalEarned = maxPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
+            
+            if (finalEarned.compareTo(BigDecimal.ZERO) < 0) {
+                finalEarned = BigDecimal.ZERO;
             }
-
-            earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
-            BigDecimal max = BigDecimal.valueOf(totalPoints);
-            if (earnedTotal.compareTo(max) > 0) {
-                earnedTotal = max;
+            if (finalEarned.compareTo(maxPoints) > 0) {
+                finalEarned = maxPoints;
             }
-            if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) {
-                earnedTotal = BigDecimal.ZERO;
-            }
-
-                return RubricTestGradeResponse.of(
-                    earnedTotal.doubleValue(),
+            
+            return RubricTestGradeResponse.of(
+                    finalEarned.doubleValue(),
                     totalPoints,
-                    allPassed,
+                    allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0,
                     details);
 
         } catch (Exception e) {
@@ -1242,119 +1108,10 @@ public class RubricTestingUsecase {
         }
     }
 
-    private BigDecimal evaluateSelectCase(
+    private BigDecimal calculateSelectCaseDeductions(
             String caseId,
             String caseName,
-            BigDecimal caseMaxPoints,
-            int expectedRowCount,
-            List<String> expectedColumns,
-            List<List<String>> expectedRows,
-            List<Map<String, Object>> actualRows,
-            boolean strictOrdering,
-            boolean allowPartialRowCredit,
-            double extraRowPenalty,
-            List<Map<String, Object>> details,
-            AtomicBoolean wrongColumnOrderFlag,
-            JsonNode selectRules,
-            boolean hasRuleBasedScoring) {
-        if (hasRuleBasedScoring) {
-            return evaluateSelectCaseByRules(
-                    caseId,
-                    caseName,
-                    caseMaxPoints,
-                    expectedColumns,
-                    expectedRows,
-                    actualRows,
-                    strictOrdering,
-                    selectRules,
-                    details);
-        }
-
-        if (expectedRows == null) {
-            expectedRows = List.of();
-        }
-
-        int expectedRowsSize = expectedRows.size();
-        int actualRowsSize = actualRows == null ? 0 : actualRows.size();
-
-        if (expectedRowCount > 0 && actualRowsSize == 0) {
-            details.add(Map.of(
-                    "type", "error",
-                    "message", "[" + caseId + "] " + caseName + ": không có dòng kết quả nào",
-                    "points", 0));
-            return BigDecimal.ZERO;
-        }
-
-        List<String> actualColumns = new ArrayList<>();
-        if (actualRows != null && !actualRows.isEmpty()) {
-            actualColumns.addAll(actualRows.get(0).keySet());
-        }
-
-        boolean wrongColumnOrder = !expectedColumns.isEmpty() && !sameColumnOrder(expectedColumns, actualColumns);
-        if (wrongColumnOrder) {
-            wrongColumnOrderFlag.set(true);
-        }
-
-        BigDecimal rowScore = expectedRowsSize > 0
-                ? caseMaxPoints.divide(BigDecimal.valueOf(expectedRowsSize), 6, RoundingMode.HALF_UP)
-                : caseMaxPoints;
-
-        BigDecimal rowEarned = BigDecimal.ZERO;
-        if (strictOrdering) {
-            int limit = Math.min(expectedRowsSize, actualRowsSize);
-            for (int i = 0; i < limit; i++) {
-                List<String> actual = toRowValues(
-                        actualRows.get(i),
-                        expectedColumns.isEmpty() ? actualColumns : expectedColumns);
-                List<String> expected = expectedRows.get(i);
-                rowEarned = rowEarned.add(scoreRow(actual, expected, rowScore, allowPartialRowCredit));
-            }
-        } else {
-            List<List<String>> remaining = new ArrayList<>();
-            for (Map<String, Object> map : actualRows) {
-                remaining.add(toRowValues(
-                        map,
-                        expectedColumns.isEmpty() ? actualColumns : expectedColumns));
-            }
-
-            for (List<String> expected : expectedRows) {
-                int idx = findBestRowMatchIndex(remaining, expected);
-                if (idx >= 0) {
-                    List<String> actual = remaining.remove(idx);
-                    rowEarned = rowEarned.add(scoreRow(actual, expected, rowScore, allowPartialRowCredit));
-                }
-            }
-        }
-
-        BigDecimal earned = rowEarned.min(caseMaxPoints);
-
-        if (actualRowsSize > expectedRowsSize && extraRowPenalty > 0) {
-            int extra = actualRowsSize - expectedRowsSize;
-            BigDecimal penalty = caseMaxPoints.multiply(BigDecimal.valueOf(extraRowPenalty))
-                    .multiply(BigDecimal.valueOf(extra));
-            earned = earned.subtract(penalty);
-        }
-
-        if (earned.compareTo(BigDecimal.ZERO) < 0) {
-            earned = BigDecimal.ZERO;
-        }
-        if (earned.compareTo(caseMaxPoints) > 0) {
-            earned = caseMaxPoints;
-        }
-
-        details.add(Map.of(
-                "type", earned.compareTo(caseMaxPoints) == 0 ? "success" : "warning",
-                "message", "[" + caseId + "] " + caseName + ": " + earned.setScale(2, RoundingMode.HALF_UP)
-                        + "/" + caseMaxPoints.setScale(2, RoundingMode.HALF_UP) + " điểm",
-                "points", earned.setScale(2, RoundingMode.HALF_UP).doubleValue()));
-
-        return earned;
-    }
-
-    private BigDecimal evaluateSelectCaseByRules(
-            String caseId,
-            String caseName,
-            BigDecimal caseMaxPoints,
+            BigDecimal caseMaxPenalty,
             List<String> expectedColumns,
             List<List<String>> expectedRows,
             List<Map<String, Object>> actualRows,
@@ -1389,13 +1146,11 @@ public class RubricTestingUsecase {
         }
 
         if (compareSelectResultStrict(safeActualRows, expectedRowMaps, strictOrdering, comparisonColumns)) {
-            BigDecimal full = caseMaxPoints.setScale(2, RoundingMode.HALF_UP);
             details.add(Map.of(
                     "type", "success",
-                    "message", "[" + caseId + "] " + caseName + ": " + full
-                            + "/" + caseMaxPoints.setScale(2, RoundingMode.HALF_UP) + " điểm",
-                    "points", full.doubleValue()));
-            return caseMaxPoints;
+                    "message", "[" + caseId + "] " + caseName + ": Khớp hoàn toàn kết quả, không bị trừ điểm",
+                    "points", 0));
+            return BigDecimal.ZERO;
         }
 
         int expectedRowsCount = expectedRowMaps.size();
@@ -1432,40 +1187,33 @@ public class RubricTestingUsecase {
         int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
         int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
 
-        double casePoints = caseMaxPoints.doubleValue();
-        int expectedColumnsCount = Math.max(1, comparisonColumns.size());
-        int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
-        double rowPenaltyDefault = casePoints / expectedRowsForPenalty;
-        double columnPenaltyDefault = casePoints / expectedColumnsCount;
-        double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
-
         List<SelectRuleApplication> applications = List.of(
                 applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
-                        caseMaxPoints, rowPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "thieu " + missingRows + " dong"),
                 applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
-                        caseMaxPoints, rowPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "du " + extraRows + " dong"),
                 applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
-                        caseMaxPoints, cellPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "sai " + wrongCells + " o du lieu"),
                 applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
-                        caseMaxPoints, cellPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "co " + nullViolations + " o gia tri rong"),
                 applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
-                        caseMaxPoints, rowPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "sai thu tu " + rowOrderViolations + " dong"),
                 applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                        caseMaxPoints, columnPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "sai thu tu cot ket qua"),
                 applySelectRule(selectRules, "COLUMN", "IS_MISSING", missingColumns,
-                        caseMaxPoints, columnPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "thieu " + missingColumns + " cot"),
                 applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
-                        caseMaxPoints, columnPenaltyDefault,
+                        caseMaxPenalty, 0.0,
                         "du " + extraColumns + " cot"));
 
-        double earned = casePoints;
+        double totalCaseDeduction = 0d;
         int matchedRuleCount = 0;
         boolean failAllTriggered = false;
         StringBuilder issueBuilder = new StringBuilder();
@@ -1484,7 +1232,7 @@ public class RubricTestingUsecase {
             }
 
             if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                earned -= application.deduction().doubleValue();
+                totalCaseDeduction += application.deduction().doubleValue();
             }
 
             if (application.message() != null && !application.message().isBlank()) {
@@ -1493,31 +1241,28 @@ public class RubricTestingUsecase {
         }
 
         if (failAllTriggered) {
-            earned = 0d;
+            totalCaseDeduction = caseMaxPenalty.doubleValue();
         } else if (matchedRuleCount == 0) {
-            earned = 0d;
+            totalCaseDeduction = caseMaxPenalty.doubleValue();
             appendSelectIssue(issueBuilder,
-                    "Khong co grading_rules phu hop de danh gia cac sai lech tren " + caseId + ".");
+                    "Không có grading_rules phù hợp để đánh giá lệch (" + caseId + "). Áp dụng mức trừ điểm tối đa của test case.");
         }
 
-        if (earned < 0d) {
-            earned = 0d;
-        }
-        if (earned > casePoints) {
-            earned = casePoints;
+        if (totalCaseDeduction > caseMaxPenalty.doubleValue()) {
+            totalCaseDeduction = caseMaxPenalty.doubleValue();
         }
 
-        BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
-        BigDecimal delta = caseMaxPoints.subtract(earnedPoints).abs();
+        BigDecimal caseDeductionValue = BigDecimal.valueOf(totalCaseDeduction).setScale(8, RoundingMode.HALF_UP);
+        BigDecimal delta = caseDeductionValue.abs();
         boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
 
-        BigDecimal roundedEarned = earnedPoints.setScale(2, RoundingMode.HALF_UP);
-        String scoreMessage = "[" + caseId + "] " + caseName + ": " + roundedEarned
-                + "/" + caseMaxPoints.setScale(2, RoundingMode.HALF_UP) + " điểm";
+        BigDecimal roundedDeduction = caseDeductionValue.setScale(2, RoundingMode.HALF_UP);
+        String scoreMessage = "[" + caseId + "] " + caseName + (allChecksPassed ? ": Khớp một phần hợp lệ, trừ 0 điểm" : ": Bị trừ " + roundedDeduction + " điểm");
+        
         details.add(Map.of(
                 "type", allChecksPassed ? "success" : "warning",
                 "message", scoreMessage,
-                "points", roundedEarned.doubleValue()));
+                "points", -roundedDeduction.doubleValue()));
 
         if (!allChecksPassed) {
             String issueMessage = issueBuilder.length() == 0
@@ -1529,7 +1274,7 @@ public class RubricTestingUsecase {
                     "points", 0));
         }
 
-        return earnedPoints;
+        return roundedDeduction;
     }
 
     private JsonNode resolveSelectGradingRules(JsonNode rubric, JsonNode payload) {

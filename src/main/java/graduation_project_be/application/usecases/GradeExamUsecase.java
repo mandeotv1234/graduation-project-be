@@ -161,11 +161,39 @@ public class GradeExamUsecase {
                                 submission.setScoreEarned(decision.scoreEarned());
                             }
                         } else {
+                            boolean fallbackTriggered = false;
                             try {
                                 examSchemaService.executeSql(schemaName, studentQuery);
                             } catch (Exception execErr) {
-                                errorMessage = "Cảnh báo Lỗi Execute: " + execErr.getMessage();
-                                hasExecutionError = true;
+                                String compileError = execErr.getMessage();
+                                if (question.getQuestionType() == QuestionType.INSERT_DATA) {
+                                    boolean fkError = compileError != null && (compileError.toLowerCase().contains("foreign key")
+                                            || compileError.toLowerCase().contains("ràng buộc")
+                                            || compileError.toLowerCase().contains("reference")
+                                            || compileError.toLowerCase().contains("conflict")
+                                            || compileError.toLowerCase().contains("khóa ngoại"));
+                                    if (fkError) {
+                                        fallbackTriggered = true;
+                                        try {
+                                            setAllConstraintsEnabled(schemaName, false);
+                                        } catch (Exception ignore) {}
+                                        try {
+                                            examSchemaService.executeSql(schemaName, studentQuery);
+                                        } catch (Exception retryErr) {
+                                            errorMessage = "Lỗi Execute (sau khi tắt FK): " + retryErr.getMessage();
+                                            hasExecutionError = true;
+                                        }
+                                        try {
+                                            setAllConstraintsEnabled(schemaName, true);
+                                        } catch (Exception ignore) {}
+                                    } else {
+                                        errorMessage = "Cảnh báo Lỗi Execute: " + compileError;
+                                        hasExecutionError = true;
+                                    }
+                                } else {
+                                    errorMessage = "Cảnh báo Lỗi Execute: " + compileError;
+                                    hasExecutionError = true;
+                                }
                             }
                             if (hasExecutionError && isCreateTableFailAllMode(question)) {
                                 if (submission != null) {
@@ -175,7 +203,7 @@ public class GradeExamUsecase {
                                 }
                                 isCorrect = false;
                             } else if (submission != null) {
-                                isCorrect = gradeAnswer(schemaName, teacherSchemaName, question, submission);
+                                isCorrect = gradeAnswer(schemaName, teacherSchemaName, question, submission, fallbackTriggered);
                             }
                             
                             if (submission != null && submission.getErrorMessage() != null && !submission.getErrorMessage().isBlank()) {
@@ -304,13 +332,13 @@ public class GradeExamUsecase {
 
     // ========== Grading Logic (extracted from old SubmitExamUsecase) ==========
 
-    private boolean gradeAnswer(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+    private boolean gradeAnswer(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission, boolean fallbackTriggered) {
         QuestionType type = question.getQuestionType();
         switch (type) {
             case CREATE_TABLE:
                 return gradeCreateTableAlgorithmic(schemaName, teacherSchemaName, question, submission);
             case INSERT_DATA:
-                return gradeInsertDataAlgorithmic(schemaName, teacherSchemaName, question, submission);
+                return gradeInsertDataAlgorithmic(schemaName, teacherSchemaName, question, submission, fallbackTriggered);
             case TRIGGER:
                 return gradeTriggerAlgorithmic(schemaName, teacherSchemaName, question, submission);
             case FUNCTION:
@@ -475,11 +503,11 @@ public class GradeExamUsecase {
         return result.allPassed();
     }
 
-    private boolean gradeInsertDataAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
+    private boolean gradeInsertDataAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission, boolean fallbackTriggered) {
         // === Check for rubric-based grading ===
         if (question.getGradingRubric() != null && !question.getGradingRubric().isBlank()) {
             try {
-                return gradeInsertDataByRubric(schemaName, question, submission);
+                return gradeInsertDataByRubric(schemaName, question, submission, fallbackTriggered);
             } catch (Exception e) {
                 log.warn("Rubric-based grading failed for Q{}, falling back to algorithmic (legacy): {}", question.getId(), e.getMessage());
             }
@@ -573,7 +601,7 @@ public class GradeExamUsecase {
         return allPassed;
     }
 
-    public boolean gradeInsertDataByRubric(String schemaName, ExamQuestion question, ExamSubmission submission) {
+    public boolean gradeInsertDataByRubric(String schemaName, ExamQuestion question, ExamSubmission submission, boolean fallbackTriggered) {
         JsonNode rubric;
         try {
             rubric = objectMapper.readTree(question.getGradingRubric());
@@ -604,7 +632,8 @@ public class GradeExamUsecase {
                 hasLegacyExtraRowSettings,
                 allowExtraRows,
                 penaltyPerExtraRow,
-                failAllMode);
+                failAllMode,
+                fallbackTriggered);
     }
 
     private boolean gradeInsertDataByRubricDeduction(
@@ -619,7 +648,8 @@ public class GradeExamUsecase {
             boolean hasLegacyExtraRowSettings,
             boolean allowExtraRows,
             double penaltyPerExtraRow,
-            boolean failAllMode) {
+            boolean failAllMode,
+            boolean fallbackTriggered) {
         BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
         BigDecimal earnedTotal = BigDecimal.ZERO;
         StringBuilder errorBuilder = new StringBuilder();
@@ -637,6 +667,23 @@ public class GradeExamUsecase {
         JsonNode cellNotEqualRule = findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
         JsonNode cellNullRule = findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
         JsonNode rowOrderRule = findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+        JsonNode fkRule = findInsertRule(gradingRules, "FOREIGN_KEY", "REFERENCE_ERROR");
+
+        if (fallbackTriggered && fkRule != null && fkRule.isObject()) {
+            InsertRuleDecision fkDecision = resolveInsertRuleDecision(fkRule, totalPoints.doubleValue(), 0d);
+            if (!fkDecision.ignore()) {
+                allPassed = false;
+                if (fkDecision.failAll()) {
+                    failAllTriggered = true;
+                } else {
+                    double deduction = fkDecision.penaltyPoints();
+                    if (deduction > 0d) {
+                        totalPoints = BigDecimal.valueOf(Math.max(0d, totalPoints.doubleValue() - deduction));
+                        errorBuilder.append(String.format("Lỗi khóa ngoại (FK): vi phạm tham chiếu/ràng buộc, hệ thống tự động chạy lại (trừ %.2f điểm). ", deduction));
+                    }
+                }
+            }
+        }
 
         JsonNode rowMatchModifiers = firstNonEmptyModifiers(
                 extractInsertRuleModifiers(missingRowRule),
@@ -1208,13 +1255,8 @@ public class GradeExamUsecase {
         return decimal.stripTrailingZeros().toPlainString();
     }
 
-    private boolean isNullLike(String value) {
-        if (value == null) {
-            return true;
-        }
-
-        String trimmed = value.trim();
-        return trimmed.isEmpty() || "NULL".equalsIgnoreCase(trimmed);
+    private boolean isNullLike(String val) {
+        return val == null || val.isEmpty() || "null".equalsIgnoreCase(val);
     }
 
     private int countInsertOutOfOrderViolations(List<Integer> matchedActualIndexes) {
@@ -2615,5 +2657,33 @@ public class GradeExamUsecase {
         }
 
         return allPassedMetadata && testCasesPassed;
+    }
+
+    private void setAllConstraintsEnabled(String schemaName, boolean enabled) {
+        String safeSchema = schemaName.replaceAll("[^a-zA-Z0-9_]", "");
+        List<Map<String, Object>> tables = examSchemaService.executeAdminSql(
+                "SELECT t.name AS TABLE_NAME "
+                        + "FROM sys.tables t "
+                        + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
+                        + "WHERE s.name = '" + safeSchema + "'").getResultSet();
+
+        for (Map<String, Object> row : tables) {
+            Object tableNameObj = row.get("TABLE_NAME");
+            if (tableNameObj == null) {
+                continue;
+            }
+
+            String tableName = String.valueOf(tableNameObj).replaceAll("[^a-zA-Z0-9_]", "");
+            String sql = enabled
+                    ? "ALTER TABLE [" + safeSchema + "].[" + tableName + "] WITH CHECK CHECK CONSTRAINT ALL"
+                    : "ALTER TABLE [" + safeSchema + "].[" + tableName + "] NOCHECK CONSTRAINT ALL";
+
+            try {
+                examSchemaService.executeAdminSql(sql);
+            } catch (Exception e) {
+                log.warn("Failed to {} constraints for table {}: {}",
+                        enabled ? "enable" : "disable", tableName, e.getMessage());
+            }
+        }
     }
 }

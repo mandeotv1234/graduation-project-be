@@ -20,22 +20,25 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
   "total_points": %.2f,
   "question_category": "SELECT_QUERY",
   "grading_payload": {
-    "global_grading_rules": {
-      "baseline_weight_ratio": 0.20,
-      "wrong_order_penalty": 0.00,
-      "wrong_column_order_penalty": 0.10,
-      "extra_row_penalty": 0.20
-    },
+    "grading_rules": [
+      {
+        "rule_name": "<TEN_RULE>",
+        "target": "<COLUMN|ROW|CELL_VALUE|ROW_ORDER|COLUMN_ORDER>",
+        "condition": "<IS_MISSING|IS_EXTRA|IS_NULL|NOT_EQUAL|OUT_OF_ORDER>",
+        "modifiers": [
+          "<TO_LOWERCASE|TRIM_WHITESPACE|REMOVE_ALL_WHITESPACE|REMOVE_DIACRITICS|CAST_TO_STRING|CAST_TO_FLOAT|ROUND_TO_INT|ROUND_2_DECIMALS|SORT_ASC>"
+        ],
+        "action": "<DEDUCT_POINTS|DEDUCT_PERCENTAGE|FAIL_ITEM|FAIL_ALL|IGNORE>",
+        "penalty_value": <SO_DUONG>
+      }
+    ],
     "test_cases": [
       {
         "case_id": "TC_01",
         "case_name": "Dữ liệu cơ bản",
-        "is_hidden": false,
-        "weight_ratio": 1.00,
-        "setup_dependency_id": "",
+        "penalty_value": 1.00,
         "setup_custom_script": "",
         "expected_result": {
-          "expected_row_count": <số dòng>,
           "columns_config": [
             { "column_name": "<tên cột>", "data_type": "<kiểu dữ liệu>" }
           ],
@@ -49,12 +52,11 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 }
 
 === QUY TẮC BẮT BUỘC ===
-- baseline_weight_ratio là tỉ trọng cho case nền [BASELINE] (đối chiếu studentQuery với correctQuery trên dữ liệu từ câu trước)
-- Tổng weight_ratio của test_cases + baseline_weight_ratio phải = 1.00
-- expected_result.rows phải khớp logic của SQL đáp án mẫu
-- expected_row_count phải đúng bằng số dòng trong rows
-- columns_config phải đúng thứ tự cột trong SELECT
-- BẮT BUỘC tạo ít nhất 4 test case chất lượng cao, bao phủ các lỗi thường gặp của sinh viên.
+- Cấu trúc chấm điểm dựa theo QUY ĐỊNH TRỪ DẦN ĐIỂM (deduct points).
+- KHÔNG sử dụng `global_grading_rules`, chỉ sử dụng `grading_rules` và `test_cases`.
+- Bạn có quyền điều chỉnh `penalty_value` (điểm trừ cho mỗi testcase/rule) sao cho tổng trừ tối đa tương đương total_points.
+- `weight_ratio` là tỉ trọng điểm của test_case (tổng tất cả weight_ratio = 1.0). Điểm mỗi test case = total_points * weight_ratio. Sau đó áp dụng luật `grading_rules` để phạt/trừ điểm sinh viên trong nội bộ test case đó.
+- BẮT BUỘC tạo ít nhất 3-4 test cases chất lượng cao `setup_custom_script` (kịch bản tạo dữ liệu), bao phủ các lỗi thường gặp của sinh viên nhưng KHÔNG CẦN điền `expected_result` (Backend sẽ tự sinh `expected_result` bằng cách chạy script đáp án chuẩn).
 - YÊU CẦU CÁC LOẠI TEST CASE (Dựa trên phân tích SQL đáp án mẫu):
   1. Happy Path (Dữ liệu chuẩn): Dữ liệu bình thường để kiểm tra logic chính.
   2. Bẫy Khóa chính kép / Thiếu JOIN (Composite Key / Missing JOIN Trap): Phân tích nếu có JOIN, hãy cố tình tạo dữ liệu ở bảng cha/con có trùng một phần khóa nhưng khác phần còn lại (ví dụ trùng Ma nhưng khác MaCongTy) để bắt lỗi sinh viên JOIN thiếu điều kiện. Hệ thống phải sinh ra bản ghi đánh lừa (dummy record).

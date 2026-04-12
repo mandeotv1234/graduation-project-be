@@ -26,6 +26,25 @@ Tra ve DUNG JSON (khong markdown, khong giai thich):
         "penalty_value": <SO_DUONG>,
         "description": "<MO_TA_NGAN_GON>"
       }
+    ],
+    "tables": [
+      {
+        "expected_name": "<TEN_BANG_CAN_THIET_LAP_TRONG_SO_RIENG>",
+        "missing_table_penalty": <SO_DIEM_TRU_CUA_BANG_NAY>,
+        "columns": [
+          {
+            "name": "<TEN_COT_CAN_THIET_LAP>",
+            "missing_column_penalty": <SO_DIEM_TRU>,
+            "type_mismatch_penalty": <SO_DIEM_TRU>
+          }
+        ],
+        "constraints": [
+          {
+            "type": "<LOAI_RANG_BUOC>",
+            "missing_constraint_penalty": <SO_DIEM_TRU>
+          }
+        ]
+      }
     ]
   }
 }
@@ -44,13 +63,21 @@ Tra ve DUNG JSON (khong markdown, khong giai thich):
 - Dung rule_name (KHONG dung rule_id).
 - KHONG dung target lien quan du lieu nhu ROW, CELL_VALUE, ROW_ORDER.
 - Moi rule dai dien cho mot loi/dieu kien KHAC NHAU, khong lap noi dung.
-- Cho phep "rule dac biet" mo ta bang text:
+- Cho phep thiet lap TRONG SO RIENG biet chon 1 doi tuong dich danh bang cach chi tra ve cac mang thiet lap rieng nay vao thuoc tinh `tables` thay vi nam trong grading_rules. 
+- YEU CAU NGHIEM NGAT VE TABLES: Chi tao ra cac thuoc tinh table, columns, hay constraints khi NGUOI DUNG YEU CAU RO RANG. Khi khong dung den thuoc tinh nao thi TICH THU TUYET DOI khong duoc tu them vao json (ban co the bo hoan toan khoi tables cac property ko dung toi, hoac de mang la rong `[]`). NẾU không có yêu cầu đặc tả đích danh nao hett, `tables` hãy để RỖNG.
+- NGOAI LE TAI GRADING_RULES: Khi da tao ra truong tables thi de tranh tru diem 2 lan, BAT BUOC phai tao mọt "rule dac biet" mo ta lai yeu cau nay nam trong `grading_rules`:
   {
-    "rule_name": "<TEN_RULE>",
+    "rule_name": "<TEN_RULE_DAC_BIET>",
     "description": "<MO_TA_QUY_TAC_DAC_BIET_BANG_NGON_NGU_TU_NHIEN>"
   }
-- Uu tien ten quy tac than thien tieng Viet, ngan gon, co dau.
+  (CHU Y: KHONG ĐƯỢC sinh ra các field target, condition, modifiers, action, penalty_value cho rule dac biet nay, tuyet doi chi co 2 field tren)
+- Cac rule binh thuong con lai (co dung target, condition) phai co day du field. Uu tien ten quy tac than thien tieng Viet, ngan gon, co dau.
 - penalty_value phai >= 0.
+- TUYET DOI KHONG duoc nhung ten bang, ten cot, ten rang buoc CU THE (vi du: CONGTY, CONGTRINH, MaCT, MaDT...) vao rule_name hoac description cua rule, TRU KHI nguoi dung YEU CAU RO RANG tao rule AP DUNG RIENG cho doi tuong do.
+- Rule chung PHAI dung tu ngu tong quat theo loai doi tuong: "bang", "cot", "khoa chinh", "khoa ngoai", "rang buoc", "kieu du lieu" thay vi ten cu the.
+- Vi du DUNG: rule_name="Thieu rang buoc PRIMARY KEY", description="Neu phat hien khoa chinh bi thieu thi tru 0.5 diem".
+- Vi du SAI: rule_name="Thieu PRIMARY KEY cho bang CONGTY", description="Neu bang CONGTY thieu khoa chinh thi tru diem".
+- Ngu canh de bai va SQL dap an chi de THAM KHAO cau truc, KHONG phai de gan ten cu the vao rule tru khi duoc yeu cau.
 
 === KIEM TRA TRUOC KHI TRA VE ===
 - JSON hop le, chi tra ve JSON.

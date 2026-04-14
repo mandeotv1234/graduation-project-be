@@ -42,7 +42,7 @@ public class RubricTestingUsecase {
 
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z0-9_]+");
     private static final Pattern INSERT_TABLE_ISSUE_PATTERN = Pattern.compile(
-            "Bang\\s+([^:]+):\\s*thieu\\s+(\\d+)\\s+dong,\\s*sai\\s+(\\d+)\\s+o,\\s*du\\s+(\\d+)\\s+dong,\\s*sai\\s+thu\\s+tu\\s+(\\d+)\\s+dong(?:,\\s*tru\\s+([0-9]+(?:\\.[0-9]+)?)\\s*diem)?\\.",
+            "(?:Bang|Bảng)\\s+([^:]+):\\s*(?:thieu|thiếu)\\s+(\\d+)\\s+(?:dong|dòng),\\s*sai\\s+(\\d+)\\s+(?:o|ô),\\s*(?:du|dư)\\s+(\\d+)\\s+(?:dong|dòng),\\s*(?:sai\\s+thu\\s+tu|sai\\s+thứ\\s+tự)\\s+(\\d+)\\s+(?:dong|dòng)(?:,\\s*(?:tru|trừ)\\s+([0-9]+(?:\\.[0-9]+)?)\\s*(?:diem|điểm))?\\.",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern INSERT_INTO_PATTERN = Pattern.compile(
             "(?i)\\bINSERT\\s+INTO\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
@@ -126,26 +126,33 @@ public class RubricTestingUsecase {
                 examSchemaService.resetSchema(studentSchema);
 
                 String currentCorrectNormalized = normalizeSqlForExecution(correctQuery);
+                List<Map<String, Object>> prepareDetails = new ArrayList<>();
                 int teacherPrepared = executeExistingAnswersForSchema(
                         examQuestions,
                         teacherSchema,
-                        details,
+                        prepareDetails,
                         null,
-                        false,
+                        true,
                         currentCorrectNormalized);
                 int studentPrepared = executeExistingAnswersForSchema(
                         examQuestions,
                         studentSchema,
-                        details,
+                        prepareDetails,
                         null,
-                        false,
+                        true,
                         currentCorrectNormalized);
-                if (teacherPrepared > 0 || studentPrepared > 0) {
-                    details.add(Map.of(
-                            "type", "info",
-                            "message", "Đã chạy đáp án các câu hiện có trước khi chấm thử (teacher="
-                                    + teacherPrepared + ", student=" + studentPrepared + ")",
+
+                boolean prepareFailed = prepareDetails.stream()
+                        .anyMatch(item -> "warning".equals(item.get("type")));
+                if (prepareFailed) {
+                    List<Map<String, Object>> earlyDetails = new ArrayList<>();
+                    earlyDetails.add(Map.of(
+                            "type", "error",
+                            "message", "Không thể chuẩn bị schema nền từ các câu CREATE_TABLE trước khi chấm thử. "
+                                    + "Vui lòng kiểm tra lại đáp án CREATE TABLE và thứ tự câu hỏi.",
                             "points", 0));
+                    earlyDetails.addAll(prepareDetails);
+                    return RubricTestGradeResponse.of(0, totalPoints, false, earlyDetails);
                 }
 
                 if (!seedSchemaScript.isBlank() && settings.path("inject_seed_schema").asBoolean(false)) {
@@ -687,6 +694,7 @@ public class RubricTestingUsecase {
                 String caseName = tc.path("case_name").asText(caseId);
                 double penaltyValue = tc.path("penalty_value").asDouble(1.0);
                 BigDecimal caseMaxPenalty = BigDecimal.valueOf(penaltyValue).setScale(4, RoundingMode.HALF_UP);
+                String casePhase = "setup";
 
                 String caseSchema = "test_grade_select_case_" + System.currentTimeMillis() + "_" + i;
                 try {
@@ -754,10 +762,12 @@ public class RubricTestingUsecase {
                                 "points", 0));
                     }
 
+                    casePhase = "student_query";
                     List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery).getResultSet();
                     List<String> expectedColumns = new ArrayList<>();
                     List<List<String>> expectedRows = new ArrayList<>();
 
+                    casePhase = "teacher_query";
                     if (!correctQuery.isBlank()) {
                         List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
 
@@ -791,6 +801,7 @@ public class RubricTestingUsecase {
                         }
                     }
 
+                    casePhase = "grading";
                     BigDecimal caseDeduction = calculateSelectCaseDeductions(
                             caseId,
                             caseName,
@@ -807,12 +818,23 @@ public class RubricTestingUsecase {
                         totalDeduction = totalDeduction.add(caseDeduction);
                     }
                 } catch (Exception caseEx) {
-                    allPassed = false;
+                    if ("setup".equals(casePhase)) {
+                        String setupErrorMessage = caseEx.getMessage() != null
+                                ? caseEx.getMessage()
+                                : "Lỗi không xác định";
+                        details.add(Map.of(
+                                "type", "warning",
+                                "message", "[" + caseId + "] Lỗi chuẩn bị dữ liệu test case, bỏ qua không trừ điểm: "
+                                        + setupErrorMessage,
+                                "points", 0));
+                        continue;
+                    }
                     String errorMessage = caseEx.getMessage() != null ? caseEx.getMessage() : "Lỗi không xác định";
                     details.add(Map.of(
                             "type", "error",
                             "message", "[" + caseId + "] Lỗi chạy test case: " + errorMessage,
                             "points", -caseMaxPenalty.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+                    allPassed = false;
                     totalDeduction = totalDeduction.add(caseMaxPenalty);
 
                     if (errorMessage.contains("Invalid column name")) {
@@ -1075,13 +1097,95 @@ public class RubricTestingUsecase {
                             + "] setup_custom_script gặp lỗi FK, hệ thống tự thử lại với NOCHECK CONSTRAINT",
                     "points", 0));
 
+            details.add(Map.of(
+                    "type", "info",
+                    "message", "[" + caseId
+                            + "] Dọn dữ liệu tạm trước khi chạy lại setup_custom_script để tránh trùng khóa.",
+                    "points", 0));
+            clearAllDataInSchema(schemaName);
+
             setAllConstraintsEnabled(schemaName, false);
             try {
-                examSchemaService.executeSql(schemaName, setupScript);
+                try {
+                    examSchemaService.executeSql(schemaName, setupScript);
+                } catch (Exception retryEx) {
+                    String retryMessage = retryEx.getMessage() != null ? retryEx.getMessage() : "";
+                    boolean retryFkConflict = retryMessage.contains("FOREIGN KEY constraint");
+                    String relaxedScript = stripRecheckConstraintStatements(setupScript);
+
+                    if (!retryFkConflict
+                            || relaxedScript.isBlank()
+                            || relaxedScript.equals(setupScript)) {
+                        throw retryEx;
+                    }
+
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", "[" + caseId
+                                    + "] setup_custom_script chứa lệnh CHECK CONSTRAINT gây lỗi FK khi retry. "
+                                    + "Hệ thống tự bỏ lệnh CHECK để tiếp tục dựng dữ liệu test case.",
+                            "points", 0));
+
+                    clearAllDataInSchema(schemaName);
+                    setAllConstraintsEnabled(schemaName, false);
+                    examSchemaService.executeSql(schemaName, relaxedScript);
+                }
             } finally {
-                setAllConstraintsEnabled(schemaName, true);
+                try {
+                    setAllConstraintsEnabled(schemaName, true);
+                } catch (Exception recheckEx) {
+                    String recheckMessage = recheckEx.getMessage() != null ? recheckEx.getMessage() : "";
+                    boolean fkStillInvalid = recheckMessage.contains("FOREIGN KEY constraint");
+                    if (!fkStillInvalid) {
+                        throw recheckEx;
+                    }
+
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", "[" + caseId
+                                    + "] setup_custom_script còn vi phạm FK sau khi nạp dữ liệu. "
+                                    + "Tiếp tục chấm test case ở chế độ NOCHECK CONSTRAINT cho schema tạm.",
+                            "points", 0));
+
+                    try {
+                        setAllConstraintsEnabled(schemaName, false);
+                    } catch (Exception ignore) {
+                    }
+                }
             }
         }
+    }
+
+    private String stripRecheckConstraintStatements(String setupScript) {
+        if (setupScript == null || setupScript.isBlank()) {
+            return "";
+        }
+
+        StringBuilder filtered = new StringBuilder();
+        String[] statements = setupScript.split(";");
+        for (String rawStatement : statements) {
+            String statement = rawStatement == null ? "" : rawStatement.trim();
+            if (statement.isBlank()) {
+                continue;
+            }
+
+            String normalized = statement
+                    .replaceAll("\\s+", " ")
+                    .trim()
+                    .toUpperCase(Locale.ROOT);
+
+            boolean isRecheckConstraint = normalized.matches("ALTER TABLE .* WITH CHECK CHECK CONSTRAINT ALL")
+                    || normalized.matches("ALTER TABLE .* CHECK CONSTRAINT ALL")
+                    || normalized.matches("ALTER TABLE .* WITH CHECK CHECK CONSTRAINT \\[?[^\\]]+\\]?")
+                    || normalized.matches("ALTER TABLE .* CHECK CONSTRAINT \\[?[^\\]]+\\]?");
+            if (isRecheckConstraint) {
+                continue;
+            }
+
+            filtered.append(statement).append(";\n");
+        }
+
+        return filtered.toString().trim();
     }
 
     private void clearAllDataInSchema(String schemaName) {
@@ -2233,14 +2337,24 @@ public class RubricTestingUsecase {
             int outOfOrderRows = parseIntegerSafe(matcher.group(5));
             double deduction = parseDoubleSafe(matcher.group(6), 0d);
 
-            String message = String.format(
-                    Locale.ROOT,
-                    "Bang %s: thieu %d dong, sai %d o, du %d dong, sai thu tu %d dong.",
-                    tableName,
-                    missingRows,
-                    wrongCells,
-                    extraRows,
-                    outOfOrderRows);
+            String message = deduction > 0d
+                    ? String.format(
+                            Locale.ROOT,
+                            "Bảng %s: thiếu %d dòng, sai %d ô, dư %d dòng, sai thứ tự %d dòng, trừ %.2f điểm.",
+                            tableName,
+                            missingRows,
+                            wrongCells,
+                            extraRows,
+                            outOfOrderRows,
+                            deduction)
+                    : String.format(
+                            Locale.ROOT,
+                            "Bảng %s: thiếu %d dòng, sai %d ô, dư %d dòng, sai thứ tự %d dòng.",
+                            tableName,
+                            missingRows,
+                            wrongCells,
+                            extraRows,
+                            outOfOrderRows);
 
             parsedIssues.add(Map.of(
                     "type", "error",

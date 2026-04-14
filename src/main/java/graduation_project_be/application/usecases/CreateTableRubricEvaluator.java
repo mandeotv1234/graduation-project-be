@@ -15,6 +15,8 @@ import java.util.Set;
 
 final class CreateTableRubricEvaluator {
 
+    private static final String GLOBAL_SCOPE = "__GLOBAL__";
+
     private CreateTableRubricEvaluator() {
     }
 
@@ -397,6 +399,8 @@ final class CreateTableRubricEvaluator {
         boolean failAllTriggered = false;
         StringBuilder issueBuilder = new StringBuilder();
         List<Map<String, Object>> details = new ArrayList<>();
+        Map<String, BigDecimal> tableBudgets = resolveCreateRuleTableBudgets(rubricTables, totalPoints);
+        Map<String, BigDecimal> tableDeductions = new LinkedHashMap<>();
 
         for (Map.Entry<String, Integer> entry : violations.entrySet()) {
             int violationCount = entry.getValue() == null ? 0 : entry.getValue();
@@ -404,13 +408,14 @@ final class CreateTableRubricEvaluator {
                 continue;
             }
 
-            String[] segments = entry.getKey().split("\\|", 2);
-            if (segments.length != 2) {
+            String[] segments = entry.getKey().split("\\|", 3);
+            if (segments.length < 2) {
                 continue;
             }
 
             String target = segments[0];
             String condition = segments[1];
+            String scope = segments.length >= 3 ? segments[2] : GLOBAL_SCOPE;
             JsonNode ruleNode = findCreateRule(gradingRules, target, condition);
             if (ruleNode == null) {
                 continue;
@@ -426,13 +431,25 @@ final class CreateTableRubricEvaluator {
                     totalPoints,
                     defaultPenaltyPerViolation);
 
-            String ruleLabel = target + "/" + condition;
-            String violationSummary = buildCreateViolationSummary(target, condition, violationCount);
+            String violationTitle = buildCreateViolationTitle(target, condition);
+            String scopeLabel = GLOBAL_SCOPE.equals(scope) || scope.isBlank()
+                    ? ""
+                    : "Bảng " + scope + ": ";
+            String scopeDetail = buildCreateRuleScopeDetail(
+                    target,
+                    condition,
+                    scope,
+                    rubricTables,
+                    actualTables,
+                    caseSensitive);
+            String userMessage = (scopeDetail == null || scopeDetail.isBlank())
+                    ? scopeLabel + violationTitle + " (" + violationCount + " lỗi)"
+                    : scopeLabel + scopeDetail;
 
             if (decision.ignore()) {
                 details.add(Map.of(
                         "type", "info",
-                        "message", "Rule " + ruleLabel + " bo qua vi pham (" + violationSummary + ")",
+                        "message", userMessage + " (bỏ qua theo cấu hình)",
                         "points", 0));
                 continue;
             }
@@ -442,31 +459,44 @@ final class CreateTableRubricEvaluator {
             if (decision.failAll()) {
                 failAllTriggered = true;
                 appendIssue(issueBuilder,
-                        "Rule " + ruleLabel + " kich hoat FAIL_ALL (" + violationSummary + ").");
+                        userMessage + ": kích hoạt FAIL_ALL.");
                 details.add(Map.of(
                         "type", "warning",
-                        "message", "Rule " + ruleLabel + " kich hoat FAIL_ALL",
+                        "message", userMessage + " (kích hoạt FAIL_ALL)",
                         "points", 0));
                 continue;
             }
 
-            BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
+            BigDecimal requestedDeduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
                     .multiply(BigDecimal.valueOf(violationCount));
-            if (deduction.compareTo(BigDecimal.ZERO) <= 0) {
+            if (requestedDeduction.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
 
-            totalPenalty = totalPenalty.add(deduction);
-            String formattedDeduction = deduction
+            BigDecimal appliedDeduction = applyCreateScopeCap(
+                    scope,
+                    requestedDeduction,
+                    tableBudgets,
+                    tableDeductions);
+            if (appliedDeduction.compareTo(BigDecimal.ZERO) <= 0) {
+                details.add(Map.of(
+                        "type", "info",
+                        "message", scopeLabel + "Đã đạt mức trừ tối đa của bảng, không trừ thêm.",
+                        "points", 0));
+                continue;
+            }
+
+            totalPenalty = totalPenalty.add(appliedDeduction);
+            String formattedDeduction = appliedDeduction
                     .setScale(2, RoundingMode.HALF_UP)
                     .stripTrailingZeros()
                     .toPlainString();
             appendIssue(issueBuilder,
-                    "Rule " + ruleLabel + " (" + violationSummary + "): tru " + formattedDeduction + " diem.");
+                    userMessage + ": trừ " + formattedDeduction + " điểm.");
             details.add(Map.of(
                     "type", "warning",
-                    "message", "Rule " + ruleLabel + " (" + violationSummary + ")",
-                    "points", -deduction.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+                    "message", userMessage,
+                    "points", -appliedDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue()));
         }
 
         return new CreateRuleAdjustment(
@@ -496,7 +526,7 @@ final class CreateTableRubricEvaluator {
 
                 TableMetadata actualTable = findTable(actualTables, expectedName, caseSensitive);
                 if (actualTable == null) {
-                    incrementViolationCount(violations, "TABLE", "IS_MISSING", 1);
+                    incrementViolationCount(violations, "TABLE", "IS_MISSING", 1, expectedName);
                     continue;
                 }
 
@@ -526,19 +556,19 @@ final class CreateTableRubricEvaluator {
 
                     TableMetadata.ColumnMetadata actualColumn = actualColumnsByName.get(expectedColumnKey);
                     if (actualColumn == null) {
-                        incrementViolationCount(violations, "COLUMN", "IS_MISSING", 1);
+                        incrementViolationCount(violations, "COLUMN", "IS_MISSING", 1, expectedName);
                         continue;
                     }
 
                     String expectedType = rubricColumn.path("expected_type").asText("");
                     if (!expectedType.isBlank() && !matchesSqlType(actualColumn.getRawDataType(), expectedType)) {
-                        incrementViolationCount(violations, "DATA_TYPE", "TYPE_MISMATCH", 1);
+                        incrementViolationCount(violations, "DATA_TYPE", "TYPE_MISMATCH", 1, expectedName);
                     }
                 }
 
                 for (String actualColumnKey : actualColumnsByName.keySet()) {
                     if (!expectedColumnsByName.containsKey(actualColumnKey)) {
-                        incrementViolationCount(violations, "COLUMN", "IS_EXTRA", 1);
+                        incrementViolationCount(violations, "COLUMN", "IS_EXTRA", 1, expectedName);
                     }
                 }
 
@@ -546,7 +576,7 @@ final class CreateTableRubricEvaluator {
                         expectedColumnOrder,
                         actualColumnOrder);
                 if (columnOrderViolations > 0) {
-                    incrementViolationCount(violations, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations);
+                    incrementViolationCount(violations, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations, expectedName);
                 }
 
                 Set<String> expectedPrimaryKeys = new HashSet<>();
@@ -555,7 +585,7 @@ final class CreateTableRubricEvaluator {
                 for (JsonNode rubricConstraint : rubricTable.path("constraints")) {
                     String constraintType = rubricConstraint.path("type").asText("");
                     if (!doesConstraintMatch(actualTable, rubricConstraint, caseSensitive)) {
-                        incrementViolationCount(violations, "CONSTRAINT_LOCAL", "IS_MISSING", 1);
+                        incrementViolationCount(violations, "CONSTRAINT_LOCAL", "IS_MISSING", 1, expectedName);
                     }
 
                     JsonNode columnsNode = rubricConstraint.path("columns");
@@ -591,7 +621,7 @@ final class CreateTableRubricEvaluator {
 
                         TableMetadata.ColumnMetadata actualColumn = actualColumnsByName.get(fkColumnKey);
                         if (actualColumn == null || !actualColumn.isForeignKey()) {
-                            incrementViolationCount(violations, "FOREIGN_KEY", "IS_MISSING", 1);
+                            incrementViolationCount(violations, "FOREIGN_KEY", "IS_MISSING", 1, expectedName);
                             continue;
                         }
 
@@ -609,7 +639,7 @@ final class CreateTableRubricEvaluator {
                                 expectedRefColumn,
                                 caseSensitive);
                         if (!tableMatched || !columnMatched) {
-                            incrementViolationCount(violations, "FOREIGN_KEY", "REFERENCE_ERROR", 1);
+                            incrementViolationCount(violations, "FOREIGN_KEY", "REFERENCE_ERROR", 1, expectedName);
                         }
                     }
                 }
@@ -617,7 +647,7 @@ final class CreateTableRubricEvaluator {
                 for (String expectedPrimaryKey : expectedPrimaryKeys) {
                     TableMetadata.ColumnMetadata actualColumn = actualColumnsByName.get(expectedPrimaryKey);
                     if (actualColumn == null || !actualColumn.isPrimaryKey()) {
-                        incrementViolationCount(violations, "PRIMARY_KEY", "IS_MISSING", 1);
+                        incrementViolationCount(violations, "PRIMARY_KEY", "IS_MISSING", 1, expectedName);
                     }
                 }
 
@@ -636,13 +666,13 @@ final class CreateTableRubricEvaluator {
                 }
 
                 if (extraPrimaryKeys > 0) {
-                    incrementViolationCount(violations, "PRIMARY_KEY", "IS_EXTRA", extraPrimaryKeys);
+                    incrementViolationCount(violations, "PRIMARY_KEY", "IS_EXTRA", extraPrimaryKeys, expectedName);
                 }
                 if (extraForeignKeys > 0) {
-                    incrementViolationCount(violations, "FOREIGN_KEY", "IS_EXTRA", extraForeignKeys);
+                    incrementViolationCount(violations, "FOREIGN_KEY", "IS_EXTRA", extraForeignKeys, expectedName);
                 }
                 if (extraPrimaryKeys + extraForeignKeys > 0) {
-                    incrementViolationCount(violations, "CONSTRAINT_LOCAL", "IS_EXTRA", extraPrimaryKeys + extraForeignKeys);
+                    incrementViolationCount(violations, "CONSTRAINT_LOCAL", "IS_EXTRA", extraPrimaryKeys + extraForeignKeys, expectedName);
                 }
             }
         }
@@ -651,7 +681,7 @@ final class CreateTableRubricEvaluator {
             for (TableMetadata actualTable : actualTables) {
                 String actualTableName = normalizeCreateIdentifier(actualTable.getTableName(), caseSensitive);
                 if (!expectedTableNames.contains(actualTableName)) {
-                    incrementViolationCount(violations, "TABLE", "IS_EXTRA", 1);
+                    incrementViolationCount(violations, "TABLE", "IS_EXTRA", 1, actualTable.getTableName());
                 }
             }
         }
@@ -814,8 +844,51 @@ final class CreateTableRubricEvaluator {
         }
     }
 
-    private static String buildCreateViolationSummary(String target, String condition, int count) {
-        return target + "/" + condition + " x" + count;
+    private static String buildCreateViolationTitle(String target, String condition) {
+        String normalizedTarget = target == null ? "" : target.toUpperCase(Locale.ROOT);
+        String normalizedCondition = condition == null ? "" : condition.toUpperCase(Locale.ROOT);
+
+        if ("TABLE".equals(normalizedTarget) && "IS_MISSING".equals(normalizedCondition)) {
+            return "Thiếu bảng";
+        }
+        if ("TABLE".equals(normalizedTarget) && "IS_EXTRA".equals(normalizedCondition)) {
+            return "Dư bảng";
+        }
+        if ("COLUMN".equals(normalizedTarget) && "IS_MISSING".equals(normalizedCondition)) {
+            return "Thiếu cột";
+        }
+        if ("COLUMN".equals(normalizedTarget) && "IS_EXTRA".equals(normalizedCondition)) {
+            return "Dư cột";
+        }
+        if ("DATA_TYPE".equals(normalizedTarget) && "TYPE_MISMATCH".equals(normalizedCondition)) {
+            return "Sai kiểu dữ liệu cột";
+        }
+        if ("COLUMN_ORDER".equals(normalizedTarget) && "OUT_OF_ORDER".equals(normalizedCondition)) {
+            return "Sai thứ tự cột";
+        }
+        if ("PRIMARY_KEY".equals(normalizedTarget) && "IS_MISSING".equals(normalizedCondition)) {
+            return "Thiếu khóa chính";
+        }
+        if ("PRIMARY_KEY".equals(normalizedTarget) && "IS_EXTRA".equals(normalizedCondition)) {
+            return "Dư khóa chính";
+        }
+        if ("FOREIGN_KEY".equals(normalizedTarget) && "IS_MISSING".equals(normalizedCondition)) {
+            return "Thiếu khóa ngoại";
+        }
+        if ("FOREIGN_KEY".equals(normalizedTarget) && "IS_EXTRA".equals(normalizedCondition)) {
+            return "Dư khóa ngoại";
+        }
+        if ("FOREIGN_KEY".equals(normalizedTarget) && "REFERENCE_ERROR".equals(normalizedCondition)) {
+            return "Sai tham chiếu khóa ngoại";
+        }
+        if ("CONSTRAINT_LOCAL".equals(normalizedTarget) && "IS_MISSING".equals(normalizedCondition)) {
+            return "Thiếu ràng buộc";
+        }
+        if ("CONSTRAINT_LOCAL".equals(normalizedTarget) && "IS_EXTRA".equals(normalizedCondition)) {
+            return "Dư ràng buộc";
+        }
+
+        return (target == null ? "" : target) + "/" + (condition == null ? "" : condition);
     }
 
     private static void incrementViolationCount(
@@ -823,11 +896,244 @@ final class CreateTableRubricEvaluator {
             String target,
             String condition,
             int delta) {
+        incrementViolationCount(violations, target, condition, delta, GLOBAL_SCOPE);
+    }
+
+    private static void incrementViolationCount(
+            Map<String, Integer> violations,
+            String target,
+            String condition,
+            int delta,
+            String scope) {
         if (delta <= 0) {
             return;
         }
-        String key = target.toUpperCase(Locale.ROOT) + "|" + condition.toUpperCase(Locale.ROOT);
+        String normalizedScope = (scope == null || scope.isBlank()) ? GLOBAL_SCOPE : scope.trim();
+        String key = target.toUpperCase(Locale.ROOT)
+                + "|" + condition.toUpperCase(Locale.ROOT)
+                + "|" + normalizedScope;
         violations.merge(key, delta, Integer::sum);
+    }
+
+    private static Map<String, BigDecimal> resolveCreateRuleTableBudgets(
+            JsonNode rubricTables,
+            BigDecimal totalPoints) {
+        Map<String, BigDecimal> budgets = new LinkedHashMap<>();
+        if (rubricTables == null || !rubricTables.isArray() || rubricTables.isEmpty()) {
+            return budgets;
+        }
+
+        int tableCount = 0;
+        for (JsonNode rubricTable : rubricTables) {
+            String tableName = rubricTable.path("expected_name").asText("").trim();
+            if (tableName.isBlank()) {
+                continue;
+            }
+            tableCount++;
+            double tableBudget = rubricTable.path("missing_table_penalty").asDouble(0d);
+            budgets.put(tableName, BigDecimal.valueOf(Math.max(0d, tableBudget)));
+        }
+
+        if (budgets.isEmpty() || totalPoints == null || totalPoints.compareTo(BigDecimal.ZERO) <= 0) {
+            return budgets;
+        }
+
+        BigDecimal equalShare = tableCount > 0
+                ? totalPoints.divide(BigDecimal.valueOf(tableCount), 6, RoundingMode.HALF_UP)
+                : totalPoints;
+        BigDecimal sumBudgets = BigDecimal.ZERO;
+        boolean hasExplicitBudget = false;
+        for (BigDecimal value : budgets.values()) {
+            if (value.compareTo(BigDecimal.ZERO) > 0) {
+                hasExplicitBudget = true;
+                break;
+            }
+        }
+        for (Map.Entry<String, BigDecimal> entry : budgets.entrySet()) {
+            if (!hasExplicitBudget || entry.getValue().compareTo(BigDecimal.ZERO) <= 0) {
+                entry.setValue(equalShare);
+            }
+            sumBudgets = sumBudgets.add(entry.getValue());
+        }
+
+        if (sumBudgets.compareTo(BigDecimal.ZERO) <= 0) {
+            return budgets;
+        }
+
+        for (Map.Entry<String, BigDecimal> entry : budgets.entrySet()) {
+            BigDecimal normalizedBudget = entry.getValue()
+                    .multiply(totalPoints)
+                    .divide(sumBudgets, 6, RoundingMode.HALF_UP);
+            entry.setValue(normalizedBudget);
+        }
+
+        return budgets;
+    }
+
+    private static BigDecimal applyCreateScopeCap(
+            String scope,
+            BigDecimal requestedDeduction,
+            Map<String, BigDecimal> tableBudgets,
+            Map<String, BigDecimal> tableDeductions) {
+        if (requestedDeduction == null || requestedDeduction.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        if (scope == null || scope.isBlank() || GLOBAL_SCOPE.equals(scope)) {
+            return requestedDeduction;
+        }
+
+        BigDecimal budget = tableBudgets.get(scope);
+        if (budget == null && !tableBudgets.isEmpty()) {
+            BigDecimal sum = BigDecimal.ZERO;
+            for (BigDecimal value : tableBudgets.values()) {
+                sum = sum.add(value);
+            }
+            budget = sum.divide(BigDecimal.valueOf(tableBudgets.size()), 6, RoundingMode.HALF_UP);
+        }
+        if (budget == null) {
+            return requestedDeduction;
+        }
+
+        BigDecimal used = tableDeductions.getOrDefault(scope, BigDecimal.ZERO);
+        BigDecimal remaining = budget.subtract(used);
+        if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal applied = requestedDeduction.min(remaining);
+        tableDeductions.put(scope, used.add(applied));
+        return applied;
+    }
+
+    private static String buildCreateRuleScopeDetail(
+            String target,
+            String condition,
+            String scope,
+            JsonNode rubricTables,
+            List<TableMetadata> actualTables,
+            boolean caseSensitive) {
+        if (scope == null || scope.isBlank() || GLOBAL_SCOPE.equals(scope)) {
+            return null;
+        }
+
+        if ("TABLE".equalsIgnoreCase(target) && "IS_MISSING".equalsIgnoreCase(condition)) {
+            return "thiếu bảng";
+        }
+        if ("TABLE".equalsIgnoreCase(target) && "IS_EXTRA".equalsIgnoreCase(condition)) {
+            return "dư bảng so với rubric";
+        }
+
+        JsonNode rubricTable = findRubricTableByName(rubricTables, scope, caseSensitive);
+        TableMetadata actualTable = findTable(actualTables, scope, caseSensitive);
+        if (rubricTable == null || actualTable == null) {
+            return null;
+        }
+
+        Map<String, JsonNode> expectedColumns = new LinkedHashMap<>();
+        List<String> expectedColumnOrder = new ArrayList<>();
+        for (JsonNode rubricColumn : rubricTable.path("columns")) {
+            String columnName = rubricColumn.path("name").asText("").trim();
+            if (columnName.isBlank()) {
+                continue;
+            }
+            expectedColumns.put(normalizeCreateIdentifier(columnName, caseSensitive), rubricColumn);
+            expectedColumnOrder.add(columnName);
+        }
+
+        Map<String, TableMetadata.ColumnMetadata> actualColumns = new LinkedHashMap<>();
+        List<String> actualColumnOrder = new ArrayList<>();
+        for (TableMetadata.ColumnMetadata actualColumn : actualTable.getColumns()) {
+            String columnName = actualColumn.getColumnName();
+            actualColumns.put(normalizeCreateIdentifier(columnName, caseSensitive), actualColumn);
+            actualColumnOrder.add(columnName);
+        }
+
+        if ("COLUMN".equalsIgnoreCase(target) && "IS_MISSING".equalsIgnoreCase(condition)) {
+            List<String> missingColumns = new ArrayList<>();
+            for (JsonNode rubricColumn : rubricTable.path("columns")) {
+                String columnName = rubricColumn.path("name").asText("").trim();
+                if (columnName.isBlank()) {
+                    continue;
+                }
+                if (!actualColumns.containsKey(normalizeCreateIdentifier(columnName, caseSensitive))) {
+                    missingColumns.add(columnName);
+                }
+            }
+            return missingColumns.isEmpty() ? null : "thiếu cột: " + joinWithLimit(missingColumns, 8);
+        }
+
+        if ("COLUMN".equalsIgnoreCase(target) && "IS_EXTRA".equalsIgnoreCase(condition)) {
+            List<String> extraColumns = new ArrayList<>();
+            for (TableMetadata.ColumnMetadata actualColumn : actualTable.getColumns()) {
+                String columnName = actualColumn.getColumnName();
+                if (!expectedColumns.containsKey(normalizeCreateIdentifier(columnName, caseSensitive))) {
+                    extraColumns.add(columnName);
+                }
+            }
+            return extraColumns.isEmpty() ? null : "dư cột: " + joinWithLimit(extraColumns, 8);
+        }
+
+        if ("DATA_TYPE".equalsIgnoreCase(target) && "TYPE_MISMATCH".equalsIgnoreCase(condition)) {
+            List<String> mismatches = new ArrayList<>();
+            for (JsonNode rubricColumn : rubricTable.path("columns")) {
+                String columnName = rubricColumn.path("name").asText("").trim();
+                String expectedType = rubricColumn.path("expected_type").asText("").trim();
+                if (columnName.isBlank() || expectedType.isBlank()) {
+                    continue;
+                }
+                TableMetadata.ColumnMetadata actualColumn = actualColumns.get(
+                        normalizeCreateIdentifier(columnName, caseSensitive));
+                if (actualColumn == null) {
+                    continue;
+                }
+                if (!matchesSqlType(actualColumn.getRawDataType(), expectedType)) {
+                    mismatches.add(columnName + "(" + expectedType + "->" + actualColumn.getRawDataType() + ")");
+                }
+            }
+            return mismatches.isEmpty() ? null : "sai kiểu cột: " + joinWithLimit(mismatches, 6);
+        }
+
+        if ("COLUMN_ORDER".equalsIgnoreCase(target) && "OUT_OF_ORDER".equalsIgnoreCase(condition)) {
+            return "thứ tự kỳ vọng: [" + String.join(", ", expectedColumnOrder)
+                    + "], thực tế: [" + String.join(", ", actualColumnOrder) + "]";
+        }
+
+        return null;
+    }
+
+    private static JsonNode findRubricTableByName(JsonNode rubricTables, String tableName, boolean caseSensitive) {
+        if (rubricTables == null || !rubricTables.isArray() || tableName == null || tableName.isBlank()) {
+            return null;
+        }
+        for (JsonNode rubricTable : rubricTables) {
+            String expectedName = rubricTable.path("expected_name").asText("");
+            if (expectedName.isBlank()) {
+                continue;
+            }
+            boolean matched = caseSensitive
+                    ? expectedName.equals(tableName)
+                    : expectedName.equalsIgnoreCase(tableName);
+            if (matched) {
+                return rubricTable;
+            }
+        }
+        return null;
+    }
+
+    private static String joinWithLimit(List<String> values, int limit) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        int safeLimit = Math.max(1, limit);
+        List<String> head = values.size() > safeLimit
+                ? values.subList(0, safeLimit)
+                : values;
+        String text = String.join(", ", head);
+        if (values.size() > safeLimit) {
+            text += ", ... (+" + (values.size() - safeLimit) + ")";
+        }
+        return text;
     }
 
     private static String normalizeCreateIdentifier(String value, boolean caseSensitive) {

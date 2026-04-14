@@ -6,22 +6,17 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class ExamSpecification {
+public class RulePreset {
     private Long id;
+    private Long teacherId;
     private String name;
-    private String ddlScript;
-    private String schemaJson;
-    private String schemaDiagram;
-    private String description;
-    private List<SpecEntity> entities;
-    private List<SpecDataset> datasets;
-    private Long createdBy;
+    private QuestionType questionType;
+    private String rulesJson;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

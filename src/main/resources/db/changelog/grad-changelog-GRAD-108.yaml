@@ -1,0 +1,167 @@
+databaseChangeLog:
+  - changeSet:
+      id: "2604090002"
+      author: manhuynh
+      comment: "GRAD-108: Synchronize INSERT_DATA rubrics to deduction format and remove deduction_mode flag"
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              WITH source_rows AS (
+                SELECT
+                  id,
+                  grading_rubric::jsonb AS rubric_json
+                FROM exam_questions
+                WHERE question_type = 'INSERT_DATA'
+                  AND grading_rubric IS NOT NULL
+                  AND BTRIM(grading_rubric) <> ''
+              ),
+              migrated AS (
+                SELECT
+                  id,
+                  CASE
+                    WHEN (base_json #> '{grading_payload,tables}') IS NULL
+                      OR jsonb_typeof(COALESCE(base_json #> '{grading_payload,tables}', '[]'::jsonb)) <> 'array'
+                      OR jsonb_array_length(COALESCE(base_json #> '{grading_payload,tables}', '[]'::jsonb)) = 0
+                    THEN jsonb_set(base_json, '{grading_payload,tables}', converted_tables, true)
+                    ELSE base_json
+                  END AS new_rubric
+                FROM (
+                  SELECT
+                    id,
+                    jsonb_set(
+                      jsonb_set(
+                        (rubric_json #- '{grading_payload,grading_settings,deduction_mode}'),
+                        '{question_category}',
+                        to_jsonb('INSERT_DATA'::text),
+                        true
+                      ),
+                      '{grading_payload,grading_settings}',
+                      (
+                        COALESCE(rubric_json #> '{grading_payload,grading_settings}', '{}'::jsonb) - 'deduction_mode'
+                      ) || jsonb_build_object(
+                        'syntax_error_action', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,syntax_error_action}', ''), 'PARTIAL'),
+                        'allow_extra_rows', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,allow_extra_rows}', '')::boolean, false),
+                        'penalty_per_extra_row', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,penalty_per_extra_row}', '')::numeric, 0.1),
+                        'ignore_column_order', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,ignore_column_order}', '')::boolean, true),
+                        'trim_string_spaces', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,trim_string_spaces}', '')::boolean, true),
+                        'case_insensitive_data', COALESCE(NULLIF(rubric_json #>> '{grading_payload,grading_settings,case_insensitive_data}', '')::boolean, false)
+                      ),
+                      true
+                    ) AS base_json,
+                    COALESCE(
+                      (
+                        SELECT jsonb_agg(
+                          jsonb_build_object(
+                            'table_name', COALESCE(NULLIF(dataset ->> 'table_name', ''), ''),
+                            'table_points', COALESCE(
+                              NULLIF(dataset ->> 'table_points', '')::numeric,
+                              COALESCE(NULLIF(dataset ->> 'points_per_row', '')::numeric, 0)
+                                * GREATEST(
+                                    1,
+                                    jsonb_array_length(
+                                      CASE
+                                        WHEN jsonb_typeof(dataset -> 'rows') = 'array' THEN dataset -> 'rows'
+                                        ELSE '[]'::jsonb
+                                      END
+                                    )
+                                  ),
+                              0
+                            ),
+                            'row_grading_strategy', COALESCE(NULLIF(dataset ->> 'row_grading_strategy', ''), 'PARTIAL_BY_COLUMN'),
+                            'missing_row_penalty', COALESCE(
+                              NULLIF(dataset ->> 'missing_row_penalty', '')::numeric,
+                              NULLIF(dataset ->> 'points_per_row', '')::numeric,
+                              0
+                            ),
+                            'columns_config',
+                            COALESCE(
+                              (
+                                SELECT jsonb_agg(
+                                  jsonb_build_object(
+                                    'name', column_name,
+                                    'is_primary_key', EXISTS (
+                                      SELECT 1
+                                      FROM jsonb_array_elements_text(
+                                        CASE
+                                          WHEN jsonb_typeof(dataset -> 'primary_keys') = 'array' THEN dataset -> 'primary_keys'
+                                          ELSE '[]'::jsonb
+                                        END
+                                      ) pk
+                                      WHERE LOWER(pk) = LOWER(column_name)
+                                    ),
+                                    'points', COALESCE(
+                                      NULLIF(dataset ->> 'points_per_row', '')::numeric
+                                        / GREATEST(
+                                            1,
+                                            jsonb_array_length(
+                                              CASE
+                                                WHEN jsonb_typeof(dataset -> 'columns_to_grade') = 'array' THEN dataset -> 'columns_to_grade'
+                                                ELSE '[]'::jsonb
+                                              END
+                                            )
+                                          ),
+                                      0
+                                    ),
+                                    'match_type', 'EXACT'
+                                  )
+                                )
+                                FROM jsonb_array_elements_text(
+                                  CASE
+                                    WHEN jsonb_typeof(dataset -> 'columns_to_grade') = 'array' THEN dataset -> 'columns_to_grade'
+                                    ELSE '[]'::jsonb
+                                  END
+                                ) column_name
+                              ),
+                              '[]'::jsonb
+                            ),
+                            'expected_data',
+                            CASE
+                              WHEN jsonb_typeof(dataset -> 'expected_data') = 'array' THEN dataset -> 'expected_data'
+                              WHEN jsonb_typeof(dataset -> 'rows') = 'array' THEN dataset -> 'rows'
+                              ELSE '[]'::jsonb
+                            END
+                          )
+                        )
+                        FROM jsonb_array_elements(
+                          CASE
+                            WHEN jsonb_typeof(rubric_json #> '{grading_payload,expected_datasets}') = 'array'
+                              THEN rubric_json #> '{grading_payload,expected_datasets}'
+                            ELSE '[]'::jsonb
+                          END
+                        ) dataset
+                      ),
+                      '[]'::jsonb
+                    ) AS converted_tables
+                  FROM source_rows
+                ) prepared
+              )
+              UPDATE exam_questions target
+              SET grading_rubric = migrated.new_rubric::text
+              FROM migrated
+              WHERE target.id = migrated.id;
+  - changeSet:
+      id: "2604090003"
+      author: codex
+      comment: "GRAD-96: Remove deduction_mode from existing CREATE_TABLE rubrics"
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE exam_questions
+              SET grading_rubric = (grading_rubric::jsonb #- '{grading_payload,grading_settings,deduction_mode}')::text
+              WHERE question_type = 'CREATE_TABLE'
+                AND grading_rubric IS NOT NULL
+                AND BTRIM(grading_rubric) <> '';

@@ -51,8 +51,7 @@ public class CreateExamQuestionUsecase {
         String correctQuery = request.correctQuery();
         String verifyScript = request.verifyScript();
 
-        boolean needsAi = (correctQuery == null || correctQuery.isBlank()) ||
-                          (verifyScript == null || verifyScript.isBlank());
+        boolean needsAi = (correctQuery == null || correctQuery.isBlank());
 
         if (needsAi) {
             String schemaContext = buildSchemaContext(request.examId());

@@ -1,49 +1,57 @@
-Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
-Phân tích câu lệnh CREATE TABLE SQL bên dưới và tạo ra một cấu trúc JSON để chấm điểm từng phần.
+Ban la chuyen gia cham diem SQL cho he thong thi thuc hanh CSDL.
+Phan tich SQL dap an mau va tao rubric CREATE_TABLE.
 
-=== CÂU HỎI ===
+=== CAU HOI ===
 %s
 
-=== SQL ĐÁP ÁN MẪU ===
+=== SQL DAP AN MAU ===
 %s
 
-=== TỔNG ĐIỂM ===
-%.2f điểm
+=== TONG DIEM ===
+%.2f diem
 
-=== YÊU CẦU ĐẦU RA ===
-Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+=== BAT BUOC TRA VE ===
+- Chi tra ve JSON hop le. Khong markdown. Khong giai thich.
+- Dung dung cau truc JSON ben duoi.
+- Phai co day du tat ca bang, tat ca cot, va tat ca PK/FK xuat hien trong SQL.
+- Khong duoc bo cot thuong (khong chi giu lai PK/FK).
+- Neu SQL co UNIQUE/CHECK/DEFAULT thi dua vao constraints.
+- Khong can toi uu phan bo diem. He thong BE se tu dien penalty mac dinh sau.
+
+=== CAU TRUC JSON BAT BUOC ===
 {
-  "total_points": <tổng điểm>,
+  "total_points": <tong_diem>,
   "question_category": "CREATE_TABLE",
   "grading_payload": {
     "grading_settings": {
       "syntax_error_action": "PARTIAL",
       "case_sensitive_names": false,
-      "allow_implicit_constraints": true
+      "allow_implicit_constraints": true,
+      "positive_only_scoring": false,
+      "skip_child_checks_when_table_missing": true
     },
     "tables": [
       {
         "expected_name": "<TEN_BANG>",
-        "existence_points": <điểm cho sự tồn tại bảng - khoảng 5-10%% tổng điểm>,
+        "missing_table_penalty": <muc_tru_khi_thieu_bang>,
         "missing_penalty_action": "SKIP_TABLE",
         "columns": [
           {
             "name": "<TEN_COT>",
             "expected_type": "<KIEU_DU_LIEU>",
-            "is_nullable": <true/false>,
-            "points": <điểm cho cột đúng>,
-            "type_mismatch_penalty": <điểm trừ khi sai kiểu>
+            "is_nullable": <true_or_false>,
+            "missing_column_penalty": <so_placeholder>,
+            "type_mismatch_penalty": <so_placeholder>
           }
         ],
         "constraints": [
           {
             "type": "<PRIMARY_KEY|FOREIGN_KEY|UNIQUE|CHECK|DEFAULT>",
-            "columns": ["<tên cột>"],
-            "points": <điểm cho ràng buộc>,
-            "missing_penalty": <điểm trừ khi thiếu>,
-            "references_table": "<bảng tham chiếu - chỉ cho FK>",
-            "references_columns": ["<cột tham chiếu - chỉ cho FK>"],
-            "expression": "<biểu thức - chỉ cho CHECK/DEFAULT>"
+            "columns": ["<ten_cot>"],
+            "missing_constraint_penalty": <so_placeholder>,
+            "references_table": "<bang_tham_chieu_cho_FOREIGN_KEY>",
+            "references_columns": ["<cot_tham_chieu_cho_FOREIGN_KEY>"],
+            "expression": "<bieu_thuc_cho_CHECK_hoac_DEFAULT>"
           }
         ]
       }
@@ -51,9 +59,40 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
   }
 }
 
-=== QUY TẮC PHÂN BỐ ĐIỂM ===
-- Tổng tất cả điểm (existence_points + column points + constraint points) phải BẰNG ĐÚNG %.2f
-- Mỗi cột: points ~ 60-70%% điểm trung bình, type_mismatch_penalty ~ 40%% points cột đó
-- Mỗi constraint: points ~ tuỳ độ quan trọng, missing_penalty ~ 50%% points constraint đó
-- Kiểu dữ liệu: dùng tên ngắn SQL Server (INT, VARCHAR, NVARCHAR, DATE, DECIMAL, BIT, v.v.)
-- Phát hiện tất cả ràng buộc: PRIMARY KEY, FOREIGN KEY, NOT NULL (qua is_nullable), CHECK, DEFAULT, UNIQUE
+=== LUU Y QUAN TRONG ===
+- AI chi can tra ve dung cau truc va noi dung ky thuat (bang/cot/kieu/nullability/constraints).
+- Cac truong penalty co the de so placeholder (vi du 0 hoac 1).
+- BE se tu dong ghi de penalty theo rule mac dinh:
+  missing_column_penalty = 0.5
+  type_mismatch_penalty = 0.25
+  missing_constraint_penalty = 0.5 cho PRIMARY_KEY va FOREIGN_KEY
+  missing_table_penalty duoc BE phan bo theo tong diem cau hoi
+
+=== VI DU NHANH (MOT COT + MOT PK, penalty de placeholder) ===
+{
+  "columns": [
+    {
+      "name": "MaCT",
+      "expected_type": "VARCHAR(5)",
+      "is_nullable": false,
+      "missing_column_penalty": 0,
+      "type_mismatch_penalty": 0
+    }
+  ],
+  "constraints": [
+    {
+      "type": "PRIMARY_KEY",
+      "columns": ["MaCT"],
+      "missing_constraint_penalty": 0,
+      "references_table": null,
+      "references_columns": [],
+      "expression": null
+    }
+  ]
+}
+
+=== KIEM TRA TRUOC KHI TRA VE ===
+- Khong thieu bang nao trong tables[].
+- Khong thieu cot nao trong columns[] cua tung bang.
+- Khong bo sot PRIMARY_KEY va FOREIGN_KEY.
+- Chi tra ve JSON.

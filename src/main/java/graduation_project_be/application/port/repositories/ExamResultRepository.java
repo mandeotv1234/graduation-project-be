@@ -13,6 +13,6 @@ public interface ExamResultRepository {
 
     Optional<ExamResult> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
 
-    long countByExamIdAndStudentId(Long examId, Long studentId);
+    Long countByExamIdAndStudentId(Long examId, Long studentId);
     List<ExamResult> findByExamId(Long examId);
 }

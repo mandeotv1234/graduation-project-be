@@ -18,6 +18,7 @@ public record GetStudentExamResponseDto(
         long secondsUntilStart,
         String description,
         Integer maxAttempts,
+        Long usedAttempts,
         Integer lateThreshold,
         ExamSettingsResponseDto settings,
         List<TableMetadata> schema) {
@@ -35,6 +36,7 @@ public record GetStudentExamResponseDto(
                 response.secondsUntilStart(),
                 response.description(),
                 response.maxAttempts(),
+                response.usedAttempts(),
                 response.lateThreshold(),
                 ExamSettingsResponseDto.fromModel(response.settings()),
                 response.schema());

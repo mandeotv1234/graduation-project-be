@@ -32,6 +32,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class GeminiServiceImpl implements GeminiService {
+    private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([^\"]+)\"");
 
     private static final String GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
@@ -61,6 +62,9 @@ public class GeminiServiceImpl implements GeminiService {
 
     @Value("classpath:prompts/select_query_rubric_prompt.txt")
     private Resource selectQueryRubricPromptResource;
+    
+    @Value("classpath:prompts/specification_schema_prompt.txt")
+    private Resource specificationSchemaPromptResource;
 
     @Value("classpath:prompts/create_table_rules_prompt.txt")
     private Resource createTableRulesPromptResource;

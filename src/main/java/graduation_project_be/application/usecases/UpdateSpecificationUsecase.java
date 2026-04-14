@@ -30,8 +30,12 @@ public class UpdateSpecificationUsecase {
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
         boolean hasDdlScript = request.ddlScript() != null && !request.ddlScript().isBlank();
+        boolean hasSchemaJson = request.schemaJson() != null && !request.schemaJson().isNull();
         if (!hasDdlScript) {
             throw new BadRequestException("ddlScript must be provided");
+        }
+        if (!hasSchemaJson) {
+            throw new BadRequestException("schemaJson must be provided");
         }
 
         validateSpecificationSchema(request, current.getCreatedBy() == null ? 0L : current.getCreatedBy());
@@ -43,7 +47,7 @@ public class UpdateSpecificationUsecase {
                 .id(current.getId())
                 .name(request.name())
                 .ddlScript(request.ddlScript())
-                .schemaJson(request.schemaJson() == null ? null : request.schemaJson().toString())
+                .schemaJson(request.schemaJson().toString())
                 .description(request.description())
                 .datasets(datasets)
                 .createdBy(current.getCreatedBy())

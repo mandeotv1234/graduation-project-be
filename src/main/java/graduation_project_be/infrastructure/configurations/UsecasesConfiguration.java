@@ -683,6 +683,23 @@ public class UsecasesConfiguration {
                 currentUserService);
     }
 
+    // ===== PDF DOWNLOAD USECASE =====
+
+    @Bean
+    DownloadExamPdfUsecase downloadExamPdfUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            PdfStorageService pdfStorageService) {
+        return new DownloadExamPdfUsecase(
+                examRepository,
+                classRepository,
+                classEnrollmentRepository,
+                currentUserService,
+                pdfStorageService);
+    }
+
     // ===== DEVICE CONFLICT USECASES =====
 
     @Bean

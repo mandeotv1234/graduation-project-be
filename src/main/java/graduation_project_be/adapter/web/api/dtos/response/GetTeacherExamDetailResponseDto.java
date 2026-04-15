@@ -15,7 +15,9 @@ public record GetTeacherExamDetailResponseDto(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettingsResponseDto settings) {
+        ExamSettingsResponseDto settings,
+        String pdfFilePath,
+        String originalPdfFileName) {
 
     public static GetTeacherExamDetailResponseDto fromResponse(GetTeacherExamDetailResponse response) {
         return new GetTeacherExamDetailResponseDto(
@@ -30,6 +32,8 @@ public record GetTeacherExamDetailResponseDto(
                 response.description(),
                 response.maxAttempts(),
                 response.lateThreshold(),
-                response.settings() != null ? ExamSettingsResponseDto.fromModel(response.settings()) : null);
+                response.settings() != null ? ExamSettingsResponseDto.fromModel(response.settings()) : null,
+                response.pdfFilePath(),
+                response.originalPdfFileName());
     }
 }

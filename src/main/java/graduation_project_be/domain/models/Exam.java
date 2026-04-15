@@ -26,4 +26,6 @@ public class Exam {
     private Integer maxAttempts;
     private Integer lateThreshold;
     private ExamSettings settings;
+    private String pdfFilePath;
+    private String originalPdfFileName;
 }

@@ -15,7 +15,9 @@ public record UpdateExamResponse(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettings settings) {
+        ExamSettings settings,
+        String pdfFilePath,
+        String originalPdfFileName) {
 
     public static UpdateExamResponse fromModel(Exam exam) {
         return new UpdateExamResponse(
@@ -29,6 +31,8 @@ public record UpdateExamResponse(
                 exam.getDescription(),
                 exam.getMaxAttempts(),
                 exam.getLateThreshold(),
-                exam.getSettings());
+                exam.getSettings(),
+                exam.getPdfFilePath(),
+                exam.getOriginalPdfFileName());
     }
 }

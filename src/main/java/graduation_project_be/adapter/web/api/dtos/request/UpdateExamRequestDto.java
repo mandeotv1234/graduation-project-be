@@ -33,6 +33,25 @@ public record UpdateExamRequestDto(
                 description,
                 maxAttempts,
                 lateThreshold,
-                settings != null ? settings.toModel() : null);
+                settings != null ? settings.toModel() : null,
+                null,
+                null);
+    }
+
+    public UpdateExamRequest toRequest(Long examId, String pdfFilePath, String originalPdfFileName) {
+        return new UpdateExamRequest(
+                examId,
+                title,
+                specificationId,
+                durationMinutes,
+                startTime,
+                endTime,
+                isPublished,
+                description,
+                maxAttempts,
+                lateThreshold,
+                settings != null ? settings.toModel() : null,
+                pdfFilePath,
+                originalPdfFileName);
     }
 }

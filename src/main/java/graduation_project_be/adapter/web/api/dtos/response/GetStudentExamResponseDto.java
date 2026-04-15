@@ -21,7 +21,9 @@ public record GetStudentExamResponseDto(
         Long usedAttempts,
         Integer lateThreshold,
         ExamSettingsResponseDto settings,
-        List<TableMetadata> schema) {
+        List<TableMetadata> schema,
+        String pdfFilePath,
+        String originalPdfFileName) {
     public static GetStudentExamResponseDto fromResponse(GetStudentExamResponse response) {
         return new GetStudentExamResponseDto(
                 response.examId(),
@@ -39,6 +41,8 @@ public record GetStudentExamResponseDto(
                 response.usedAttempts(),
                 response.lateThreshold(),
                 ExamSettingsResponseDto.fromModel(response.settings()),
-                response.schema());
+                response.schema(),
+                response.pdfFilePath(),
+                response.originalPdfFileName());
     }
 }

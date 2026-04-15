@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 150420260001
+      author: phanphuc
+      changes:
+        - addColumn:
+            tableName: exams
+            columns:
+              - column:
+                  name: pdf_file_path
+                  type: VARCHAR(500)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: original_pdf_file_name
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true

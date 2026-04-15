@@ -15,5 +15,7 @@ public record CreateExamRequest(
                 String description,
                 Integer maxAttempts,
                 Integer lateThreshold,
-                ExamSettings settings) {
+                ExamSettings settings,
+                String pdfFilePath,
+                String originalPdfFileName) {
 }

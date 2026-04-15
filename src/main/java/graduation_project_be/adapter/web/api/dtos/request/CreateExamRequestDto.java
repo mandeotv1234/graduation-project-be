@@ -30,6 +30,10 @@ public record CreateExamRequestDto(
 
         ExamSettingsDto settings) {
     public CreateExamRequest toRequest() {
+        return toRequest(null, null);
+    }
+
+    public CreateExamRequest toRequest(String pdfFilePath, String originalPdfFileName) {
         return new CreateExamRequest(
                 specificationId,
                 classId,
@@ -41,6 +45,8 @@ public record CreateExamRequestDto(
                 description,
                 maxAttempts,
                 lateThreshold,
-                settings != null ? settings.toModel() : null);
+                settings != null ? settings.toModel() : null,
+                pdfFilePath,
+                originalPdfFileName);
     }
 }

@@ -2,6 +2,7 @@ package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.*;
 import graduation_project_be.adapter.web.api.dtos.response.*;
+import graduation_project_be.application.port.services.PdfStorageService;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.request.UpdateExamRequest;
@@ -11,11 +12,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 
 import java.util.List;
@@ -60,12 +64,48 @@ public class ExamController {
         private final RegradeExamUsecase regradeExamUsecase;
         private final RegradeAllExamUsecase regradeAllExamUsecase;
         private final OverrideSubmissionScoreUsecase overrideSubmissionScoreUsecase;
+        private final PdfStorageService pdfStorageService;
+        private final DownloadExamPdfUsecase downloadExamPdfUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
-        @PostMapping
+        @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> createExam(
+                        @RequestPart("data") @Valid CreateExamRequestDto requestDto,
+                        @RequestPart(value = "pdfFile", required = false) MultipartFile pdfFile) {
+
+                String pdfFilePath = null;
+                String originalPdfFileName = null;
+
+                if (pdfFile != null && !pdfFile.isEmpty()) {
+                        if (!"application/pdf".equals(pdfFile.getContentType())) {
+                                return ResponseEntity.badRequest()
+                                                .body(ResponseDto.of(null, "BAD_REQUEST",
+                                                                "File must be a PDF"));
+                        }
+                        if (pdfFile.getSize() > 10 * 1024 * 1024) {
+                                return ResponseEntity.badRequest()
+                                                .body(ResponseDto.of(null, "BAD_REQUEST",
+                                                                "PDF file size must not exceed 10MB"));
+                        }
+
+                        pdfFilePath = pdfStorageService.savePdf(pdfFile);
+                        originalPdfFileName = pdfFile.getOriginalFilename();
+                }
+
+                CreateExamRequest request = requestDto.toRequest(pdfFilePath, originalPdfFileName);
+                CreateExamResponse response = createExamUsecase.execute(request);
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                CreateExamResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                "Exam created successfully"));
+        }
+
+        @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> createExamJson(
                         @RequestBody @Valid CreateExamRequestDto requestDto) {
                 CreateExamRequest request = requestDto.toRequest();
                 CreateExamResponse response = createExamUsecase.execute(request);
@@ -76,7 +116,42 @@ public class ExamController {
                                                 "Exam created successfully"));
         }
 
-        @PutMapping("/{examId}")
+        @PutMapping(value = "/{examId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> updateExamMultipart(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestPart("data") @Valid UpdateExamRequestDto requestDto,
+                        @RequestPart(value = "pdfFile", required = false) MultipartFile pdfFile) {
+
+                String pdfFilePath = null;
+                String originalPdfFileName = null;
+
+                if (pdfFile != null && !pdfFile.isEmpty()) {
+                        if (!"application/pdf".equals(pdfFile.getContentType())) {
+                                return ResponseEntity.badRequest()
+                                                .body(ResponseDto.of(null, "BAD_REQUEST",
+                                                                "File must be a PDF"));
+                        }
+                        if (pdfFile.getSize() > 10 * 1024 * 1024) {
+                                return ResponseEntity.badRequest()
+                                                .body(ResponseDto.of(null, "BAD_REQUEST",
+                                                                "PDF file size must not exceed 10MB"));
+                        }
+
+                        pdfFilePath = pdfStorageService.savePdf(pdfFile);
+                        originalPdfFileName = pdfFile.getOriginalFilename();
+                }
+
+                UpdateExamRequest request = requestDto.toRequest(examId, pdfFilePath, originalPdfFileName);
+                UpdateExamResponse response = updateExamUsecase.execute(request);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                UpdateExamResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Exam updated successfully"));
+        }
+
+        @PutMapping(value = "/{examId}", consumes = MediaType.APPLICATION_JSON_VALUE)
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> updateExam(
                         @PathVariable("examId") @Positive Long examId,
@@ -323,6 +398,18 @@ public class ExamController {
                 return ResponseEntity.ok(
                                 ResponseDto.of(GetStudentExamResponseDto.fromResponse(response), "OK",
                                                 "Exam retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/pdf")
+        @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
+        public ResponseEntity<byte[]> downloadExamPdf(
+                        @PathVariable("examId") @Positive Long examId) {
+                DownloadExamPdfResponse response = downloadExamPdfUsecase.execute(examId);
+                return ResponseEntity.ok()
+                                .contentType(MediaType.APPLICATION_PDF)
+                                .header(HttpHeaders.CONTENT_DISPOSITION,
+                                                "inline; filename=\"" + response.fileName() + "\"")
+                                .body(response.content());
         }
 
         @GetMapping("/enrolled")

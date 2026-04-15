@@ -9,7 +9,7 @@ import graduation_project_be.domain.models.SqlExecutionResult;
 public interface ExamSchemaService {
     void createExamSchemaForStudent(Long examId, Long studentId);
 
-    void resetSchema(String schemaName);
+    void resetSchema(String schemaName, boolean keepTables);
 
     void dropSchema(String schemaName);
 

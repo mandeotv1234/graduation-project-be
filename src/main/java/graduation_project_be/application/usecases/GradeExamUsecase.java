@@ -122,10 +122,10 @@ public class GradeExamUsecase {
 
             // 6. Reset schemas before grading
             log.info("Resetting schema [{}] before grading", schemaName);
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
 
             log.info("Setting up teacher schema [{}] for test case validation", teacherSchemaName);
-            examSchemaService.resetSchema(teacherSchemaName);
+            examSchemaService.resetSchema(teacherSchemaName, false);
             if (specification != null && specification.getDdlScript() != null) {
                 examSchemaService.loadTemplateIntoSchema(teacherSchemaName, specification.getDdlScript(), null);
             }
@@ -1673,7 +1673,7 @@ public class GradeExamUsecase {
             ExamQuestion question,
             String studentQuery) {
         try {
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
 
             List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery).getResultSet();
@@ -1701,7 +1701,7 @@ public class GradeExamUsecase {
             JsonNode gradingRules,
             BigDecimal datasetMaxPoints) {
         try {
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, datasetScript);
 
             List<Map<String, Object>> actual = examSchemaService.executeSql(schemaName, studentQuery).getResultSet();

@@ -221,6 +221,36 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GetStudentResultsUsecase getStudentResultsUsecase(
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            CurrentUserService currentUserService) {
+        return new GetStudentResultsUsecase(examRepository, examResultRepository, currentUserService);
+    }
+
+    @Bean
+    GetMyResultDetailUsecase getMyResultDetailUsecase(
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetMyResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, examRepository, userRepository, currentUserService);
+    }
+
+    @Bean
+    ClearExamSchemaUsecase clearExamSchemaUsecase(
+            ExamRepository examRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            ExamSessionService examSessionService) {
+        return new ClearExamSchemaUsecase(examRepository, classEnrollmentRepository,
+                currentUserService, examSchemaService, examSessionService);
+    }
+
+    @Bean
     ExecuteSqlUsecase executeSqlUsecase(
             ExamRepository examRepository,
             ClassRepository classRepository,

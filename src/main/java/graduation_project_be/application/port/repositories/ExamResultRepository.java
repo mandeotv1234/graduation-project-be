@@ -4,6 +4,8 @@ import graduation_project_be.domain.models.ExamResult;
 
 import java.util.List;
 import java.util.Optional;
+import graduation_project_be.domain.models.PaginatedResult;
+import graduation_project_be.domain.models.PaginationParams;
 
 public interface ExamResultRepository {
     ExamResult save(ExamResult examResult);
@@ -15,4 +17,6 @@ public interface ExamResultRepository {
 
     Long countByExamIdAndStudentId(Long examId, Long studentId);
     List<ExamResult> findByExamId(Long examId);
+    
+    PaginatedResult<ExamResult> findPaginatedByStudentId(Long studentId, PaginationParams params);
 }

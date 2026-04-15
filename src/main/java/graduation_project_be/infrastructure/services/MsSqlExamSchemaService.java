@@ -7,6 +7,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -87,7 +88,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
-    public void resetSchema(String schemaName) {
+    public void resetSchema(String schemaName, boolean keepTables) {
         String userName = schemaName + "_user";
 
         try {
@@ -116,30 +117,32 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     }
 
                     // 2. Drop all foreign key constraints
-                    try (Statement stmt = conn.createStatement();
-                            ResultSet rs = stmt.executeQuery(
-                                    "SELECT fk.name AS fk_name, OBJECT_NAME(fk.parent_object_id) AS table_name " +
-                                            "FROM sys.foreign_keys fk JOIN sys.tables t ON fk.parent_object_id = t.object_id "
-                                            +
-                                            "WHERE SCHEMA_NAME(t.schema_id) = '" + schemaName + "'")) {
-                        while (rs.next()) {
-                            String fk = rs.getString("fk_name");
-                            String table = rs.getString("table_name");
-                            try (Statement drop = conn.createStatement()) {
-                                drop.execute("ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
-                                        + "]");
+                    if (!keepTables) {
+                        try (Statement stmt = conn.createStatement();
+                                ResultSet rs = stmt.executeQuery(
+                                        "SELECT fk.name AS fk_name, OBJECT_NAME(fk.parent_object_id) AS table_name " +
+                                                "FROM sys.foreign_keys fk JOIN sys.tables t ON fk.parent_object_id = t.object_id "
+                                                +
+                                                "WHERE SCHEMA_NAME(t.schema_id) = '" + schemaName + "'")) {
+                            while (rs.next()) {
+                                String fk = rs.getString("fk_name");
+                                String table = rs.getString("table_name");
+                                try (Statement drop = conn.createStatement()) {
+                                    drop.execute("ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
+                                            + "]");
+                                }
                             }
                         }
-                    }
 
-                    // 3. Drop all tables
-                    try (Statement stmt = conn.createStatement();
-                            ResultSet rs = stmt.executeQuery(
-                                    "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName + "')")) {
-                        while (rs.next()) {
-                            String table = rs.getString("name");
-                            try (Statement drop = conn.createStatement()) {
-                                drop.execute("DROP TABLE [" + schemaName + "].[" + table + "]");
+                        // 3. Drop all tables
+                        try (Statement stmt = conn.createStatement();
+                                ResultSet rs = stmt.executeQuery(
+                                        "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName + "')")) {
+                            while (rs.next()) {
+                                String table = rs.getString("name");
+                                try (Statement drop = conn.createStatement()) {
+                                    drop.execute("DROP TABLE [" + schemaName + "].[" + table + "]");
+                                }
                             }
                         }
                     }
@@ -191,7 +194,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
         try {
             // First reset all objects inside the schema
-            resetSchema(schemaName);
+            resetSchema(schemaName, false);
 
             // Then drop the user and schema
             jdbcTemplate.execute((Connection conn) -> {
@@ -543,7 +546,26 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         if (sql == null || sql.isBlank())
             return;
 
-        String upper = sql.toUpperCase().replaceAll("\\s+", " ").trim();
+        // Strip comments out for validation
+        String sqlWithoutComments = sql.replaceAll("(?m)--.*$", "").replaceAll("(?s)/\\*.*?\\*/", "");
+        String upper = sqlWithoutComments.toUpperCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+
+        if (upper.isEmpty()) {
+            return;
+        }
+
+        // Validate that the query starts with a recognized keyword.
+        // If not, SQL Server will implicitly try to EXEC it as a stored procedure.
+        String firstToken = upper.split(" ")[0];
+        List<String> allowedStarters = List.of(
+                "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE",
+                "EXEC", "EXECUTE", "DECLARE", "WITH", "SET", "MERGE", "BEGIN", "IF", "WHILE"
+        );
+        
+        boolean isValidStart = allowedStarters.stream().anyMatch(firstToken::equals);
+        if (!isValidStart) {
+            throw new IllegalArgumentException("Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '" + firstToken + "', hệ thống không tìm thấy lệnh này).");
+        }
 
         String[] blockedPatterns = {
                 "REVERT", // escape EXECUTE AS context

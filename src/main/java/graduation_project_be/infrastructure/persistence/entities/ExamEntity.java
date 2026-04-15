@@ -63,6 +63,12 @@ public class ExamEntity {
     @Column(name = "settings", columnDefinition = "json")
     private ExamSettingsJson settings;
 
+    @Column(name = "pdf_file_path", length = 500)
+    private String pdfFilePath;
+
+    @Column(name = "original_pdf_file_name", length = 255)
+    private String originalPdfFileName;
+
     public Exam toModel() {
         return Exam.builder()
                 .id(id)
@@ -79,6 +85,8 @@ public class ExamEntity {
                 .maxAttempts(maxAttempts)
                 .lateThreshold(lateThreshold)
                 .settings(settings != null ? settings.toModel() : null)
+                .pdfFilePath(pdfFilePath)
+                .originalPdfFileName(originalPdfFileName)
                 .build();
     }
 
@@ -98,6 +106,8 @@ public class ExamEntity {
                 .maxAttempts(exam.getMaxAttempts())
                 .lateThreshold(exam.getLateThreshold())
                 .settings(ExamSettingsJson.fromModel(exam.getSettings()))
+                .pdfFilePath(exam.getPdfFilePath())
+                .originalPdfFileName(exam.getOriginalPdfFileName())
                 .build();
     }
 }

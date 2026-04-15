@@ -39,7 +39,13 @@ public class UpdateExamUsecase {
         }
         if (request.specificationId() != null) {
             Long sid = request.specificationId();
-            exam.setSpecificationId(sid == 0L ? null : sid);
+            if (sid != null && sid > 0L) {
+                exam.setSpecificationId(sid);
+                exam.setPdfFilePath(null);
+                exam.setOriginalPdfFileName(null);
+            } else {
+                exam.setSpecificationId(null);
+            }
         }
         if (request.durationMinutes() != null) {
             exam.setDurationMinutes(request.durationMinutes());
@@ -64,6 +70,12 @@ public class UpdateExamUsecase {
         }
         if (request.settings() != null) {
             exam.setSettings(mergeExamSettings(exam.getSettings(), request.settings()));
+        }
+
+        if (request.pdfFilePath() != null) {
+            exam.setPdfFilePath(request.pdfFilePath());
+            exam.setOriginalPdfFileName(request.originalPdfFileName());
+            exam.setSpecificationId(null);
         }
 
         Exam savedExam = examRepository.save(exam);

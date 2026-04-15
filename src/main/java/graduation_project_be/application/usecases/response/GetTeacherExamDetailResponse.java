@@ -16,7 +16,9 @@ public record GetTeacherExamDetailResponse(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettings settings) {
+        ExamSettings settings,
+        String pdfFilePath,
+        String originalPdfFileName) {
 
     public static GetTeacherExamDetailResponse fromModel(Exam exam) {
         return new GetTeacherExamDetailResponse(
@@ -31,6 +33,8 @@ public record GetTeacherExamDetailResponse(
                 exam.getDescription(),
                 exam.getMaxAttempts(),
                 exam.getLateThreshold(),
-                exam.getSettings());
+                exam.getSettings(),
+                exam.getPdfFilePath(),
+                exam.getOriginalPdfFileName());
     }
 }

@@ -24,7 +24,9 @@ public record GetStudentExamResponse(
         Long usedAttempts,
         Integer lateThreshold,
         ExamSettings settings,
-        List<TableMetadata> schema
+        List<TableMetadata> schema,
+        String pdfFilePath,
+        String originalPdfFileName
 ) {
     /**
      * Status values:
@@ -62,7 +64,9 @@ public record GetStudentExamResponse(
                 usedAttempts,
                 exam.getLateThreshold(),
                 exam.getSettings(),
-                schema
+                schema,
+                exam.getPdfFilePath(),
+                exam.getOriginalPdfFileName()
         );
     }
 }

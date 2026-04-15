@@ -19,7 +19,9 @@ public record CreateExamResponse(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettings settings) {
+        ExamSettings settings,
+        String pdfFilePath,
+        String originalPdfFileName) {
     public static CreateExamResponse fromModel(Exam exam) {
         return new CreateExamResponse(
                 exam.getId(),
@@ -35,6 +37,8 @@ public record CreateExamResponse(
                 exam.getDescription(),
                 exam.getMaxAttempts(),
                 exam.getLateThreshold(),
-                exam.getSettings());
+                exam.getSettings(),
+                exam.getPdfFilePath(),
+                exam.getOriginalPdfFileName());
     }
 }

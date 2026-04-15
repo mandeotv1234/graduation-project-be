@@ -40,8 +40,13 @@ public class CreateExamUsecase {
             specificationId = null;
         }
 
+        boolean hasPdf = request.pdfFilePath() != null && !request.pdfFilePath().isBlank();
+        if (hasPdf) {
+            specificationId = null;
+        }
+
         Exam exam = Exam.builder()
-                .specificationId(specificationId)
+                .specificationId(hasPdf ? null : specificationId)
                 .classId(request.classId())
                 .creatorId(currentUserId)
                 .title(request.title())
@@ -54,6 +59,8 @@ public class CreateExamUsecase {
                 .maxAttempts(request.maxAttempts() != null ? request.maxAttempts() : 1)
                 .lateThreshold(request.lateThreshold() != null ? request.lateThreshold() : 0)
                 .settings(request.settings())
+                .pdfFilePath(hasPdf ? request.pdfFilePath() : null)
+                .originalPdfFileName(hasPdf ? request.originalPdfFileName() : null)
                 .build();
 
         Exam savedExam = examRepository.save(exam);

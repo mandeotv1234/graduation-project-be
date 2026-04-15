@@ -18,7 +18,9 @@ public record CreateExamResponseDto(
         String description,
         Integer maxAttempts,
         Integer lateThreshold,
-        ExamSettingsResponseDto settings) {
+        ExamSettingsResponseDto settings,
+        String pdfFilePath,
+        String originalPdfFileName) {
     public static CreateExamResponseDto fromResponse(CreateExamResponse response) {
         return new CreateExamResponseDto(
                 response.id(),
@@ -34,7 +36,9 @@ public record CreateExamResponseDto(
                 response.description(),
                 response.maxAttempts(),
                 response.lateThreshold(),
-                ExamSettingsResponseDto.fromModel(response.settings()));
+                ExamSettingsResponseDto.fromModel(response.settings()),
+                response.pdfFilePath(),
+                response.originalPdfFileName());
     }
 }
 

@@ -53,7 +53,6 @@ public class StartExamSessionUsecase {
     private final ClassRepository classRepository;
     private final ExamDraftRepository examDraftRepository;
 
-
     @Transactional
     public StartExamSessionResponse execute(StartExamSessionRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -148,8 +147,9 @@ public class StartExamSessionUsecase {
             if (stillValid) {
                 String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId);
                 boolean hasSchemaObjects = !examSchemaService.extractMetadata(schemaName).isEmpty();
+                boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
 
-                if (hasSchemaObjects) {
+                if (hasSchemaObjects || !isLoadDdl) {
                     examStartedAt = existingStartTime.get();
                 } else {
                     examStartedAt = now;
@@ -195,8 +195,7 @@ public class StartExamSessionUsecase {
         ExamSpecification specification = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        boolean isLoadDdl = exam.getSettings() == null || exam.getSettings().getIsLoadDdl() == null
-                || exam.getSettings().getIsLoadDdl();
+        boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
 
         String ddlScript = isLoadDdl ? specification.getDdlScript() : null;
 
@@ -211,7 +210,7 @@ public class StartExamSessionUsecase {
                 : null;
 
         String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId);
-        examSchemaService.resetSchema(schemaName);
+        examSchemaService.resetSchema(schemaName, false);
         examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
     }
 }

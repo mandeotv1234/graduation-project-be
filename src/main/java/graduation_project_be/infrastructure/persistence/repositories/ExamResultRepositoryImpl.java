@@ -9,6 +9,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import graduation_project_be.domain.models.PaginatedResult;
+import graduation_project_be.domain.models.PaginationParams;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 @Repository
 @RequiredArgsConstructor
@@ -50,5 +56,23 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
         return jpaRepository.findByExamId(examId).stream()
                 .map(ExamResultEntity::toModel)
                 .toList();
+    }
+
+    @Override
+    public PaginatedResult<ExamResult> findPaginatedByStudentId(Long studentId, PaginationParams params) {
+        Sort sort = params.getSortOrder() == graduation_project_be.domain.models.enums.SortDirection.DESC
+                ? Sort.by(params.getSortBy().getFieldName()).descending()
+                : Sort.by(params.getSortBy().getFieldName()).ascending();
+
+        Pageable pageable = PageRequest.of(params.getPage(), params.getSize(), sort);
+
+        Page<ExamResultEntity> page = jpaRepository.findByStudentId(studentId, pageable);
+
+        return PaginatedResult.of(
+                page.getContent().stream().map(ExamResultEntity::toModel).toList(),
+                page.getNumber(),
+                page.getSize(),
+                page.getTotalElements()
+        );
     }
 }

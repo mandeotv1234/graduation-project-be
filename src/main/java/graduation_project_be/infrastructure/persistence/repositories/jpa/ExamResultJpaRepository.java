@@ -7,6 +7,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface ExamResultJpaRepository extends JpaRepository<ExamResultEntity, Long> {
     Optional<ExamResultEntity> findFirstByExamIdAndStudentIdOrderByAttemptNumberDesc(Long examId, Long studentId);
@@ -17,4 +19,6 @@ public interface ExamResultJpaRepository extends JpaRepository<ExamResultEntity,
     Long countByExamIdAndStudentId(@Param("examId") Long examId, @Param("studentId") Long studentId);
 
     List<ExamResultEntity> findByExamId(Long examId);
+
+    Page<ExamResultEntity> findByStudentId(Long studentId, Pageable pageable);
 }

@@ -4,10 +4,11 @@ import graduation_project_be.adapter.web.api.dtos.request.*;
 import graduation_project_be.adapter.web.api.dtos.response.*;
 import graduation_project_be.application.port.services.PdfStorageService;
 import graduation_project_be.application.usecases.*;
-import graduation_project_be.application.usecases.request.CreateExamRequest;
-import graduation_project_be.application.usecases.request.UpdateExamRequest;
+import graduation_project_be.application.usecases.request.*;
 import graduation_project_be.application.usecases.response.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graduation_project_be.domain.models.PaginatedResult;
+import graduation_project_be.domain.models.PaginationParams;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -21,10 +22,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-
 import java.util.List;
-import java.util.Map;
-
 @RestController
 @RequestMapping("/api/exams")
 @RequiredArgsConstructor
@@ -33,9 +31,11 @@ public class ExamController {
 
         private final CreateExamUsecase createExamUsecase;
         private final GetStudentExamUsecase getStudentExamUsecase;
+        private final GetStudentExamsUsecase getStudentExamsUsecase;
+        private final GetStudentResultsUsecase getStudentResultsUsecase;
+        private final GetMyResultDetailUsecase getMyResultDetailUsecase;
         private final CreateExamQuestionsUsecase createExamQuestionsUsecase;
         private final GetExamQuestionsUsecase getExamQuestionsUsecase;
-        private final GetStudentExamsUsecase getStudentExamsUsecase;
         private final ExecuteSqlUsecase executeSqlUsecase;
         private final SubmitExamUsecase submitExamUsecase;
         private final ReportViolationUsecase reportViolationUsecase;
@@ -47,7 +47,7 @@ public class ExamController {
         private final UpdateExamUsecase updateExamUsecase;
         private final UpdateExamQuestionUsecase updateExamQuestionUsecase;
         private final DeleteExamQuestionUsecase deleteExamQuestionUsecase;
-
+        private final ClearExamSchemaUsecase clearExamSchemaUsecase;
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
         private final GetExamResultDetailUsecase getExamResultDetailUsecase;
@@ -423,6 +423,29 @@ public class ExamController {
                                 ResponseDto.of(dtos, "OK", "Student exams retrieved successfully"));
         }
 
+        @GetMapping("/my-results")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> getMyResults(
+                        @Valid GetStudentResultsRequestDto requestDto) {
+                GetStudentResultsRequest request = requestDto.toRequest();
+                PaginatedResult<StudentExamResultResponse> responses = getStudentResultsUsecase.execute(request);
+                return ResponseEntity.ok(
+                                ResponseDto.of(responses, "OK", "Student results retrieved successfully"));
+        }
+
+        @GetMapping("/my-results/{resultId}")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> getMyResultDetail(
+                        @PathVariable("resultId") @Positive Long resultId) {
+                GetMyResultDetailRequestDto requestDto = GetMyResultDetailRequestDto.builder()
+                                .resultId(resultId)
+                                .build();
+                GetExamResultDetailResponse response = getMyResultDetailUsecase.execute(requestDto.toRequest());
+                return ResponseEntity.ok(
+                                ResponseDto.of(GetExamResultDetailResponseDto.fromResponse(response), "OK",
+                                                "Result detail retrieved successfully"));
+        }
+
         @PostMapping("/{examId}/execute-sql")
         @PreAuthorize("hasAnyRole('TEACHER', 'STUDENT')")
         public ResponseEntity<ResponseDto> executeSql(
@@ -434,6 +457,18 @@ public class ExamController {
                 ExecuteSqlResponse response = executeSqlUsecase.execute(requestDto.toRequest(examId, ip, ua));
                 return ResponseEntity.ok(
                                 ResponseDto.of(ExecuteSqlResponseDto.fromResponse(response), "OK", "SQL executed"));
+        }
+
+        @PostMapping("/{examId}/clear-schema")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> clearSchema(
+                        @PathVariable("examId") @Positive Long examId,
+                        HttpServletRequest httpRequest) {
+                String ip = getClientIp(httpRequest);
+                String ua = httpRequest.getHeader("User-Agent");
+                clearExamSchemaUsecase.execute(new ClearExamSchemaRequest(examId, ip, ua));
+                return ResponseEntity.ok(
+                                ResponseDto.of(null, "OK", "Đã xoá sạch dữ liệu schema thành công"));
         }
 
         /**

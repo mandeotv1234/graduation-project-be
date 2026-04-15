@@ -92,7 +92,7 @@ public class ExecuteSqlUsecase {
         // TODO: Teacher sandbox schemas are never dropped. Add a scheduled cleanup job
         //       or drop them when the teacher saves the specification.
         if (shouldResetTeacherSchemaBeforeExecute(request.sql())) {
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
         }
 
         return new ExecutionContext(schemaName);

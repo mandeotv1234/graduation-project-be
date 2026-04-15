@@ -46,7 +46,7 @@ public class RubricTestingUsecase {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern INSERT_INTO_PATTERN = Pattern.compile(
             "(?i)\\bINSERT\\s+INTO\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
-        private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
+    private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?i)\\bCREATE\\s+TABLE\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
     private final GeminiService geminiService;
@@ -113,7 +113,8 @@ public class RubricTestingUsecase {
             JsonNode rubric = objectMapper.readTree(gradingRubric);
             JsonNode payload = resolveInsertPayload(rubric);
             JsonNode settings = payload.path("grading_settings");
-            String seedSchemaScript = payload.path("seed_schema_script").asText(rubric.path("seed_schema_script").asText(""));
+            String seedSchemaScript = payload.path("seed_schema_script")
+                    .asText(rubric.path("seed_schema_script").asText(""));
             String dependsOnQuestionIdRaw = settings.path("depends_on_question_id").asText("").trim();
             boolean explicitWorkaround = settings.path("allow_cyclic_fk_workaround").asBoolean(false);
             boolean fallbackTriggered = false;
@@ -122,8 +123,8 @@ public class RubricTestingUsecase {
 
             for (int attempt = 1; attempt <= 2; attempt++) {
                 details.clear();
-                examSchemaService.resetSchema(teacherSchema);
-                examSchemaService.resetSchema(studentSchema);
+                examSchemaService.resetSchema(teacherSchema, false);
+                examSchemaService.resetSchema(studentSchema, false);
 
                 String currentCorrectNormalized = normalizeSqlForExecution(correctQuery);
                 List<Map<String, Object>> prepareDetails = new ArrayList<>();
@@ -206,14 +207,16 @@ public class RubricTestingUsecase {
                     setAllConstraintsEnabled(studentSchema, false);
                     details.add(Map.of(
                             "type", "info",
-                            "message", "Chạy bình thường bị lỗi khóa ngoại (FK constraint). Hệ thống TỰ ĐỘNG CHẠY LẠI và BẬT CHẾ ĐỘ WORKAROUND (tạm tắt ràng buộc) để tiếp tục chấm thử.",
+                            "message",
+                            "Chạy bình thường bị lỗi khóa ngoại (FK constraint). Hệ thống TỰ ĐỘNG CHẠY LẠI và BẬT CHẾ ĐỘ WORKAROUND (tạm tắt ràng buộc) để tiếp tục chấm thử.",
                             "points", 0));
                 } else if (explicitWorkaround) {
                     setAllConstraintsEnabled(teacherSchema, false);
                     setAllConstraintsEnabled(studentSchema, false);
                     details.add(Map.of(
                             "type", "info",
-                            "message", "Đang tự bật chế độ workaround FK vòng (NOCHECK CONSTRAINT) theo thiết lập rubric",
+                            "message",
+                            "Đang tự bật chế độ workaround FK vòng (NOCHECK CONSTRAINT) theo thiết lập rubric",
                             "points", 0));
                 }
 
@@ -247,7 +250,7 @@ public class RubricTestingUsecase {
                     if (!fkError && teacherFailed) {
                         fkError = true;
                     }
-                    
+
                     if (fkError) {
                         fallbackTriggered = true;
                         continue;
@@ -268,7 +271,8 @@ public class RubricTestingUsecase {
                     try {
                         setAllConstraintsEnabled(studentSchema, true);
                     } catch (Exception e) {
-                        String constraintError = "Vi phạm ràng buộc sau khi bật lại kiểm tra dữ liệu: " + e.getMessage();
+                        String constraintError = "Vi phạm ràng buộc sau khi bật lại kiểm tra dữ liệu: "
+                                + e.getMessage();
                         if (compileError == null || compileError.isBlank()) {
                             compileError = constraintError;
                         }
@@ -290,7 +294,8 @@ public class RubricTestingUsecase {
                             "points", 0));
                     fakeSubmission.setScoreEarned(BigDecimal.ZERO);
                 } else {
-                    gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission, fallbackTriggered);
+                    gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission,
+                            fallbackTriggered);
                 }
 
                 double earnedPoints = fakeSubmission.getScoreEarned() != null
@@ -304,7 +309,8 @@ public class RubricTestingUsecase {
                 if (fakeSubmission.getErrorMessage() != null && !fakeSubmission.getErrorMessage().isBlank()) {
                     appendInsertErrorDetails(details, fakeSubmission.getErrorMessage(), totalDeduction);
                 } else if (allPassed && details.isEmpty()) {
-                    details.add(Map.of("type", "success", "message", "Tất cả dữ liệu đều chính xác", "points", totalPoints));
+                    details.add(Map.of("type", "success", "message", "Tất cả dữ liệu đều chính xác", "points",
+                            totalPoints));
                 }
 
                 return RubricTestGradeResponse.of(
@@ -343,7 +349,7 @@ public class RubricTestingUsecase {
 
         String caseSchema = "test_grade_run_tc_" + System.currentTimeMillis();
         try {
-            examSchemaService.resetSchema(caseSchema);
+            examSchemaService.resetSchema(caseSchema, false);
 
             List<Map<String, Object>> details = new ArrayList<>();
             int bootstrappedTables = executeExistingAnswersForSchema(
@@ -381,9 +387,10 @@ public class RubricTestingUsecase {
                 executeSetupScriptWithFkFallback(caseSchema, setupCustomScript, "RUN_TC", details);
             }
 
-            List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
+            List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery)
+                    .getResultSet();
 
-                List<ExecuteSelectTestCaseResponse.ColumnConfig> columnsConfig = new ArrayList<>();
+            List<ExecuteSelectTestCaseResponse.ColumnConfig> columnsConfig = new ArrayList<>();
             List<List<String>> rows = new ArrayList<>();
 
             if (teacherRows != null && !teacherRows.isEmpty()) {
@@ -422,7 +429,7 @@ public class RubricTestingUsecase {
         String safeSchema = safeIdentifier(schemaName, "schemaName");
 
         try {
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
 
             String normalizedCorrectSql = normalizeSqlForExecution(correctQuery);
             if (normalizedCorrectSql.isBlank()) {
@@ -517,7 +524,7 @@ public class RubricTestingUsecase {
         String schemaName = "test_build_create_" + System.currentTimeMillis();
 
         try {
-            examSchemaService.resetSchema(schemaName);
+            examSchemaService.resetSchema(schemaName, false);
 
             String normalizedCorrectSql = normalizeSqlForExecution(correctQuery);
             if (normalizedCorrectSql.isBlank()) {
@@ -674,13 +681,13 @@ public class RubricTestingUsecase {
 
             if (testCases.isMissingNode() || !testCases.isArray() || testCases.size() == 0) {
                 return RubricTestGradeResponse.of(
-                    0,
-                    totalPoints,
-                    false,
-                    List.of(Map.of(
-                        "type", "error",
-                        "message", "Rubric SELECT không có test_cases",
-                        "points", 0)));
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(Map.of(
+                                "type", "error",
+                                "message", "Rubric SELECT không có test_cases",
+                                "points", 0)));
             }
 
             BigDecimal totalDeduction = BigDecimal.ZERO;
@@ -698,7 +705,7 @@ public class RubricTestingUsecase {
 
                 String caseSchema = "test_grade_select_case_" + System.currentTimeMillis() + "_" + i;
                 try {
-                    examSchemaService.resetSchema(caseSchema);
+                    examSchemaService.resetSchema(caseSchema, false);
 
                     int bootstrappedTables = executeExistingAnswersForSchema(
                             examQuestions,
@@ -763,13 +770,15 @@ public class RubricTestingUsecase {
                     }
 
                     casePhase = "student_query";
-                    List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery).getResultSet();
+                    List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery)
+                            .getResultSet();
                     List<String> expectedColumns = new ArrayList<>();
                     List<List<String>> expectedRows = new ArrayList<>();
 
                     casePhase = "teacher_query";
                     if (!correctQuery.isBlank()) {
-                        List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery).getResultSet();
+                        List<Map<String, Object>> teacherRows = examSchemaService.executeSql(caseSchema, correctQuery)
+                                .getResultSet();
 
                         if (!teacherRows.isEmpty()) {
                             expectedColumns.addAll(teacherRows.get(0).keySet());
@@ -840,7 +849,8 @@ public class RubricTestingUsecase {
                     if (errorMessage.contains("Invalid column name")) {
                         details.add(Map.of(
                                 "type", "warning",
-                                "message", "[" + caseId + "] setup_custom_script đang dùng cột không tồn tại trong schema nền. "
+                                "message",
+                                "[" + caseId + "] setup_custom_script đang dùng cột không tồn tại trong schema nền. "
                                         + "Hãy sửa script để chỉ dùng cột đã khai báo ở các câu CREATE_TABLE trước đó "
                                         + "(không tự thêm cột mới).",
                                 "points", 0));
@@ -855,14 +865,14 @@ public class RubricTestingUsecase {
 
             BigDecimal maxPoints = BigDecimal.valueOf(totalPoints);
             BigDecimal finalEarned = maxPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
-            
+
             if (finalEarned.compareTo(BigDecimal.ZERO) < 0) {
                 finalEarned = BigDecimal.ZERO;
             }
             if (finalEarned.compareTo(maxPoints) > 0) {
                 finalEarned = maxPoints;
             }
-            
+
             return RubricTestGradeResponse.of(
                     finalEarned.doubleValue(),
                     totalPoints,
@@ -885,20 +895,20 @@ public class RubricTestingUsecase {
         String studentSchema = "test_grade_student_" + suffix;
 
         try {
-            examSchemaService.resetSchema(teacherSchema);
+            examSchemaService.resetSchema(teacherSchema, false);
             examSchemaService.executeSql(teacherSchema, correctQuery);
 
-            examSchemaService.resetSchema(studentSchema);
+            examSchemaService.resetSchema(studentSchema, false);
             try {
                 examSchemaService.executeSql(studentSchema, studentQuery);
             } catch (Exception e) {
                 return RubricTestGradeResponse.of(
-                    0,
-                    totalPoints,
-                    false,
-                    List.of(
-                        Map.of("type", "error", "message",
-                            "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
             }
 
             return executeRubricGradingV2(
@@ -924,7 +934,8 @@ public class RubricTestingUsecase {
                 "SELECT t.name AS TABLE_NAME "
                         + "FROM sys.tables t "
                         + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
-                        + "WHERE s.name = '" + safeSchema + "'").getResultSet();
+                        + "WHERE s.name = '" + safeSchema + "'")
+                .getResultSet();
 
         for (Map<String, Object> row : tables) {
             Object tableNameObj = row.get("TABLE_NAME");
@@ -1196,7 +1207,8 @@ public class RubricTestingUsecase {
                     "SELECT t.name AS TABLE_NAME "
                             + "FROM sys.tables t "
                             + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
-                            + "WHERE s.name = '" + safeSchema + "'").getResultSet();
+                            + "WHERE s.name = '" + safeSchema + "'")
+                    .getResultSet();
 
             for (Map<String, Object> row : tables) {
                 Object tableNameObj = row.get("TABLE_NAME");
@@ -1349,7 +1361,8 @@ public class RubricTestingUsecase {
         } else if (matchedRuleCount == 0) {
             totalCaseDeduction = caseMaxPenalty.doubleValue();
             appendSelectIssue(issueBuilder,
-                    "Không có grading_rules phù hợp để đánh giá lệch (" + caseId + "). Áp dụng mức trừ điểm tối đa của test case.");
+                    "Không có grading_rules phù hợp để đánh giá lệch (" + caseId
+                            + "). Áp dụng mức trừ điểm tối đa của test case.");
         }
 
         if (totalCaseDeduction > caseMaxPenalty.doubleValue()) {
@@ -1361,8 +1374,9 @@ public class RubricTestingUsecase {
         boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
 
         BigDecimal roundedDeduction = caseDeductionValue.setScale(2, RoundingMode.HALF_UP);
-        String scoreMessage = "[" + caseId + "] " + caseName + (allChecksPassed ? ": Khớp một phần hợp lệ, trừ 0 điểm" : ": Bị trừ " + roundedDeduction + " điểm");
-        
+        String scoreMessage = "[" + caseId + "] " + caseName
+                + (allChecksPassed ? ": Khớp một phần hợp lệ, trừ 0 điểm" : ": Bị trừ " + roundedDeduction + " điểm");
+
         details.add(Map.of(
                 "type", allChecksPassed ? "success" : "warning",
                 "message", scoreMessage,
@@ -2175,7 +2189,7 @@ public class RubricTestingUsecase {
         try {
             rubric = objectMapper.readTree(gradingRubricJson);
         } catch (Exception e) {
-                return RubricTestGradeResponse.of(
+            return RubricTestGradeResponse.of(
                     0,
                     totalPoints,
                     false,
@@ -2184,18 +2198,17 @@ public class RubricTestingUsecase {
         }
 
         List<TableMetadata> actualTables = examSchemaService.extractMetadata(studentSchema);
-        CreateTableRubricEvaluator.CreateTableRubricGradeResult result =
-                CreateTableRubricEvaluator.evaluate(
-                        rubric,
-                        actualTables,
-                        BigDecimal.valueOf(totalPoints));
+        CreateTableRubricEvaluator.CreateTableRubricGradeResult result = CreateTableRubricEvaluator.evaluate(
+                rubric,
+                actualTables,
+                BigDecimal.valueOf(totalPoints));
 
         return RubricTestGradeResponse.of(
-            result.earnedPoints().doubleValue(),
-            totalPoints,
-            result.allPassed(),
-            result.details(),
-            result.totalDeductions().doubleValue());
+                result.earnedPoints().doubleValue(),
+                totalPoints,
+                result.allPassed(),
+                result.details(),
+                result.totalDeductions().doubleValue());
     }
 
     private boolean readBoolean(JsonNode node, boolean defaultValue) {

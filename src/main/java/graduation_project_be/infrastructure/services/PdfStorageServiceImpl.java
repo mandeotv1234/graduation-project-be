@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.services;
 
 import graduation_project_be.application.port.services.PdfStorageService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -13,21 +14,24 @@ import java.util.UUID;
 @Service
 public class PdfStorageServiceImpl implements PdfStorageService {
 
-    private static final String UPLOAD_DIR = "uploads/exams/pdf";
+    private final Path uploadDir;
+
+    public PdfStorageServiceImpl(@Value("${app.upload.pdf-dir:uploads/exams/pdf}") String pdfDir) {
+        this.uploadDir = Paths.get(pdfDir).toAbsolutePath();
+    }
 
     @Override
     public String savePdf(MultipartFile file) {
         try {
-            Path uploadPath = Paths.get(UPLOAD_DIR);
-            if (!Files.exists(uploadPath)) {
-                Files.createDirectories(uploadPath);
+            if (!Files.exists(uploadDir)) {
+                Files.createDirectories(uploadDir);
             }
 
             String uniqueFileName = String.format("exam_%d_%s.pdf",
                     System.currentTimeMillis(),
                     UUID.randomUUID().toString().replace("-", "").substring(0, 8));
 
-            Path filePath = uploadPath.resolve(uniqueFileName);
+            Path filePath = uploadDir.resolve(uniqueFileName);
             Files.write(filePath, file.getBytes());
 
             return filePath.toString();

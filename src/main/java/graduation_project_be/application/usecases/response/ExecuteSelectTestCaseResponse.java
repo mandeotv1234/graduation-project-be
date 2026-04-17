@@ -9,7 +9,6 @@ public record ExecuteSelectTestCaseResponse(
         List<List<String>> rows) {
 
     public record ColumnConfig(
-            @JsonProperty("column_name") String columnName,
-            @JsonProperty("data_type") String dataType) {
+            @JsonProperty("column_name") String columnName) {
     }
 }

@@ -18,11 +18,10 @@ public record ExecuteSelectTestCaseResponseDto(
     }
 
     public record ColumnConfigDto(
-            @JsonProperty("column_name") String columnName,
-            @JsonProperty("data_type") String dataType) {
+            @JsonProperty("column_name") String columnName) {
 
         static ColumnConfigDto fromResponse(ExecuteSelectTestCaseResponse.ColumnConfig response) {
-            return new ColumnConfigDto(response.columnName(), response.dataType());
+            return new ColumnConfigDto(response.columnName());
         }
     }
 }

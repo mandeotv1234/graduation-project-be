@@ -40,7 +40,7 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
         "setup_custom_script": "",
         "expected_result": {
           "columns_config": [
-            { "column_name": "<tên cột>", "data_type": "<kiểu dữ liệu>" }
+            { "column_name": "<tên cột>" }
           ],
           "rows": [
             ["<giá trị cột 1>", "<giá trị cột 2>"]
@@ -76,3 +76,14 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 - setup_custom_script phải tự tạo đủ dòng dữ liệu cha để KHÔNG phát sinh lỗi FK khi insert dữ liệu con
 - Không được giả định dữ liệu cha đã tồn tại sẵn nếu script không tự tạo
 - TRÁNH để test_cases hời hợt; hệ thống sẽ kiểm tra xem test case có thực sự bao phủ được các bẫy chưa. Phải đa dạng hóa data!
+
+=== QUY TẮC QUAN TRỌNG ===
+- Đây là rubric TRỪ ĐIỂM cho câu hỏi SELECT_QUERY.
+- Dùng rule_name (KHÔNG dùng rule_id).
+- Mỗi rule đại diện cho một lỗi/điều kiện KHÁC NHAU, không lặp nội dung.
+- YÊU CẦU NGHIÊM NGẶT VỀ GRADING_RULES: Chỉ tạo các rule liên quan đến kết quả truy vấn SELECT (sai giá trị, thiếu/thừa dòng, sai thứ tự, sai tên cột...). Không tạo rule kiểm tra cấu trúc bảng hay ràng buộc.
+- TUYỆT ĐỐI KHÔNG được nhúng tên bảng, tên cột, tên ràng buộc CỤ THỂ (ví dụ: CONGTY, CONGTRINH, TongChiPhi, MaCT...) vào rule_name hoặc description của rule, TRỪ KHI người dùng YÊU CẦU RÕ RÀNG tạo rule ÁP DỤNG RIÊNG cho đối tượng đó.
+- Rule chung PHẢI dùng từ ngữ tổng quát: "giá trị ô dữ liệu", "dòng kết quả", "cột kết quả", "thứ tự dòng", "tên cột" thay vì tên cụ thể.
+- Ví dụ ĐÚNG: rule_name="Sai giá trị ô dữ liệu", description="Nếu phát hiện giá trị trong ô sai giá trị thì trừ 0.25 điểm".
+- Ví dụ SAI: rule_name="Sai cột TongChiPhi", description="Nếu cột TongChiPhi sai giá trị thì trừ điểm".
+- Ngữ cảnh đề bài và SQL đáp án chỉ để THAM KHẢO cấu trúc, KHÔNG phải để gắn tên cụ thể vào rule trừ khi được yêu cầu.

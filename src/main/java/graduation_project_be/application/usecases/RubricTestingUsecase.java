@@ -396,7 +396,7 @@ public class RubricTestingUsecase {
             if (teacherRows != null && !teacherRows.isEmpty()) {
                 Map<String, Object> firstRow = teacherRows.get(0);
                 for (String colName : firstRow.keySet()) {
-                    columnsConfig.add(new ExecuteSelectTestCaseResponse.ColumnConfig(colName, "NVARCHAR"));
+                    columnsConfig.add(new ExecuteSelectTestCaseResponse.ColumnConfig(colName));
                 }
 
                 for (Map<String, Object> rowMap : teacherRows) {
@@ -695,6 +695,11 @@ public class RubricTestingUsecase {
             List<Map<String, Object>> details = new ArrayList<>();
             List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(request.examId());
 
+            // Structural deduction (COLUMN rules) — applied ONCE, not per test case.
+            // Column name/count issues are the same across all TCs, so we check once.
+            BigDecimal structuralDeduction = BigDecimal.ZERO;
+            boolean structuralChecked = false;
+
             for (int i = 0; i < testCases.size(); i++) {
                 JsonNode tc = testCases.get(i);
                 String caseId = tc.path("case_id").asText("TC_" + (i + 1));
@@ -810,6 +815,14 @@ public class RubricTestingUsecase {
                         }
                     }
 
+                    // --- STRUCTURAL CHECK (once) ---
+                    if (!structuralChecked && !actualRows.isEmpty() && !expectedColumns.isEmpty()) {
+                        structuralChecked = true;
+                        structuralDeduction = calculateSelectStructuralDeduction(
+                                expectedColumns, actualRows, selectRules,
+                                BigDecimal.valueOf(totalPoints), details);
+                    }
+
                     casePhase = "grading";
                     BigDecimal caseDeduction = calculateSelectCaseDeductions(
                             caseId,
@@ -861,6 +874,12 @@ public class RubricTestingUsecase {
                     } catch (Exception ignore) {
                     }
                 }
+            }
+
+            // Add structural deduction to total
+            if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                allPassed = false;
+                totalDeduction = totalDeduction.add(structuralDeduction);
             }
 
             BigDecimal maxPoints = BigDecimal.valueOf(totalPoints);
@@ -1224,6 +1243,137 @@ public class RubricTestingUsecase {
         }
     }
 
+    /**
+     * Checks column-level (structural) violations ONCE and returns the total deduction.
+     * These rules apply to the query's column structure, which is the same across all test cases.
+     */
+    private BigDecimal calculateSelectStructuralDeduction(
+            List<String> expectedColumns,
+            List<Map<String, Object>> actualRows,
+            JsonNode selectRules,
+            BigDecimal maxTotalPoints,
+            List<Map<String, Object>> details) {
+
+        List<String> actualColumns = actualRows.isEmpty()
+                ? new ArrayList<>()
+                : new ArrayList<>(actualRows.get(0).keySet());
+
+        List<String> effectiveExpectedColumns = new ArrayList<>();
+        if (expectedColumns != null) {
+            for (String col : expectedColumns) {
+                if (col != null && !col.isBlank()) {
+                    effectiveExpectedColumns.add(col);
+                }
+            }
+        }
+
+        if (effectiveExpectedColumns.isEmpty() || actualColumns.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        // Positional column analysis
+        int nameMismatchAtSamePosition = 0;
+        int minCols = Math.min(effectiveExpectedColumns.size(), actualColumns.size());
+        for (int i = 0; i < minCols; i++) {
+            if (!effectiveExpectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                nameMismatchAtSamePosition++;
+            }
+        }
+        int trulyMissingColumns = Math.max(0, effectiveExpectedColumns.size() - actualColumns.size());
+        int trulyExtraColumns = Math.max(0, actualColumns.size() - effectiveExpectedColumns.size());
+        int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
+        int extraColumns = trulyExtraColumns;
+
+        int columnOrderViolations = 0;
+        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
+                && !sameColumnOrder(effectiveExpectedColumns, actualColumns)) {
+            columnOrderViolations = 1;
+        }
+
+        // No structural issues
+        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0 && columnOrderViolations == 0) {
+            return BigDecimal.ZERO;
+        }
+
+        // Build structural rule checks:
+        // - COLUMN/NOT_EQUAL: column exists at same position but has different name (e.g., missing alias)
+        // - COLUMN/IS_MISSING: column is truly missing (student has fewer columns)
+        // - COLUMN/IS_EXTRA: student has extra columns
+        // - COLUMN_ORDER/OUT_OF_ORDER: columns are reordered
+        List<SelectRuleApplication> structuralApps = new ArrayList<>();
+        if (nameMismatchAtSamePosition > 0) {
+            structuralApps.add(applySelectRule(selectRules, "COLUMN", "NOT_EQUAL", nameMismatchAtSamePosition,
+                    maxTotalPoints, 0.0,
+                    "t\u00ean " + nameMismatchAtSamePosition + " c\u1ed9t kh\u00f4ng kh\u1edbp \u0111\u00e1p \u00e1n"));
+        }
+        if (trulyMissingColumns > 0) {
+            structuralApps.add(applySelectRule(selectRules, "COLUMN", "IS_MISSING", trulyMissingColumns,
+                    maxTotalPoints, 0.0,
+                    "thi\u1ebfu " + trulyMissingColumns + " c\u1ed9t"));
+        }
+        if (extraColumns > 0) {
+            structuralApps.add(applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
+                    maxTotalPoints, 0.0,
+                    "th\u1eeba " + extraColumns + " c\u1ed9t"));
+        }
+        if (columnOrderViolations > 0) {
+            structuralApps.add(applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
+                    maxTotalPoints, 0.0,
+                    "sai th\u1ee9 t\u1ef1 c\u1ed9t k\u1ebft qu\u1ea3"));
+        }
+
+        double totalStructuralDeduction = 0d;
+        StringBuilder issueBuilder = new StringBuilder();
+        boolean anyViolation = false;
+
+        for (SelectRuleApplication app : structuralApps) {
+            if (!app.violationPresent()) continue;
+            anyViolation = true;
+            if (app.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                totalStructuralDeduction += app.deduction().doubleValue();
+            }
+            if (app.message() != null && !app.message().isBlank()) {
+                appendSelectIssue(issueBuilder, app.message());
+            }
+        }
+
+        if (!anyViolation) {
+            return BigDecimal.ZERO;
+        }
+
+        // If violations exist but no rules matched (totalDeduction=0 with rule not found),
+        // still report the issue as info so teacher can see it
+        if (totalStructuralDeduction <= 0) {
+            String unmatchedMsg = "Ph\u00e1t hi\u1ec7n kh\u00e1c bi\u1ec7t c\u1ed9t k\u1ebft qu\u1ea3";
+            if (missingColumns > 0) {
+                unmatchedMsg += " (thi\u1ebfu/sai t\u00ean " + missingColumns + " c\u1ed9t)";
+            }
+            if (extraColumns > 0) {
+                unmatchedMsg += " (th\u1eeba " + extraColumns + " c\u1ed9t)";
+            }
+            unmatchedMsg += " nh\u01b0ng kh\u00f4ng t\u00ecm th\u1ea5y quy t\u1eafc COLUMN t\u01b0\u01a1ng \u1ee9ng \u2192 kh\u00f4ng tr\u1eeb \u0111i\u1ec3m.";
+            details.add(Map.of(
+                    "type", "info",
+                    "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + unmatchedMsg,
+                    "points", 0));
+            return BigDecimal.ZERO;
+        }
+
+        // Cap at total points
+        if (totalStructuralDeduction > maxTotalPoints.doubleValue()) {
+            totalStructuralDeduction = maxTotalPoints.doubleValue();
+        }
+
+        BigDecimal rounded = BigDecimal.valueOf(totalStructuralDeduction).setScale(2, RoundingMode.HALF_UP);
+        details.add(Map.of(
+                "type", "warning",
+                "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + issueBuilder.toString().trim()
+                        + " \u2192 Tr\u1eeb " + rounded + " \u0111i\u1ec3m (\u00e1p d\u1ee5ng 1 l\u1ea7n cho to\u00e0n b\u00e0i)",
+                "points", -rounded.doubleValue()));
+
+        return rounded;
+    }
+
     private BigDecimal calculateSelectCaseDeductions(
             String caseId,
             String caseName,
@@ -1261,7 +1411,13 @@ public class RubricTestingUsecase {
             comparisonColumns.addAll(expectedRowMaps.get(0).keySet());
         }
 
-        if (compareSelectResultStrict(safeActualRows, expectedRowMaps, strictOrdering, comparisonColumns)) {
+        // Remap actual rows by column position so cell comparison works
+        // even when student uses different column aliases (e.g., missing AS).
+        // Column name mismatches are still tracked separately via COLUMN rules.
+        List<Map<String, Object>> remappedActualRows = remapActualRowsByPosition(
+                safeActualRows, actualColumns, effectiveExpectedColumns);
+
+        if (compareSelectResultStrict(remappedActualRows, expectedRowMaps, strictOrdering, comparisonColumns)) {
             details.add(Map.of(
                     "type", "success",
                     "message", "[" + caseId + "] " + caseName + ": Khớp hoàn toàn kết quả, không bị trừ điểm",
@@ -1274,15 +1430,10 @@ public class RubricTestingUsecase {
         int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
         int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
 
-        int missingColumns = countMissingColumnsIgnoreCase(effectiveExpectedColumns, actualColumns);
-        int extraColumns = countExtraColumnsIgnoreCase(effectiveExpectedColumns, actualColumns);
-        int columnOrderViolations = (!effectiveExpectedColumns.isEmpty() && !actualColumns.isEmpty()
-                && !sameColumnOrder(effectiveExpectedColumns, actualColumns)) ? 1 : 0;
-
         JsonNode rowOrderRule = findSelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
         int rowOrderViolations = 0;
         if (strictOrdering && rowOrderRule != null && !hasSelectModifier(rowOrderRule, "SORT_ASC")) {
-            rowOrderViolations = countSelectRowOrderViolations(safeActualRows, expectedRowMaps, comparisonColumns);
+            rowOrderViolations = countSelectRowOrderViolations(remappedActualRows, expectedRowMaps, comparisonColumns);
             if (rowOrderViolations == 0) {
                 rowOrderViolations = 1;
             }
@@ -1295,7 +1446,7 @@ public class RubricTestingUsecase {
                 extractSelectRuleModifiers(cellNullRule));
 
         List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                safeActualRows,
+                remappedActualRows,
                 expectedRowMaps,
                 comparisonColumns,
                 strictOrdering,
@@ -1306,28 +1457,21 @@ public class RubricTestingUsecase {
         List<SelectRuleApplication> applications = List.of(
                 applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
                         caseMaxPenalty, 0.0,
-                        "thieu " + missingRows + " dong"),
+                        "thiếu " + missingRows + " dòng kết quả"),
                 applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
                         caseMaxPenalty, 0.0,
-                        "du " + extraRows + " dong"),
+                        "thừa " + extraRows + " dòng kết quả"),
                 applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
                         caseMaxPenalty, 0.0,
-                        "sai " + wrongCells + " o du lieu"),
+                        "sai giá trị " + wrongCells + " ô dữ liệu"),
                 applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
                         caseMaxPenalty, 0.0,
-                        "co " + nullViolations + " o gia tri rong"),
+                        nullViolations + " ô dữ liệu bị rỗng/NULL"),
                 applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
                         caseMaxPenalty, 0.0,
-                        "sai thu tu " + rowOrderViolations + " dong"),
-                applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                        caseMaxPenalty, 0.0,
-                        "sai thu tu cot ket qua"),
-                applySelectRule(selectRules, "COLUMN", "IS_MISSING", missingColumns,
-                        caseMaxPenalty, 0.0,
-                        "thieu " + missingColumns + " cot"),
-                applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
-                        caseMaxPenalty, 0.0,
-                        "du " + extraColumns + " cot"));
+                        "sai thứ tự " + rowOrderViolations + " dòng"));
+                // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
+                // once in calculateSelectStructuralDeduction, not per test case.
 
         double totalCaseDeduction = 0d;
         int matchedRuleCount = 0;
@@ -1358,11 +1502,11 @@ public class RubricTestingUsecase {
 
         if (failAllTriggered) {
             totalCaseDeduction = caseMaxPenalty.doubleValue();
-        } else if (matchedRuleCount == 0) {
-            totalCaseDeduction = caseMaxPenalty.doubleValue();
+        } else if (matchedRuleCount == 0 && totalCaseDeduction <= 0) {
+            // Violations exist but no rules matched → don't deduct,
+            // just report. Teacher didn't configure rules for these violations.
             appendSelectIssue(issueBuilder,
-                    "Không có grading_rules phù hợp để đánh giá lệch (" + caseId
-                            + "). Áp dụng mức trừ điểm tối đa của test case.");
+                    "Ph\u00e1t hi\u1ec7n sai l\u1ec7ch nh\u01b0ng kh\u00f4ng c\u00f3 quy t\u1eafc ch\u1ea5m ph\u00f9 h\u1ee3p \u2192 kh\u00f4ng tr\u1eeb \u0111i\u1ec3m.");
         }
 
         if (totalCaseDeduction > caseMaxPenalty.doubleValue()) {
@@ -1851,12 +1995,24 @@ public class RubricTestingUsecase {
                 .setScale(2, RoundingMode.HALF_UP)
                 .stripTrailingZeros()
                 .toPlainString();
+
+        String actionLabel;
+        switch (action.toUpperCase(Locale.ROOT)) {
+            case "IGNORE":
+                actionLabel = "bỏ qua";
+                break;
+            case "FAIL_ALL":
+                actionLabel = "trượt toàn bộ";
+                break;
+            default:
+                actionLabel = "trừ điểm";
+                break;
+        }
+
         return String.format(
-                Locale.ROOT,
-                "Rule %s (%s, action=%s): tru %s diem.",
-                ruleLabel,
+                "Phát hiện %s → %s %s điểm",
                 violationSummary,
-                action,
+                actionLabel,
                 formattedDeduction);
     }
 
@@ -1886,6 +2042,56 @@ public class RubricTestingUsecase {
         }
 
         return null;
+    }
+
+    /**
+     * Remap actual row values to use expected column names by position.
+     * This allows cell-level comparison to work even when student uses different
+     * column aliases (e.g., missing AS clause). Column name differences are
+     * tracked separately via COLUMN/IS_MISSING and COLUMN/IS_EXTRA rules.
+     */
+    private List<Map<String, Object>> remapActualRowsByPosition(
+            List<Map<String, Object>> actualRows,
+            List<String> actualColumns,
+            List<String> expectedColumns) {
+        if (actualRows == null || actualRows.isEmpty()
+                || expectedColumns == null || expectedColumns.isEmpty()) {
+            return actualRows != null ? actualRows : List.of();
+        }
+
+        // If columns already match by name (case-insensitive), no remap needed
+        boolean allMatch = actualColumns.size() >= expectedColumns.size();
+        if (allMatch) {
+            for (int i = 0; i < expectedColumns.size(); i++) {
+                if (i >= actualColumns.size()
+                        || !expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                    allMatch = false;
+                    break;
+                }
+            }
+        }
+        if (allMatch) {
+            return actualRows;
+        }
+
+        // Remap: for each actual row, create a new map keyed by expected column names
+        // with values taken from the actual row at the same column position
+        List<Map<String, Object>> remapped = new ArrayList<>();
+        for (Map<String, Object> actualRow : actualRows) {
+            Map<String, Object> newRow = new LinkedHashMap<>();
+            for (int i = 0; i < expectedColumns.size(); i++) {
+                String expectedCol = expectedColumns.get(i);
+                Object value;
+                if (i < actualColumns.size()) {
+                    value = getRowValueIgnoreCase(actualRow, actualColumns.get(i));
+                } else {
+                    value = null;
+                }
+                newRow.put(expectedCol, value);
+            }
+            remapped.add(newRow);
+        }
+        return remapped;
     }
 
     private boolean valuesEqualBySelectRule(Object actualValue, Object expectedValue, JsonNode modifiers) {

@@ -32,16 +32,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Locale;
-import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -1718,20 +1709,40 @@ public class GradeExamUsecase {
             List<String> actualColumns = extractSelectColumns(actual);
             List<String> comparisonColumns = !expectedColumns.isEmpty() ? expectedColumns : actualColumns;
 
+            // Remap actual rows by column position so cell comparison works
+            // even when student uses different column aliases (e.g., missing AS).
+            List<Map<String, Object>> remappedActual = remapActualRowsByPosition(
+                    actual, actualColumns, expectedColumns);
+
             int expectedRowsCount = expected == null ? 0 : expected.size();
             int actualRowsCount = actual == null ? 0 : actual.size();
             int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
             int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
 
-            int missingColumns = countMissingColumns(expectedColumns, actualColumns);
-            int extraColumns = countExtraColumns(expectedColumns, actualColumns);
-            int columnOrderViolations = (!expectedColumns.isEmpty() && !actualColumns.isEmpty()
-                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) ? 1 : 0;
+            int nameMismatchAtSamePosition = 0;
+            int minCols = Math.min(expectedColumns.size(), actualColumns.size());
+            for (int i = 0; i < minCols; i++) {
+                if (!expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                    nameMismatchAtSamePosition++;
+                }
+            }
+            int trulyMissingColumns = Math.max(0, expectedColumns.size() - actualColumns.size());
+            int trulyExtraColumns = Math.max(0, actualColumns.size() - expectedColumns.size());
+
+            int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
+            int extraColumns = trulyExtraColumns;
+
+            int columnOrderViolations = 0;
+            if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
+                    && !expectedColumns.isEmpty() && !actualColumns.isEmpty()
+                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) {
+                columnOrderViolations = 1;
+            }
 
             JsonNode rowOrderRule = findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
             int rowOrderViolations = 0;
             if (requireStrictOrder && rowOrderRule != null && !hasInsertModifier(rowOrderRule, "SORT_ASC")) {
-                rowOrderViolations = countSelectRowOrderViolations(actual, expected, comparisonColumns);
+                rowOrderViolations = countSelectRowOrderViolations(remappedActual, expected, comparisonColumns);
                 if (rowOrderViolations == 0) {
                     rowOrderViolations = 1;
                 }
@@ -1744,7 +1755,7 @@ public class GradeExamUsecase {
                     extractInsertRuleModifiers(cellNullRule));
 
             List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                    actual,
+                    remappedActual,
                     expected,
                     comparisonColumns,
                     requireStrictOrder,
@@ -1893,6 +1904,55 @@ public class GradeExamUsecase {
             return List.of();
         }
         return new ArrayList<>(rows.get(0).keySet());
+    }
+
+    private List<Map<String, Object>> remapActualRowsByPosition(
+            List<Map<String, Object>> actualRows,
+            List<String> actualColumns,
+            List<String> expectedColumns) {
+        if (actualRows == null || actualRows.isEmpty()
+                || expectedColumns == null || expectedColumns.isEmpty()) {
+            return actualRows != null ? actualRows : List.of();
+        }
+
+        boolean allMatch = actualColumns.size() >= expectedColumns.size();
+        if (allMatch) {
+            for (int i = 0; i < expectedColumns.size(); i++) {
+                if (i >= actualColumns.size()
+                        || !expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                    allMatch = false;
+                    break;
+                }
+            }
+        }
+        if (allMatch) {
+            return actualRows;
+        }
+
+        List<Map<String, Object>> remapped = new ArrayList<>();
+        for (Map<String, Object> actualRow : actualRows) {
+            Map<String, Object> newRow = new LinkedHashMap<>();
+            for (int i = 0; i < expectedColumns.size(); i++) {
+                String expectedCol = expectedColumns.get(i);
+                Object value = null;
+                if (i < actualColumns.size()) {
+                    String actualCol = actualColumns.get(i);
+                    if (actualRow.containsKey(actualCol)) {
+                        value = actualRow.get(actualCol);
+                    } else {
+                        for (Map.Entry<String, Object> entry : actualRow.entrySet()) {
+                            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(actualCol)) {
+                                value = entry.getValue();
+                                break;
+                            }
+                        }
+                    }
+                }
+                newRow.put(expectedCol, value);
+            }
+            remapped.add(newRow);
+        }
+        return remapped;
     }
 
     private int countMissingColumns(List<String> expectedColumns, List<String> actualColumns) {

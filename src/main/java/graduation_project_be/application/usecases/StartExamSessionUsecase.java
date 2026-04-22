@@ -30,10 +30,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -51,8 +53,7 @@ public class StartExamSessionUsecase {
     private final DeviceConflictNotificationService deviceConflictNotificationService;
     private final UserRepository userRepository;
     private final ClassRepository classRepository;
-    private final ExamDraftRepository examDraftRepository;
-
+    private final ExamDraftRepository examDraftRepository;    private final SimpMessagingTemplate messagingTemplate;
     @Transactional
     public StartExamSessionResponse execute(StartExamSessionRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -181,6 +182,18 @@ public class StartExamSessionUsecase {
         if (remainingSeconds <= 0) {
             throw new BadRequestException("Exam time has expired");
         }
+
+        messagingTemplate.convertAndSend(
+            "/topic/exam/" + request.examId() + "/violations",
+            Map.of(
+                "type", "SESSION_STATUS_CHANGED",
+                "studentId", studentId,
+                "examStatus", "IN_PROGRESS",
+                "timestamp", now.toString(),
+                "autoSubmitted", false,
+                "violationCount", 0
+            )
+        );
 
         return StartExamSessionResponse.success(
                 now, examStartedAt, examDeadline, remainingSeconds, exam.getDurationMinutes());

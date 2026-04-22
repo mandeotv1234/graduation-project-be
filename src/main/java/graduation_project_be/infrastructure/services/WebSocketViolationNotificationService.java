@@ -59,4 +59,17 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
                 notificationBufferService.buffer(notification);
                 log.info("Violation notification buffered for persistence: exam={}, student={}", examId, studentId);
         }
+
+        @Override
+        public void notifyStudentRemind(Long examId, Long studentId, String action, String message) {
+                String destination = String.format("/topic/student/%d/exam-session", studentId);
+                Map<String, Object> payload = Map.of(
+                                "type", action,
+                                "examId", examId,
+                                "message", message != null ? message : "Bạn có một thông báo từ giáo viên.",
+                                "timestamp", LocalDateTime.now().toString());
+
+                messagingTemplate.convertAndSend(destination, payload);
+                log.info("WebSocket student reminder sent: exam={}, student={}, action={}, message={}", examId, studentId, action, message);
+        }
 }

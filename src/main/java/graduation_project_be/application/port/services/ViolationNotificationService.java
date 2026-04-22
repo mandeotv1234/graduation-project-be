@@ -18,4 +18,6 @@ public interface ViolationNotificationService {
                        String studentName, String violationType,
                        String description, long violationCount,
                        boolean autoSubmitted);
+
+    void notifyStudentRemind(Long examId, Long studentId, String action, String message);
 }

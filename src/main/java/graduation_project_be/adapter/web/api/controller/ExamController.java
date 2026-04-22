@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 @RestController
 @RequestMapping("/api/exams")
 @RequiredArgsConstructor
@@ -66,6 +67,8 @@ public class ExamController {
         private final OverrideSubmissionScoreUsecase overrideSubmissionScoreUsecase;
         private final PdfStorageService pdfStorageService;
         private final DownloadExamPdfUsecase downloadExamPdfUsecase;
+        private final RemindStudentUsecase remindStudentUsecase;
+        private final ForceSubmitExamUsecase forceSubmitExamUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -752,4 +755,23 @@ public class ExamController {
                                 .orElseGet(() -> ResponseEntity.ok(
                                                 ResponseDto.of(null, "NOT_FOUND", "No draft found")));
         }
+
+        @PostMapping("/{examId}/students/{studentId}/remind")
+        public ResponseEntity<ResponseDto> remindStudent(
+                        @PathVariable Long examId,
+                        @PathVariable Long studentId,
+                        @RequestBody Map<String, String> request) {
+                String message = request.get("message");
+                remindStudentUsecase.execute(examId, studentId, message);
+                return ResponseEntity.ok(ResponseDto.of(null, "SUCCESS", "Đã gửi nhắc nhở thành công"));
+        }
+
+        @PostMapping("/{examId}/students/{studentId}/force-submit")
+        public ResponseEntity<ResponseDto> forceSubmitExam(
+                        @PathVariable Long examId,
+                        @PathVariable Long studentId) {
+                forceSubmitExamUsecase.execute(examId, studentId);
+                return ResponseEntity.ok(ResponseDto.of(null, "SUCCESS", "Đã cưỡng chế nộp bài thành công"));
+        }
 }
+

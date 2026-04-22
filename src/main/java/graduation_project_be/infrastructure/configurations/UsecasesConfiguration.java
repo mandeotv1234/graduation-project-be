@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 @Configuration
 public class UsecasesConfiguration {
@@ -178,14 +179,18 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             UserRepository userRepository,
             ExamViolationRepository examViolationRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            ExamSessionService examSessionService,
+            ExamResultRepository examResultRepository) {
         return new GetExamMonitorUsecase(
                 examRepository,
                 classRepository,
                 classEnrollmentRepository,
                 userRepository,
                 examViolationRepository,
-                currentUserService);
+                currentUserService,
+                examSessionService,
+                examResultRepository);
     }
 
     // ===== NEW USECASES =====
@@ -272,11 +277,12 @@ public class UsecasesConfiguration {
             CurrentUserService currentUserService,
             ExamSessionService examSessionService,
             GradingQueueService gradingQueueService,
-            ExamDraftRepository examDraftRepository) {
+            ExamDraftRepository examDraftRepository,
+            SimpMessagingTemplate simpMessagingTemplate) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, classEnrollmentRepository, currentUserService,
-                examSessionService, gradingQueueService, examDraftRepository);
+                examSessionService, gradingQueueService, examDraftRepository, simpMessagingTemplate);
     }
 
     @Bean
@@ -374,11 +380,12 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ViolationNotificationService violationNotificationService,
-            SubmitExamUsecase submitExamUsecase) {
+            SubmitExamUsecase submitExamUsecase,
+            ExamDraftRepository examDraftRepository) {
         return new ReportViolationUsecase(
                 examViolationRepository, examResultRepository, examRepository,
                 classEnrollmentRepository, currentUserService,
-                violationNotificationService, submitExamUsecase);
+                violationNotificationService, submitExamUsecase, examDraftRepository);
     }
 
     @Bean
@@ -404,7 +411,8 @@ public class UsecasesConfiguration {
             DeviceConflictNotificationService deviceConflictNotificationService,
             UserRepository userRepository,
             ClassRepository classRepository,
-            ExamDraftRepository examDraftRepository) {
+            ExamDraftRepository examDraftRepository,
+            SimpMessagingTemplate simpMessagingTemplate) {
         return new StartExamSessionUsecase(
                 examRepository, classEnrollmentRepository,
                 currentUserService, examSessionService,
@@ -415,7 +423,8 @@ public class UsecasesConfiguration {
                 deviceConflictNotificationService,
                 userRepository,
                 classRepository,
-                examDraftRepository);
+                examDraftRepository,
+                simpMessagingTemplate);
     }
 
     @Bean
@@ -757,6 +766,25 @@ public class UsecasesConfiguration {
                 deviceConflictStore, examRepository,
                 classRepository, currentUserService,
                 deviceConflictNotificationService);
+    }
+
+    @Bean
+    RemindStudentUsecase remindStudentUsecase(
+            ExamRepository examRepository,
+            CurrentUserService currentUserService,
+            ViolationNotificationService violationNotificationService) {
+        return new RemindStudentUsecase(examRepository, currentUserService, violationNotificationService);
+    }
+
+    @Bean
+    ForceSubmitExamUsecase forceSubmitExamUsecase(
+            ExamRepository examRepository,
+            CurrentUserService currentUserService,
+            SubmitExamUsecase submitExamUsecase,
+            ViolationNotificationService violationNotificationService,
+            ExamSessionService examSessionService,
+            ExamDraftRepository examDraftRepository) {
+        return new ForceSubmitExamUsecase(examRepository, currentUserService, submitExamUsecase, violationNotificationService, examSessionService, examDraftRepository);
     }
 
 }

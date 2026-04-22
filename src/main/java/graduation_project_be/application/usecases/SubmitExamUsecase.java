@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -52,8 +53,7 @@ public class SubmitExamUsecase {
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
     private final GradingQueueService gradingQueueService;
-    private final ExamDraftRepository examDraftRepository;
-
+    private final ExamDraftRepository examDraftRepository;    private final SimpMessagingTemplate messagingTemplate;
     @Transactional
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -212,6 +212,18 @@ public class SubmitExamUsecase {
         }
 
         // 11. Return immediately — student sees "Đang chấm điểm..."
+        messagingTemplate.convertAndSend(
+            "/topic/exam/" + examId + "/violations",
+            Map.of(
+                "type", "SESSION_STATUS_CHANGED",
+                "studentId", studentId,
+                "examStatus", "SUBMITTED",
+                "timestamp", submittedAt.toString(),
+                "autoSubmitted", isAutoSubmit,
+                "violationCount", 0
+            )
+        );
+
         return new SubmitExamResponse(
                 examId, studentId, submittedAt, GradingStatus.PENDING,
                 BigDecimal.ZERO, maxScore, 0, totalQuestions,

@@ -3,6 +3,7 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
@@ -12,12 +13,15 @@ import graduation_project_be.application.usecases.request.ReportViolationRequest
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.ReportViolationResponse;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamDraft;
 import graduation_project_be.domain.models.ExamViolation;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -32,6 +36,7 @@ public class ReportViolationUsecase {
     private final CurrentUserService currentUserService;
     private final ViolationNotificationService violationNotificationService;
     private final SubmitExamUsecase submitExamUsecase;
+    private final ExamDraftRepository examDraftRepository;
 
     public ReportViolationResponse execute(ReportViolationRequest request) {
         User currentUser = currentUserService.getCurrentUser();
@@ -103,8 +108,17 @@ public class ReportViolationUsecase {
     }
 
     private void autoSubmitExam(Long examId, Long studentId) {
-        // Auto-submit with empty answers — the SubmitExamUsecase saves submissions
-        // and enqueues grading. Session cleanup is handled by the grading worker.
-        submitExamUsecase.executeAsSystem(new SubmitExamRequest(examId, List.of(), null, null), studentId, true);
+        // Fetch current draft to submit student's partial answers
+        Optional<ExamDraft> draftOpt = examDraftRepository.findByExamIdAndStudentId(examId, studentId);
+        List<SubmitExamRequest.AnswerItem> answers = draftOpt.map(draft -> 
+                draft.getAnswers() == null ? List.<SubmitExamRequest.AnswerItem>of() : 
+                draft.getAnswers().stream()
+                        .map(da -> new SubmitExamRequest.AnswerItem(da.getQuestionId(), da.getContent() != null ? da.getContent() : ""))
+                        .collect(Collectors.toList())
+        ).orElse(List.of());
+
+        // Auto-submit with currently saved answers -> SubmitExamUsecase saves submissions
+        // and enqueues grading. Session cleanup is handled by grading worker.
+        submitExamUsecase.executeAsSystem(new SubmitExamRequest(examId, answers, null, null), studentId, true);
     }
 }

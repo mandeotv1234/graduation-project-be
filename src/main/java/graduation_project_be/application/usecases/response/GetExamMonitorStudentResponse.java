@@ -11,5 +11,6 @@ public record GetExamMonitorStudentResponse(
         String latestViolationDescription,
         LocalDateTime latestViolationAt,
         boolean autoSubmitted,
-        String status) {
+        String status,
+        String examStatus) {
 }

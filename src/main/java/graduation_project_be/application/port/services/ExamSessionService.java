@@ -2,6 +2,7 @@ package graduation_project_be.application.port.services;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.Set;
 
 public interface ExamSessionService {
     /**
@@ -46,6 +47,11 @@ public interface ExamSessionService {
      * The old session is replaced; start-time key is preserved.
      */
     void forceOverrideSession(Long examId, Long studentId, String newIpAddress, String newUserAgent);
+
+    /**
+     * Get all active student IDs for an exam, checking which students currently have a session.
+     */
+    Set<Long> getActiveStudentIds(Long examId);
 
     /**
      * Returns the raw session value (ip|ua) for an existing session, 

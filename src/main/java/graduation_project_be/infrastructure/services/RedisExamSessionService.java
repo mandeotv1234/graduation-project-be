@@ -113,6 +113,31 @@ public class RedisExamSessionService implements ExamSessionService {
     }
 
     @Override
+    public java.util.Set<Long> getActiveStudentIds(Long examId) {
+        String pattern = String.format("exam_session:%d:*", examId);
+        java.util.Set<String> keys = redisTemplate.keys(pattern);
+        if (keys == null || keys.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        
+        return keys.stream()
+            .map(key -> {
+                String[] parts = key.split(":");
+                // Parts are: "exam_session", "{examId}", "{studentId}"
+                if (parts.length >= 3) {
+                    try {
+                        return Long.parseLong(parts[2]);
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                }
+                return null;
+            })
+            .filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.toSet());
+    }
+
+    @Override
     public void clearSession(Long examId, Long studentId) {
         String sessionKey = buildKey(examId, studentId);
         String startTimeKey = buildStartTimeKey(examId, studentId);

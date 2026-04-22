@@ -1537,14 +1537,14 @@ public class GradeExamUsecase {
         if (question.getCorrectQuery() == null || question.getCorrectQuery().isBlank()) {
             return GradeDecision.fail("Missing correctQuery for SELECT question");
         }
-        if (specification == null) {
-            return GradeDecision.fail("Exam has no specification for multi-dataset grading");
-        }
-        if (specification.getDdlScript() == null || specification.getDdlScript().isBlank()) {
-            return GradeDecision.fail("Specification has no ddlScript");
-        }
-
         BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+
+        // Fallback: no specification → grade directly on current schema state
+        if (specification == null
+                || specification.getDdlScript() == null
+                || specification.getDdlScript().isBlank()) {
+            return gradeSelectDirectOnCurrentSchema(schemaName, question, studentQuery, totalPoints);
+        }
 
         List<SpecDataset> activeDatasets = specification.getDatasets() == null ? List.of()
                 : specification.getDatasets().stream()
@@ -1654,6 +1654,203 @@ public class GradeExamUsecase {
                 ? errorBuilder.toString().trim()
                 : "Kết quả SELECT không khớp rubric chấm điểm.";
         return GradeDecision.partial(earnedTotal, errorMessage);
+    }
+
+    /**
+     * Fallback grading for SELECT questions when no ExamSpecification is
+     * attached to the exam.  Runs both the student query and the correct query
+     * on the schema as-is (no DDL reload, no multi-dataset loop) and compares
+     * the results.
+     */
+    private GradeDecision gradeSelectDirectOnCurrentSchema(
+            String schemaName,
+            ExamQuestion question,
+            String studentQuery,
+            BigDecimal totalPoints) {
+        try {
+            List<Map<String, Object>> actual =
+                    examSchemaService.executeSql(schemaName, studentQuery).getResultSet();
+            List<Map<String, Object>> expected =
+                    examSchemaService.executeSql(schemaName, question.getCorrectQuery()).getResultSet();
+
+            boolean requireStrictOrder = question.getCorrectQuery() != null
+                    && question.getCorrectQuery().toUpperCase().contains("ORDER BY");
+
+            // --- rule-based grading (if rules exist) ---
+            JsonNode selectRules = resolveSelectGradingRules(question);
+            boolean hasRuleBasedScoring = hasSelectGradingRules(selectRules);
+
+            if (!hasRuleBasedScoring) {
+                // Simple strict comparison
+                if (compareResultSetsStrict(actual, expected, requireStrictOrder)) {
+                    return GradeDecision.pass(totalPoints);
+                }
+                return GradeDecision.fail("Kết quả SELECT không khớp với đáp án.");
+            }
+
+            // Exact match → full points immediately
+            if (compareResultSetsStrict(actual, expected, requireStrictOrder)) {
+                return GradeDecision.pass(totalPoints);
+            }
+
+            // Delegate to rule-based scoring with a single "virtual" dataset
+            SelectDatasetDecision decision = gradeSelectWithSingleDatasetByRulesOnCurrentResults(
+                    actual, expected, question, studentQuery, selectRules, totalPoints, requireStrictOrder);
+
+            if (decision.executionFailed()) {
+                return GradeDecision.fail(decision.errorMessage());
+            }
+            if (decision.failAllTriggered()) {
+                return GradeDecision.fail(
+                        "Rubric SELECT có rule FAIL_ALL: câu này bị 0 điểm toàn bộ.");
+            }
+
+            BigDecimal earned = decision.earnedPoints();
+            if (earned.compareTo(totalPoints) > 0) earned = totalPoints;
+            if (earned.compareTo(BigDecimal.ZERO) < 0) earned = BigDecimal.ZERO;
+            earned = earned.setScale(2, RoundingMode.HALF_UP);
+
+            if (decision.allChecksPassed()
+                    && earned.compareTo(totalPoints.setScale(2, RoundingMode.HALF_UP)) >= 0) {
+                return GradeDecision.pass(earned);
+            }
+
+            String errorMessage = decision.errorMessage() != null && !decision.errorMessage().isBlank()
+                    ? decision.errorMessage()
+                    : "Kết quả SELECT không khớp rubric chấm điểm.";
+            return GradeDecision.partial(earned, errorMessage);
+        } catch (Exception e) {
+            return GradeDecision.fail("Lỗi khi chấm SELECT: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Rule-based scoring on pre-computed result sets (no schema manipulation).
+     */
+    private SelectDatasetDecision gradeSelectWithSingleDatasetByRulesOnCurrentResults(
+            List<Map<String, Object>> actual,
+            List<Map<String, Object>> expected,
+            ExamQuestion question,
+            String studentQuery,
+            JsonNode gradingRules,
+            BigDecimal datasetMaxPoints,
+            boolean requireStrictOrder) {
+        try {
+            List<String> expectedColumns = extractSelectColumns(expected);
+            List<String> actualColumns = extractSelectColumns(actual);
+            List<String> comparisonColumns = !expectedColumns.isEmpty() ? expectedColumns : actualColumns;
+
+            List<Map<String, Object>> remappedActual = remapActualRowsByPosition(
+                    actual, actualColumns, expectedColumns);
+
+            int expectedRowsCount = expected == null ? 0 : expected.size();
+            int actualRowsCount = actual == null ? 0 : actual.size();
+            int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
+            int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
+
+            int nameMismatchAtSamePosition = 0;
+            int minCols = Math.min(expectedColumns.size(), actualColumns.size());
+            for (int i = 0; i < minCols; i++) {
+                if (!expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                    nameMismatchAtSamePosition++;
+                }
+            }
+            int trulyMissingColumns = Math.max(0, expectedColumns.size() - actualColumns.size());
+            int trulyExtraColumns = Math.max(0, actualColumns.size() - expectedColumns.size());
+            int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
+            int extraColumns = trulyExtraColumns;
+
+            int columnOrderViolations = 0;
+            if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
+                    && !expectedColumns.isEmpty() && !actualColumns.isEmpty()
+                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) {
+                columnOrderViolations = 1;
+            }
+
+            JsonNode rowOrderRule = findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+            int rowOrderViolations = 0;
+            if (requireStrictOrder && rowOrderRule != null && !hasInsertModifier(rowOrderRule, "SORT_ASC")) {
+                rowOrderViolations = countSelectRowOrderViolations(remappedActual, expected, comparisonColumns);
+                if (rowOrderViolations == 0) {
+                    rowOrderViolations = 1;
+                }
+            }
+
+            JsonNode cellNotEqualRule = findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
+            JsonNode cellNullRule = findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
+            JsonNode cellCompareModifiers = firstNonEmptyModifiers(
+                    extractInsertRuleModifiers(cellNotEqualRule),
+                    extractInsertRuleModifiers(cellNullRule));
+
+            List<SelectRowPair> rowPairs = buildSelectRowPairs(
+                    remappedActual, expected, comparisonColumns, requireStrictOrder, cellCompareModifiers);
+            int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
+            int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+
+            double datasetPoints = datasetMaxPoints.doubleValue();
+            int expectedColumnsCount = Math.max(1, comparisonColumns.size());
+            int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
+            double rowPenaltyDefault = datasetPoints / expectedRowsForPenalty;
+            double columnPenaltyDefault = datasetPoints / expectedColumnsCount;
+            double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
+
+            List<SelectRuleApplication> applications = List.of(
+                    applySelectRule(gradingRules, "ROW", "IS_MISSING", missingRows,
+                            datasetMaxPoints, rowPenaltyDefault, "thieu " + missingRows + " dong"),
+                    applySelectRule(gradingRules, "ROW", "IS_EXTRA", extraRows,
+                            datasetMaxPoints, rowPenaltyDefault, "du " + extraRows + " dong"),
+                    applySelectRule(gradingRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
+                            datasetMaxPoints, cellPenaltyDefault, "sai " + wrongCells + " o du lieu"),
+                    applySelectRule(gradingRules, "CELL_VALUE", "IS_NULL", nullViolations,
+                            datasetMaxPoints, cellPenaltyDefault, "co " + nullViolations + " o gia tri rong"),
+                    applySelectRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
+                            datasetMaxPoints, rowPenaltyDefault, "sai thu tu " + rowOrderViolations + " dong"),
+                    applySelectRule(gradingRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
+                            datasetMaxPoints, columnPenaltyDefault, "sai thu tu cot ket qua"),
+                    applySelectRule(gradingRules, "COLUMN", "IS_MISSING", missingColumns,
+                            datasetMaxPoints, columnPenaltyDefault, "thieu " + missingColumns + " cot"),
+                    applySelectRule(gradingRules, "COLUMN", "IS_EXTRA", extraColumns,
+                            datasetMaxPoints, columnPenaltyDefault, "du " + extraColumns + " cot"));
+
+            double earned = datasetPoints;
+            int matchedRuleCount = 0;
+            boolean failAllTriggered = false;
+            StringBuilder issueBuilder = new StringBuilder();
+
+            for (SelectRuleApplication application : applications) {
+                if (!application.violationPresent()) continue;
+                if (application.ruleMatched()) matchedRuleCount++;
+                if (application.failAllTriggered()) failAllTriggered = true;
+                if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                    earned -= application.deduction().doubleValue();
+                }
+                if (application.message() != null && !application.message().isBlank()) {
+                    appendSelectIssue(issueBuilder, application.message());
+                }
+            }
+
+            if (failAllTriggered) {
+                earned = 0d;
+            } else if (matchedRuleCount == 0) {
+                earned = 0d;
+                appendSelectIssue(issueBuilder, "Khong co grading_rules phu hop de danh gia cac sai lech.");
+            }
+
+            if (earned < 0d) earned = 0d;
+            if (earned > datasetPoints) earned = datasetPoints;
+
+            BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal delta = datasetMaxPoints.subtract(earnedPoints).abs();
+            boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
+            String message = issueBuilder.length() == 0
+                    ? "SELECT result mismatch"
+                    : issueBuilder.toString().trim();
+
+            return SelectDatasetDecision.ruleResult(allChecksPassed, failAllTriggered,
+                    allChecksPassed ? null : message, earnedPoints);
+        } catch (Exception e) {
+            return SelectDatasetDecision.executionFailure("Lỗi chấm SELECT: " + e.getMessage());
+        }
     }
 
     private SelectDatasetDecision gradeSelectWithSingleDatasetStrict(

@@ -4,6 +4,7 @@ import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
@@ -39,6 +40,7 @@ public class GetExamMonitorUsecase {
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
     private final ExamResultRepository examResultRepository;
+    private final ExamDraftRepository examDraftRepository;
 
     public GetExamMonitorResponse execute(GetExamMonitorRequest request) {
         Long teacherId = currentUserService.getCurrentUserId();
@@ -81,6 +83,10 @@ public class GetExamMonitorUsecase {
         List<ExamResult> results = examResultRepository.findByExamId(exam.getId());
         Map<Long, List<ExamResult>> resultsByStudent = results.stream()
                 .collect(Collectors.groupingBy(ExamResult::getStudentId));
+        
+        Set<Long> draftedStudentIds = examDraftRepository.findByExamId(exam.getId()).stream()
+                .map(graduation_project_be.domain.models.ExamDraft::getStudentId)
+                .collect(Collectors.toSet());
 
         boolean autoSubmitEnabled = exam.getSettings() != null
                 && Boolean.TRUE.equals(exam.getSettings().getAutoSubmitOnViolation());
@@ -96,18 +102,21 @@ public class GetExamMonitorUsecase {
                             : violationCount > 0 ? "VIOLATING" : "NORMAL";
 
                     // Determine examStatus
-                    boolean isActive = activeStudentIds.contains(student.getId());
+                    boolean isActive = activeStudentIds.contains(student.getId()) || draftedStudentIds.contains(student.getId());
                     List<ExamResult> studentResults = resultsByStudent.getOrDefault(student.getId(), List.of());
                     int maxAttempts = exam.getMaxAttempts() != null ? exam.getMaxAttempts() : 1;
+                    boolean isUnlimitedAttempts = exam.getMaxAttempts() == null;
                     
                     String examStatus = "NOT_STARTED";
-                    if (isActive) {
+                    if (isActive && (isUnlimitedAttempts || studentResults.size() < maxAttempts)) {
                         examStatus = "IN_PROGRESS";
-                    } else if (studentResults.size() >= maxAttempts || (!studentResults.isEmpty() && exam.getMaxAttempts() == null)) {
+                    } else if (!isUnlimitedAttempts && studentResults.size() >= maxAttempts) {
                         examStatus = "SUBMITTED";
                         if (autoSubmitted) {
                             examStatus = "AUTO_SUBMITTED";
                         }
+                    } else if (isUnlimitedAttempts && !studentResults.isEmpty() && !isActive) {
+                        examStatus = "SUBMITTED"; 
                     } else if (!studentResults.isEmpty()) {
                         // User has submissions but hasn't reached max attempts, 
                         // could be NOT_STARTED on their next attempt or they are done.

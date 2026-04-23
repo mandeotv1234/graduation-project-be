@@ -44,4 +44,11 @@ public class ExamDraftRepositoryImpl implements ExamDraftRepository {
                 .map(e -> e.toModel(objectMapper))
                 .toList();
     }
+
+    @Override
+    public List<ExamDraft> findByExamId(Long examId) {
+        return jpaRepository.findByExamId(examId).stream()
+                .map(e -> e.toModel(objectMapper))
+                .toList();
+    }
 }

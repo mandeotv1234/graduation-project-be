@@ -1832,8 +1832,8 @@ public class GradeExamUsecase {
             if (failAllTriggered) {
                 earned = 0d;
             } else if (matchedRuleCount == 0) {
-                earned = 0d;
-                appendSelectIssue(issueBuilder, "Khong co grading_rules phu hop de danh gia cac sai lech.");
+                // Violations exist but no rules matched -> don't deduct points
+                appendSelectIssue(issueBuilder, "Phát hiện sai lệch nhưng không có quy tắc chấm phù hợp -> không trừ điểm.");
             }
 
             if (earned < 0d) earned = 0d;
@@ -2023,9 +2023,9 @@ public class GradeExamUsecase {
             if (failAllTriggered) {
                 earned = 0d;
             } else if (matchedRuleCount == 0) {
-                earned = 0d;
+                // Violations exist but no rules matched -> don't deduct points
                 appendSelectIssue(issueBuilder,
-                        "Khong co grading_rules phu hop de danh gia cac sai lech tren " + datasetLabel + ".");
+                        "Phát hiện sai lệch nhưng không có quy tắc chấm phù hợp trên " + datasetLabel + " -> không trừ điểm.");
             }
 
             if (earned < 0d) {

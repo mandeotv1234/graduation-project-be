@@ -13,7 +13,8 @@ public record GetExamMonitorStudentResponseDto(
         String latestViolationDescription,
         LocalDateTime latestViolationAt,
         boolean autoSubmitted,
-        String status) {
+        String status,
+        String examStatus) {
 
     public static GetExamMonitorStudentResponseDto fromResponse(GetExamMonitorStudentResponse response) {
         return new GetExamMonitorStudentResponseDto(
@@ -25,6 +26,7 @@ public record GetExamMonitorStudentResponseDto(
                 response.latestViolationDescription(),
                 response.latestViolationAt(),
                 response.autoSubmitted(),
-                response.status());
+                response.status(),
+                response.examStatus());
     }
 }

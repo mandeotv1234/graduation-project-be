@@ -10,4 +10,5 @@ public interface ExamDraftRepository {
     Optional<ExamDraft> findByExamIdAndStudentId(Long examId, Long studentId);
     void deleteByExamIdAndStudentId(Long examId, Long studentId);
     List<ExamDraft> findAll();
+    List<ExamDraft> findByExamId(Long examId);
 }

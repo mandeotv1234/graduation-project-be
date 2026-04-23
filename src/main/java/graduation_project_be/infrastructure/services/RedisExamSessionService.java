@@ -10,6 +10,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.Collections;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -113,28 +117,41 @@ public class RedisExamSessionService implements ExamSessionService {
     }
 
     @Override
-    public java.util.Set<Long> getActiveStudentIds(Long examId) {
-        String pattern = String.format("exam_session:%d:*", examId);
-        java.util.Set<String> keys = redisTemplate.keys(pattern);
-        if (keys == null || keys.isEmpty()) {
-            return java.util.Collections.emptySet();
+    public Set<Long> getActiveStudentIds(Long examId) {
+        String sessionPattern = String.format("exam_session:%d:*", examId);
+        String startTimePattern = String.format("exam_start_time:%d:*", examId);
+        
+        Set<String> sessionKeys = redisTemplate.keys(sessionPattern);
+        Set<String> startTimeKeys = redisTemplate.keys(startTimePattern);
+        
+        Set<Long> activeIds = new java.util.HashSet<>();
+        
+        if (sessionKeys != null) {
+            activeIds.addAll(extractStudentIds(sessionKeys));
+        }
+        if (startTimeKeys != null) {
+            activeIds.addAll(extractStudentIds(startTimeKeys));
         }
         
+        return activeIds;
+    }
+
+    private Set<Long> extractStudentIds(Set<String> keys) {
         return keys.stream()
             .map(key -> {
                 String[] parts = key.split(":");
-                // Parts are: "exam_session", "{examId}", "{studentId}"
                 if (parts.length >= 3) {
                     try {
-                        return Long.parseLong(parts[2]);
+                        String lastPart = parts[parts.length - 1];
+                        return Long.parseLong(lastPart);
                     } catch (NumberFormatException e) {
                         return null;
                     }
                 }
                 return null;
             })
-            .filter(java.util.Objects::nonNull)
-            .collect(java.util.stream.Collectors.toSet());
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
     }
 
     @Override

@@ -181,7 +181,8 @@ public class UsecasesConfiguration {
             ExamViolationRepository examViolationRepository,
             CurrentUserService currentUserService,
             ExamSessionService examSessionService,
-            ExamResultRepository examResultRepository) {
+            ExamResultRepository examResultRepository,
+            ExamDraftRepository examDraftRepository) {
         return new GetExamMonitorUsecase(
                 examRepository,
                 classRepository,
@@ -190,7 +191,8 @@ public class UsecasesConfiguration {
                 examViolationRepository,
                 currentUserService,
                 examSessionService,
-                examResultRepository);
+                examResultRepository,
+                examDraftRepository);
     }
 
     // ===== NEW USECASES =====

@@ -69,6 +69,7 @@ public class ExamController {
         private final DownloadExamPdfUsecase downloadExamPdfUsecase;
         private final RemindStudentUsecase remindStudentUsecase;
         private final ForceSubmitExamUsecase forceSubmitExamUsecase;
+        private final GetExamStatisticsUsecase getExamStatisticsUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -308,6 +309,16 @@ public class ExamController {
                                 .toList();
                 return ResponseEntity.ok(
                                 ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/statistics")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamStatistics(
+                        @PathVariable("examId") @Positive Long examId) {
+                GetExamStatisticsResponseDto dto = GetExamStatisticsResponseDto
+                                .fromResponse(getExamStatisticsUsecase.execute(examId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(dto, "OK", "Exam statistics retrieved successfully"));
         }
 
         @GetMapping("/{examId}/results/{resultId}")

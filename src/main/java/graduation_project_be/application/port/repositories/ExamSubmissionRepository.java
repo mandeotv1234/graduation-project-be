@@ -14,4 +14,6 @@ public interface ExamSubmissionRepository {
     List<ExamSubmission> findByExamIdAndStudentIdAndAttemptNumber(Long examId, Long studentId, int attemptNumber);
 
     List<ExamSubmission> saveAll(List<ExamSubmission> submissions);
+
+    List<ExamSubmission> findByExamId(Long examId);
 }

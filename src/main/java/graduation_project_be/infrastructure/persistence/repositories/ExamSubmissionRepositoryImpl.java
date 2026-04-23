@@ -51,4 +51,11 @@ public class ExamSubmissionRepositoryImpl implements ExamSubmissionRepository {
                 .map(ExamSubmissionEntity::toModel)
                 .toList();
     }
+
+    @Override
+    public List<ExamSubmission> findByExamId(Long examId) {
+        return jpaRepository.findByExamId(examId).stream()
+                .map(ExamSubmissionEntity::toModel)
+                .toList();
+    }
 }

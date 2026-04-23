@@ -327,6 +327,23 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GetExamStatisticsUsecase getExamStatisticsUsecase(
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamViolationRepository examViolationRepository,
+            ExamQuestionRepository examQuestionRepository,
+            UserRepository userRepository) {
+        return new GetExamStatisticsUsecase(
+                examRepository,
+                examResultRepository,
+                examSubmissionRepository,
+                examViolationRepository,
+                examQuestionRepository,
+                userRepository);
+    }
+
+    @Bean
     GetExamResultDetailUsecase getExamResultDetailUsecase(
             ExamResultRepository examResultRepository,
             ExamSubmissionRepository examSubmissionRepository,

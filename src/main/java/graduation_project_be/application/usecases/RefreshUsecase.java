@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.RefreshTokenRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
@@ -51,8 +52,8 @@ public class RefreshUsecase {
 
         refreshTokenRepository.save(userId, tokenId, storedHash, jwtService.getJwtRefreshTokenValiditySeconds());
 
-        LocalDateTime accessTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
-        LocalDateTime refreshTokenExpiresAt = LocalDateTime.now().plusSeconds(jwtService.getJwtRefreshTokenValiditySeconds());
+        LocalDateTime accessTokenExpiresAt = TimeUtils.now().plusSeconds(jwtService.getJwtTokenValiditySeconds());
+        LocalDateTime refreshTokenExpiresAt = TimeUtils.now().plusSeconds(jwtService.getJwtRefreshTokenValiditySeconds());
 
         Token token = Token.builder()
             .accessToken(newAccess)

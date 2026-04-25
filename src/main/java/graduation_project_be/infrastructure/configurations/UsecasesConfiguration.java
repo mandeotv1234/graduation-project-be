@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.configurations;
 
+import graduation_project_be.application.usecases.DeleteExamUsecase;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
@@ -685,6 +686,11 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             CurrentUserService currentUserService) {
         return new DeleteExamQuestionUsecase(examQuestionRepository, examRepository, classRepository, currentUserService);
+    }
+
+    @Bean
+    DeleteExamUsecase deleteExamUsecase(ExamRepository examRepository, CurrentUserService currentUserService) {
+        return new DeleteExamUsecase(examRepository, currentUserService);
     }
 
     // ===== EXAM DRAFT USECASES =====

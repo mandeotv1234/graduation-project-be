@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.configurations;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.ExamSessionService;
@@ -71,7 +72,7 @@ public class AutoSubmitWorkerConfiguration {
                     examDeadline = exam.getEndTime();
                 }
 
-                long secondsOverdue = Duration.between(examDeadline, LocalDateTime.now()).getSeconds();
+                long secondsOverdue = Duration.between(examDeadline, TimeUtils.now()).getSeconds();
 
                 boolean allowOvertime = exam.getSettings() != null
                         && Boolean.TRUE.equals(exam.getSettings().getAllowOvertime());

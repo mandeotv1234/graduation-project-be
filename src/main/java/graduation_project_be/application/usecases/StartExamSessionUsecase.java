@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
@@ -70,7 +71,7 @@ public class StartExamSessionUsecase {
         }
 
         // 3. Validate exam time window
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         if (exam.getStartTime() != null && now.isBefore(exam.getStartTime())) {
             throw new BadRequestException("Exam has not started yet");
         }

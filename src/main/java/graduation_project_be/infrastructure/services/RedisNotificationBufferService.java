@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.services;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.repositories.TeacherNotificationRepository;
 import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.domain.models.TeacherNotification;
@@ -102,7 +103,7 @@ public class RedisNotificationBufferService implements NotificationBufferService
                 String.valueOf(n.getViolationCount()),
                 String.valueOf(n.isAutoSubmitted()),
                 n.getCreatedAt() != null ? n.getCreatedAt().format(DT_FORMATTER)
-                        : LocalDateTime.now().format(DT_FORMATTER));
+                        : TimeUtils.now().format(DT_FORMATTER));
     }
 
     private TeacherNotification deserialize(String serialized) {

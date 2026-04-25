@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
@@ -14,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -54,7 +54,7 @@ public class CreateExamUsecase {
                 .startTime(request.startTime())
                 .endTime(request.endTime())
                 .isPublished(request.isPublished() != null ? request.isPublished() : false)
-                .createdAt(LocalDateTime.now())
+                .createdAt(TimeUtils.now())
                 .description(request.description())
                 .maxAttempts(request.maxAttempts() != null ? request.maxAttempts() : 1)
                 .lateThreshold(request.lateThreshold() != null ? request.lateThreshold() : 0)

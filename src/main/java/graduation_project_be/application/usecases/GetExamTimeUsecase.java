@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
@@ -35,7 +36,7 @@ public class GetExamTimeUsecase {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
 
         // Check if exam hasn't started yet
         if (exam.getStartTime() != null && now.isBefore(exam.getStartTime())) {

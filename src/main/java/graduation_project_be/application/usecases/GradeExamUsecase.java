@@ -1,6 +1,7 @@
 package graduation_project_be.application.usecases;
 
 
+import graduation_project_be.shared.utils.TimeUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.domain.models.TableMetadata;
@@ -31,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.Normalizer;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -298,7 +298,7 @@ public class GradeExamUsecase {
             // 11. Notify student via WebSocket
             gradingNotificationService.notifyGradingCompleted(
                     examId, studentId, totalScore, maxScore, correctCount, totalQuestions, 
-                    questionResultsJson, LocalDateTime.now());
+                    questionResultsJson, TimeUtils.now());
 
             log.info("Grading completed: exam={}, student={}, score={}/{}", examId, studentId, totalScore, maxScore);
 

@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.RulePreset;
 import jakarta.persistence.*;
@@ -44,16 +45,16 @@ public class RulePresetEntity {
     @PrePersist
     public void prePersist() {
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = TimeUtils.now();
         }
         if (updatedAt == null) {
-            updatedAt = LocalDateTime.now();
+            updatedAt = TimeUtils.now();
         }
     }
 
     @PreUpdate
     public void preUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedAt = TimeUtils.now();
     }
 
     public RulePreset toModel() {

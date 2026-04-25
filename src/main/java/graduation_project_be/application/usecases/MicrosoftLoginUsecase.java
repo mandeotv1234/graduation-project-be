@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.MicrosoftAuthService;
@@ -9,7 +10,6 @@ import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
 
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -37,7 +37,7 @@ public class MicrosoftLoginUsecase {
                         .fullName(microsoftUserInfo.name())
                         .role(Role.STUDENT)
                         .isActive(true)
-                        .createdAt(LocalDateTime.now())
+                        .createdAt(TimeUtils.now())
                         .build();
 
                 user = userRepository.save(user);

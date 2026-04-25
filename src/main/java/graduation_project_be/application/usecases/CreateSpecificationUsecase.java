@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -27,7 +28,7 @@ public class CreateSpecificationUsecase {
     @Transactional
     public SpecificationResponse execute(CreateSpecificationRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         boolean hasDdlScript = request.ddlScript() != null && !request.ddlScript().isBlank();
         boolean hasSchemaJson = request.schemaJson() != null && !request.schemaJson().isNull();
 

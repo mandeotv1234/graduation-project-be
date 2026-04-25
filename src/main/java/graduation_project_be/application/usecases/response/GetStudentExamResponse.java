@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases.response;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSettings;
 import graduation_project_be.domain.models.TableMetadata;
@@ -35,7 +36,7 @@ public record GetStudentExamResponse(
      * - ENDED: exam has ended (now > endTime)
      */
     public static GetStudentExamResponse fromModel(Exam exam, String className, List<TableMetadata> schema, Long usedAttempts) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         String status;
         long secondsUntilStart = 0;
 

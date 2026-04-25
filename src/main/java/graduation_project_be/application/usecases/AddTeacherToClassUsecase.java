@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ConflictException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
@@ -13,8 +14,6 @@ import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
-
-import java.time.LocalDateTime;
 
 @RequiredArgsConstructor
 public class AddTeacherToClassUsecase {
@@ -56,7 +55,7 @@ public class AddTeacherToClassUsecase {
         TeacherClass teacherClass = TeacherClass.builder()
                 .classId(clazz.getId())
                 .teacherId(teacher.getId())
-                .addedAt(LocalDateTime.now())
+                .addedAt(TimeUtils.now())
                 .build();
 
         classRepository.saveTeacherAssociation(teacherClass);

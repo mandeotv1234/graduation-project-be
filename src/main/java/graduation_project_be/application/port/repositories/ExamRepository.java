@@ -17,4 +17,6 @@ public interface ExamRepository {
     List<Exam> findPublishedExamsByStudentId(Long studentId);
 
     boolean existsBySpecificationId(Long specificationId);
+
+    void deleteById(Long id);
 }

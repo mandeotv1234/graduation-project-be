@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
@@ -15,7 +16,6 @@ import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -40,7 +40,7 @@ public class CreateClassUsecase {
                 .classCode(request.classCode())
                 .semester(request.semester())
                 .creatorId(teacherId)
-                .createdAt(LocalDateTime.now())
+                .createdAt(TimeUtils.now())
                 .build();
         
         Class savedClass = classRepository.save(newClass);
@@ -48,7 +48,7 @@ public class CreateClassUsecase {
         classRepository.saveTeacherAssociation(TeacherClass.builder()
                 .classId(savedClass.getId())
                 .teacherId(teacherId)
-                .addedAt(LocalDateTime.now())
+                .addedAt(TimeUtils.now())
                 .build());
 
         List<User> studentsToSave = new ArrayList<>();
@@ -69,7 +69,7 @@ public class CreateClassUsecase {
                         .password(passwordEncoder.encode(DEFAULT_STUDENT_PASSWORD))
                         .role(Role.STUDENT)
                         .isActive(true)
-                        .createdAt(LocalDateTime.now())
+                        .createdAt(TimeUtils.now())
                         .build();
                 studentsToSave.add(student);
             }
@@ -89,7 +89,7 @@ public class CreateClassUsecase {
             ClassEnrollment enrollment = ClassEnrollment.builder()
                     .classId(savedClass.getId())
                     .studentId(student.getId())
-                    .joinedAt(LocalDateTime.now())
+                    .joinedAt(TimeUtils.now())
                     .build();
             enrollments.add(enrollment);
         }

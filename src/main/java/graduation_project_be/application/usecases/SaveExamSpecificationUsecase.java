@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
@@ -52,7 +53,7 @@ public class SaveExamSpecificationUsecase {
         ExamSpecification current = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         List<SpecEntity> entities = toEntities(request);
         List<SpecDataset> datasets = toDatasets(request, current, specificationId, now);
 

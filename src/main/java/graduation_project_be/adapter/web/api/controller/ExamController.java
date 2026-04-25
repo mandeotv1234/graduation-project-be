@@ -48,6 +48,7 @@ public class ExamController {
         private final UpdateExamUsecase updateExamUsecase;
         private final UpdateExamQuestionUsecase updateExamQuestionUsecase;
         private final DeleteExamQuestionUsecase deleteExamQuestionUsecase;
+        private final DeleteExamUsecase deleteExamUsecase;
         private final ClearExamSchemaUsecase clearExamSchemaUsecase;
         private final GetTeacherExamDetailUsecase getTeacherExamDetailUsecase;
         private final GetExamResultsUsecase getExamResultsUsecase;
@@ -221,6 +222,18 @@ public class ExamController {
                                                 ExamQuestionResponseDto.fromResponse(response),
                                                 "OK",
                                                 "Question updated successfully"));
+        }
+
+        @DeleteMapping("/{examId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> deleteExam(
+                        @PathVariable("examId") @Positive Long examId) {
+                deleteExamUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                null,
+                                                "OK",
+                                                "Exam deleted successfully"));
         }
 
         @DeleteMapping("/{examId}/questions/{questionId}")

@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.persistence.repositories;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecAttribute;
@@ -50,7 +51,7 @@ public class ExamSpecificationRepositoryImpl implements ExamSpecificationReposit
 
         List<SpecDatasetEntity> datasetEntities = new ArrayList<>();
         if (specification.getDatasets() != null) {
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = TimeUtils.now();
             for (SpecDataset datasetModel : specification.getDatasets()) {
                 SpecDatasetEntity datasetEntity = SpecDatasetEntity.fromModel(datasetModel, specEntity);
                 if (datasetEntity.getCreatedAt() == null) {

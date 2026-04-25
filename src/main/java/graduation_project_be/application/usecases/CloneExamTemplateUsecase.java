@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
@@ -51,7 +52,7 @@ public class CloneExamTemplateUsecase {
         ExamTemplate template = examTemplateRepository.findVisibleById(templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamTemplate", "id", templateId));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         ExamSpecification clonedSpecification = examSpecificationRepository.save(
                 template.getSpecificationSnapshot().toSpecification(currentUserId, now)
         );

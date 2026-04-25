@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamDraftRepository;
@@ -12,7 +13,6 @@ import graduation_project_be.domain.models.ExamDraft;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -49,7 +49,7 @@ public class SaveExamDraftUsecase {
                 .examId(request.examId())
                 .studentId(studentId)
                 .answers(answers)
-                .savedAt(LocalDateTime.now())
+                .savedAt(TimeUtils.now())
                 .clientTimestamp(request.clientTimestamp())
                 .build();
 

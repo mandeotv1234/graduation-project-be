@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.*;
@@ -75,7 +76,7 @@ public class SubmitExamUsecase {
                             request.examId(), studentId);
                     // Return a "fake" successful response so FE doesn't logout
                     return new SubmitExamResponse(
-                            request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                            request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
                             BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
                 }
                 throw new UnauthorizedException(
@@ -85,7 +86,7 @@ public class SubmitExamUsecase {
             // Re-check submission state one last time in case of race condition
             if (examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent()) {
                 return new SubmitExamResponse(
-                        request.examId(), studentId, LocalDateTime.now(), GradingStatus.COMPLETED,
+                        request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
                         BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
             }
             throw e;
@@ -97,7 +98,7 @@ public class SubmitExamUsecase {
     @Transactional
     public SubmitExamResponse executeAsSystem(SubmitExamRequest request, Long studentId, boolean isAutoSubmit) {
         Long examId = request.examId();
-        LocalDateTime submittedAt = LocalDateTime.now();
+        LocalDateTime submittedAt = TimeUtils.now();
 
         // 1. Validate exam
         Exam exam = examRepository.findByIdAndIsPublished(examId, true)

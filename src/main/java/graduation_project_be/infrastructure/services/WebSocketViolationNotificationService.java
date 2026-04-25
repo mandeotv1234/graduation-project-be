@@ -1,5 +1,6 @@
 package graduation_project_be.infrastructure.services;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
 import graduation_project_be.domain.models.TeacherNotification;
@@ -7,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 @Slf4j
@@ -34,7 +34,7 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
                                 "description", description != null ? description : "",
                                 "violationCount", violationCount,
                                 "autoSubmitted", autoSubmitted,
-                                "timestamp", LocalDateTime.now().toString());
+                                "timestamp", TimeUtils.now().toString());
 
                 messagingTemplate.convertAndSend(destination, payload);
                 messagingTemplate.convertAndSend("/topic/teacher/violations", payload);
@@ -53,7 +53,7 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
                                 .violationCount(violationCount)
                                 .autoSubmitted(autoSubmitted)
                                 .isRead(false)
-                                .createdAt(LocalDateTime.now())
+                                .createdAt(TimeUtils.now())
                                 .build();
 
                 notificationBufferService.buffer(notification);
@@ -67,7 +67,7 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
                                 "type", action,
                                 "examId", examId,
                                 "message", message != null ? message : "Bạn có một thông báo từ giáo viên.",
-                                "timestamp", LocalDateTime.now().toString());
+                                "timestamp", TimeUtils.now().toString());
 
                 messagingTemplate.convertAndSend(destination, payload);
                 log.info("WebSocket student reminder sent: exam={}, student={}, action={}, message={}", examId, studentId, action, message);

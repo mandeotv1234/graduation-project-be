@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
@@ -17,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -73,7 +73,7 @@ public class OverrideSubmissionScoreUsecase {
         submission.setIsCorrect(request.isCorrect());
         submission.setGradingType(GradingType.MANUAL);
         submission.setGradedBy(currentUserService.getCurrentUserId());
-        submission.setGradedAt(LocalDateTime.now());
+        submission.setGradedAt(TimeUtils.now());
         submission.setTeacherComment(request.teacherComment());
         examSubmissionRepository.save(submission);
 
@@ -102,7 +102,7 @@ public class OverrideSubmissionScoreUsecase {
         result.setTotalScore(totalScore);
         result.setCorrectCount(correctCount);
         result.setGradingType(resultGradingType);
-        result.setLastGradedAt(LocalDateTime.now());
+        result.setLastGradedAt(TimeUtils.now());
         examResultRepository.save(result);
 
         // 6. Build response

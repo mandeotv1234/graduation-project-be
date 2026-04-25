@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -40,7 +41,7 @@ public class UpdateSpecificationUsecase {
 
         validateSpecificationSchema(request, current.getCreatedBy() == null ? 0L : current.getCreatedBy());
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = TimeUtils.now();
         List<SpecDataset> datasets = buildDatasets(request.datasets(), current.getDatasets(), now);
 
         ExamSpecification specification = ExamSpecification.builder()

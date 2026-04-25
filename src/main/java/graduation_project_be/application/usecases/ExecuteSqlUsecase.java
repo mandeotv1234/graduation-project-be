@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
@@ -12,6 +13,7 @@ import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.ExecuteSqlRequest;
 import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.enums.Role;
 import graduation_project_be.domain.models.SqlExecutionResult;
@@ -104,11 +106,13 @@ public class ExecuteSqlUsecase {
             SqlExecutionResult result = examSchemaService.executeSql(schemaName, sql);
             List<Map<String, Object>> resultSet = result.getResultSet();
             List<TableMetadata> schema = null;
+            List<RoutineMetadata> routines = null;
             if (affectsSchema(sql)) {
                 schema = examSchemaService.extractMetadata(schemaName);
+                routines = examSchemaService.extractRoutineMetadata(schemaName);
             }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-            return ExecuteSqlResponse.success(resultSet, result.getRowCount(), executionTimeMs, result.getStatusMessage(), schema);
+            return ExecuteSqlResponse.success(resultSet, result.getRowCount(), executionTimeMs, result.getStatusMessage(), schema, routines);
         } catch (Exception e) {
             return ExecuteSqlResponse.error(e.getMessage());
         }
@@ -159,7 +163,7 @@ public class ExecuteSqlUsecase {
                 examDeadline = exam.getEndTime();
             }
 
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = TimeUtils.now();
             if (now.isAfter(examDeadline)) {
                 throw new BadRequestException("Exam time has expired. You can no longer execute SQL.");
             }

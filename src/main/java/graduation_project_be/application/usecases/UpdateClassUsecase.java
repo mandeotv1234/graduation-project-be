@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
@@ -14,7 +15,6 @@ import graduation_project_be.domain.models.enums.Role;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -78,7 +78,7 @@ public class UpdateClassUsecase {
                         .password(passwordEncoder.encode(DEFAULT_STUDENT_PASSWORD))
                         .role(Role.STUDENT)
                         .isActive(true)
-                        .createdAt(LocalDateTime.now())
+                        .createdAt(TimeUtils.now())
                         .build();
                 student = userRepository.save(student);
             }
@@ -86,7 +86,7 @@ public class UpdateClassUsecase {
             ClassEnrollment enrollment = ClassEnrollment.builder()
                     .classId(savedClass.getId())
                     .studentId(student.getId())
-                    .joinedAt(LocalDateTime.now())
+                    .joinedAt(TimeUtils.now())
                     .build();
             enrollments.add(enrollment);
         }

@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
@@ -64,7 +65,7 @@ public class ShareExamAsTemplateUsecase {
                 .title(exam.getTitle())
                 .description(exam.getDescription())
                 .specificationSnapshot(ExamTemplateSpecificationSnapshot.fromSpecification(specification))
-                .createdAt(LocalDateTime.now())
+                .createdAt(TimeUtils.now())
                 .isVisible(true)
                 .build();
 

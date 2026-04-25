@@ -52,4 +52,9 @@ public class ExamRepositoryImpl implements ExamRepository {
     public boolean existsBySpecificationId(Long specificationId) {
         return examJpaRepository.existsBySpecificationId(specificationId);
     }
+
+    @Override
+    public void deleteById(Long id) {
+        examJpaRepository.deleteById(id);
+    }
 }

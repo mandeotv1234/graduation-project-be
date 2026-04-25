@@ -1,5 +1,6 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import java.time.LocalDateTime;
 
 public record MetaResponseDto(
@@ -8,10 +9,10 @@ public record MetaResponseDto(
 ) {
 
     public static MetaResponseDto of() {
-        return new MetaResponseDto(LocalDateTime.now(), null);
+        return new MetaResponseDto(TimeUtils.now(), null);
     }
 
     public static MetaResponseDto of(PaginationMetaDto pagination) {
-        return new MetaResponseDto(LocalDateTime.now(), pagination);
+        return new MetaResponseDto(TimeUtils.now(), pagination);
     }
 }

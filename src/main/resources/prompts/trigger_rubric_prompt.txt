@@ -1,0 +1,56 @@
+Bạn là chuyên gia SQL Server, hãy tạo rubric chấm điểm cho câu hỏi TRIGGER.
+
+=== CÂU HỎI ===
+Nội dung: %s
+Đáp án (correctQuery): %s
+Tổng điểm câu hỏi: %.2f
+
+=== YÊU CẦU RUBRIC ===
+Tạo JSON rubric chấm điểm cho TRIGGER với cấu trúc sau:
+
+{
+  "grading_settings": {
+    "syntax_error_action": "FAIL_ALL",
+    "case_sensitive_names": false,
+    "positive_only_scoring": false
+  },
+  "triggers": [
+    {
+      "expected_name": "<tên trigger từ đáp án>",
+      "expected_table_name": "<bảng áp dụng trigger>",
+      "is_insert": <true/false>,
+      "is_update": <true/false>,
+      "is_delete": <true/false>,
+      "is_after": <true/false>
+    }
+  ],
+  "test_cases": [
+    {
+      "case_id": "TC_01",
+      "case_name": "<mô tả test case>",
+      "trigger_sql": "<SQL để kích hoạt trigger, e.g., INSERT INTO TableName VALUES (...)>",
+      "expected_result": "<SQL để kiểm tra kết quả, e.g., SELECT COUNT(*) FROM LogTable = 1>",
+      "setup_script": "<SQL chuẩn bị data: DROP TABLE IF EXISTS, CREATE TABLE, INSERT>",
+      "penalty_value": 0.5
+    }
+  ]
+}
+
+=== QUY TẮC TẠO TEST CASE ===
+1. Tạo 3-5 test case khác nhau cho trigger
+2. Mỗi test case phải có setup_script đầy đủ:
+   - DROP TABLE IF EXISTS cho các bảng phụ
+   - CREATE TABLE với cấu trúc đầy đủ
+   - INSERT dữ liệu test
+3. trigger_sql: Lệnh INSERT/UPDATE/DELETE để kích hoạt trigger
+4. expected_result: SQL SELECT để kiểm tra side effect của trigger
+5. penalty_value: Tổng cộng tất cả test case ≈ 80%% tổng điểm câu hỏi
+
+=== QUAN TRỌNG ===
+- KHÔNG generate metadata points (existence_points, table_points, event_points, timing_points)
+- Teacher sẽ tự config điểm metadata ở UI
+- Chỉ generate test cases với setup_script đầy đủ
+- Setup script phải bắt đầu bằng DROP TABLE IF EXISTS để tránh conflict
+- Database: Microsoft SQL Server (MSSQL / T-SQL)
+
+Trả lời ĐÚNG ĐỊNH DẠNG JSON (không markdown, không giải thích thêm):

@@ -1,0 +1,85 @@
+Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
+Hãy tạo JSON rubric chấm loại ROUTINE (FUNCTION/STORED_PROCEDURE) theo mô hình test case.
+
+=== CÂU HỎI ===
+%s
+
+=== SQL ĐÁP ÁN MẪU (ROUTINE) ===
+%s
+
+=== LOẠI ROUTINE ===
+%s
+
+=== TỔNG ĐIỂM ===
+%.2f điểm
+
+=== YÊU CẦU ĐẦU RA ===
+Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+{
+  "question_id": "Q_AUTO_01",
+  "total_points": %.2f,
+  "question_category": "ROUTINE",
+  "grading_payload": {
+    "grading_settings": {
+      "syntax_error_action": "FAIL_ALL",
+      "case_sensitive_names": false,
+      "positive_only_scoring": false
+    },
+    "routines": [
+      {
+        "expected_name": "<tên routine từ đáp án>",
+        "expected_type": "<FUNCTION|STORED_PROCEDURE>",
+        "expected_return_type": "<kiểu trả về nếu FUNCTION>",
+        "parameters": [
+          {
+            "name": "<tên tham số>",
+            "expected_type": "<kiểu dữ liệu>",
+            "expected_mode": "<IN|OUT|INOUT>"
+          }
+        ]
+      }
+    ],
+    "test_cases": [
+      {
+        "case_id": "TC_01",
+        "case_name": "Trường hợp thành công cơ bản",
+        "verification_type": "RETURN_VALUE",
+        "penalty_value": 0.5,
+        "description": "Kiểm tra routine trả về đúng với input hợp lệ",
+        "input_parameters": "@param1='value1', @param2=123",
+        "expected_result": "<giá trị kỳ vọng hoặc mô tả kết quả>",
+        "setup_script": "-- SQL để tạo dữ liệu test nếu cần\nINSERT INTO table VALUES (...)"
+      },
+      {
+        "case_id": "TC_02", 
+        "case_name": "Trường hợp biên/exception",
+        "verification_type": "RETURN_VALUE",
+        "penalty_value": 0.3,
+        "description": "Kiểm tra xử lý input biên hoặc null",
+        "input_parameters": "@param1=NULL, @param2=0",
+        "expected_result": "<giá trị kỳ vọng khi input biên>",
+        "setup_script": ""
+      }
+    ]
+  }
+}
+
+=== QUY TẮC BẮT BUỘC ===
+- Tạo ít nhất 2-3 test cases chất lượng cao.
+- verification_type phải là một trong: RETURN_VALUE, OUT_PARAMETER, RESULT_SET, SIDE_EFFECT, PRINT_OUTPUT
+- Phân tích SQL đáp án để xác định:
+  + Tên routine chính xác
+  + Kiểu trả về (nếu FUNCTION)
+  + Danh sách tham số với kiểu và mode (IN/OUT/INOUT)
+- setup_script PHẢI có "DROP TABLE IF EXISTS table_name;" trước mỗi CREATE TABLE để đảm bảo sạch sẽ, sau đó mới CREATE TABLE và INSERT. Ví dụ: "DROP TABLE IF EXISTS TuyenXe; CREATE TABLE TuyenXe (...); INSERT INTO TuyenXe ..."
+- input_parameters format: @param1='value', @param2=123 (cách nhau bởi dấu phẩy)
+- expected_result: mô tả kết quả mong đợi (có thể là giá trị trả về, output param, hoặc mô tả side effect)
+- case_name phải là tiếng Việt, dễ hiểu
+- Tổng penalty_value của các test case nên bao phủ total_points (nếu sinh viên fail hết thì 0 điểm)
+
+=== LOẠI VERIFICATION ===
+- RETURN_VALUE: Kiểm tra giá trị trả về của FUNCTION (dùng SELECT dbo.fn_name(...))
+- OUT_PARAMETER: Kiểm tra giá trị tham số OUTPUT sau khi chạy SP
+- RESULT_SET: Kiểm tra dữ liệu trả về từ SELECT trong SP
+- SIDE_EFFECT: Kiểm tra thay đổi dữ liệu (INSERT/UPDATE/DELETE) sau khi chạy SP
+- PRINT_OUTPUT: Kiểm tra output từ PRINT statement

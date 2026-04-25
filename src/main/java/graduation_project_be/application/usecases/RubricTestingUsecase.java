@@ -8,6 +8,8 @@ import graduation_project_be.application.usecases.request.GenerateGradingRubricR
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
+import graduation_project_be.application.usecases.request.TestGradeRoutineRequest;
+import graduation_project_be.application.usecases.request.TestGradeTriggerRequest;
 import graduation_project_be.application.usecases.request.TestGradeSelectRequest;
 import graduation_project_be.application.usecases.response.BuildCreateTablesResponse;
 import graduation_project_be.application.usecases.response.BuildInsertTablesResponse;
@@ -17,6 +19,7 @@ import graduation_project_be.application.usecases.response.RubricTestGradeRespon
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
+import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TableMetadata;
 import lombok.RequiredArgsConstructor;
 
@@ -947,6 +950,146 @@ public class RubricTestingUsecase {
         }
     }
 
+    public RubricTestGradeResponse testGradeRoutine(TestGradeRoutineRequest request) {
+        String correctQuery = request.correctQuery();
+        String studentQuery = request.studentQuery();
+        String gradingRubric = request.gradingRubric();
+        double totalPoints = request.totalPoints();
+
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String teacherSchema = "test_grade_teacher_" + suffix;
+        String studentSchema = "test_grade_student_" + suffix;
+
+        try {
+            String setupScript = extractSetupScriptFromRubric(gradingRubric);
+
+            examSchemaService.resetSchema(teacherSchema, false);
+            executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+
+            examSchemaService.resetSchema(studentSchema, false);
+            executeSetupThenRoutine(examSchemaService, studentSchema, setupScript, correctQuery);
+            try {
+                examSchemaService.executeSql(studentSchema, studentQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+            }
+
+            return executeRoutineRubricGrading(
+                    studentSchema, teacherSchema, gradingRubric, totalPoints);
+
+        } catch (Exception e) {
+            System.err.println("[DEBUG] testGradeRoutine error: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Lỗi chấm thử Routine: " + e.getMessage(), e);
+        } finally {
+            try {
+                examSchemaService.dropSchema(teacherSchema);
+            } catch (Exception ignore) {
+            }
+            try {
+                examSchemaService.dropSchema(studentSchema);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    public RubricTestGradeResponse testGradeTrigger(TestGradeTriggerRequest request) {
+        String correctQuery = request.correctQuery();
+        String studentQuery = request.studentQuery();
+        String gradingRubric = request.gradingRubric();
+        double totalPoints = request.totalPoints();
+
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String teacherSchema = "test_grade_teacher_" + suffix;
+        String studentSchema = "test_grade_student_" + suffix;
+
+        try {
+            String setupScript = extractSetupScriptFromRubric(gradingRubric);
+
+            examSchemaService.resetSchema(teacherSchema, false);
+            executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+
+            examSchemaService.resetSchema(studentSchema, false);
+            executeSetupThenRoutine(examSchemaService, studentSchema, setupScript, correctQuery);
+            try {
+                examSchemaService.executeSql(studentSchema, studentQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+            }
+
+            return executeTriggerRubricGrading(
+                    studentSchema, teacherSchema, gradingRubric, totalPoints);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi chấm thử Trigger: " + e.getMessage(), e);
+        } finally {
+            try {
+                examSchemaService.dropSchema(teacherSchema);
+            } catch (Exception ignore) {
+            }
+            try {
+                examSchemaService.dropSchema(studentSchema);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    private void executeSetupThenRoutine(ExamSchemaService service, String schemaName,
+            String setupScript, String routineSql) {
+        try {
+            if (setupScript != null && !setupScript.isBlank()) {
+                String normalizedSetup = setupScript.replaceAll("(?i)\\s*GO\\s*", "\n").trim();
+                if (!normalizedSetup.isEmpty()) {
+                    service.executeSql(schemaName, normalizedSetup);
+                }
+            }
+            if (routineSql != null && !routineSql.isBlank()) {
+                String normalizedRoutine = routineSql.replaceAll("(?i)\\s*GO\\s*", "\n").trim();
+                if (!normalizedRoutine.isEmpty()) {
+                    service.executeSql(schemaName, normalizedRoutine);
+                }
+            }
+        } catch (Exception e) {
+            throw e;
+        }
+    }
+
+    private String extractSetupScriptFromRubric(String gradingRubricJson) {
+        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode testCases = rubric.path("grading_payload").path("test_cases");
+            if (testCases.isArray() && testCases.size() > 0) {
+                StringBuilder setupBuilder = new StringBuilder();
+                for (JsonNode tc : testCases) {
+                    String setupScript = tc.path("setup_script").asText("");
+                    if (!setupScript.isBlank()) {
+                        setupScript = setupScript.replace("\\n", "\n").replace("\\t", "\t");
+                        setupBuilder.append(setupScript).append("\n");
+                    }
+                }
+                return setupBuilder.toString();
+            }
+        } catch (Exception e) {
+            return "";
+        }
+        return "";
+    }
+
     private void setAllConstraintsEnabled(String schemaName, boolean enabled) {
         String safeSchema = safeIdentifier(schemaName, "schemaName");
         List<Map<String, Object>> tables = examSchemaService.executeAdminSql(
@@ -1244,8 +1387,10 @@ public class RubricTestingUsecase {
     }
 
     /**
-     * Checks column-level (structural) violations ONCE and returns the total deduction.
-     * These rules apply to the query's column structure, which is the same across all test cases.
+     * Checks column-level (structural) violations ONCE and returns the total
+     * deduction.
+     * These rules apply to the query's column structure, which is the same across
+     * all test cases.
      */
     private BigDecimal calculateSelectStructuralDeduction(
             List<String> expectedColumns,
@@ -1291,12 +1436,14 @@ public class RubricTestingUsecase {
         }
 
         // No structural issues
-        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0 && columnOrderViolations == 0) {
+        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0
+                && columnOrderViolations == 0) {
             return BigDecimal.ZERO;
         }
 
         // Build structural rule checks:
-        // - COLUMN/NOT_EQUAL: column exists at same position but has different name (e.g., missing alias)
+        // - COLUMN/NOT_EQUAL: column exists at same position but has different name
+        // (e.g., missing alias)
         // - COLUMN/IS_MISSING: column is truly missing (student has fewer columns)
         // - COLUMN/IS_EXTRA: student has extra columns
         // - COLUMN_ORDER/OUT_OF_ORDER: columns are reordered
@@ -1327,7 +1474,8 @@ public class RubricTestingUsecase {
         boolean anyViolation = false;
 
         for (SelectRuleApplication app : structuralApps) {
-            if (!app.violationPresent()) continue;
+            if (!app.violationPresent())
+                continue;
             anyViolation = true;
             if (app.deduction().compareTo(BigDecimal.ZERO) > 0) {
                 totalStructuralDeduction += app.deduction().doubleValue();
@@ -1341,7 +1489,8 @@ public class RubricTestingUsecase {
             return BigDecimal.ZERO;
         }
 
-        // If violations exist but no rules matched (totalDeduction=0 with rule not found),
+        // If violations exist but no rules matched (totalDeduction=0 with rule not
+        // found),
         // still report the issue as info so teacher can see it
         if (totalStructuralDeduction <= 0) {
             String unmatchedMsg = "Ph\u00e1t hi\u1ec7n kh\u00e1c bi\u1ec7t c\u1ed9t k\u1ebft qu\u1ea3";
@@ -1368,7 +1517,8 @@ public class RubricTestingUsecase {
         details.add(Map.of(
                 "type", "warning",
                 "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + issueBuilder.toString().trim()
-                        + " \u2192 Tr\u1eeb " + rounded + " \u0111i\u1ec3m (\u00e1p d\u1ee5ng 1 l\u1ea7n cho to\u00e0n b\u00e0i)",
+                        + " \u2192 Tr\u1eeb " + rounded
+                        + " \u0111i\u1ec3m (\u00e1p d\u1ee5ng 1 l\u1ea7n cho to\u00e0n b\u00e0i)",
                 "points", -rounded.doubleValue()));
 
         return rounded;
@@ -1470,8 +1620,8 @@ public class RubricTestingUsecase {
                 applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
                         caseMaxPenalty, 0.0,
                         "sai thứ tự " + rowOrderViolations + " dòng"));
-                // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
-                // once in calculateSelectStructuralDeduction, not per test case.
+        // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
+        // once in calculateSelectStructuralDeduction, not per test case.
 
         double totalCaseDeduction = 0d;
         int matchedRuleCount = 0;
@@ -2631,5 +2781,243 @@ public class RubricTestingUsecase {
             throw new IllegalArgumentException("Invalid SQL identifier for " + fieldName);
         }
         return identifier;
+    }
+
+    private RubricTestGradeResponse executeRoutineRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            String gradingRubricJson,
+            double totalPoints) {
+
+        List<Map<String, Object>> details = new ArrayList<>();
+
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode gradingPayload = rubric.path("grading_payload");
+            JsonNode routines = gradingPayload.path("routines");
+            JsonNode testCases = gradingPayload.path("test_cases");
+            JsonNode gradingSettings = gradingPayload.path("grading_settings");
+
+            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
+            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
+
+            List<RoutineMetadata> expectedRoutines = examSchemaService.extractRoutineMetadata(teacherSchema);
+            List<RoutineMetadata> actualRoutines = examSchemaService.extractRoutineMetadata(studentSchema);
+
+            double earnedPoints = 0;
+            boolean allPassed = true;
+
+            if (expectedRoutines.isEmpty()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Không tìm thấy routine trong đáp án chuẩn",
+                        "points", 0));
+                return RubricTestGradeResponse.of(0, totalPoints, false, details);
+            }
+
+            double perRoutineWeight = totalPoints / expectedRoutines.size();
+
+            for (RoutineMetadata expected : expectedRoutines) {
+                RoutineMetadata actual = actualRoutines.stream()
+                        .filter(r -> caseSensitiveNames
+                                ? r.getRoutineName().equals(expected.getRoutineName())
+                                : r.getRoutineName().equalsIgnoreCase(expected.getRoutineName()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (actual == null) {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Thiếu %s %s", expected.getRoutineType(), expected.getRoutineName()),
+                            "points", 0));
+                    allPassed = false;
+                    continue;
+                }
+
+                double routineScore = perRoutineWeight;
+
+                if (!expected.getRoutineType().equalsIgnoreCase(actual.getRoutineType())) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", String.format("Sai loại routine %s (kỳ vọng: %s, thực tế: %s)",
+                                    expected.getRoutineName(), expected.getRoutineType(), actual.getRoutineType()),
+                            "points", (int) (-perRoutineWeight * 0.3)));
+                    routineScore *= 0.7;
+                    allPassed = false;
+                }
+
+                if (expected.getParameters().size() != actual.getParameters().size()) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", String.format("Sai số lượng tham số ở %s (kỳ vọng: %d, thực tế: %d)",
+                                    expected.getRoutineName(), expected.getParameters().size(),
+                                    actual.getParameters().size()),
+                            "points", (int) (-perRoutineWeight * 0.2)));
+                    routineScore *= 0.8;
+                    allPassed = false;
+                }
+
+                earnedPoints += routineScore;
+                details.add(Map.of(
+                        "type", "success",
+                        "message", String.format("%s %s: đúng", expected.getRoutineType(), expected.getRoutineName()),
+                        "points", (int) routineScore));
+            }
+
+            if (testCases.isArray() && testCases.size() > 0) {
+                double testCaseWeight = totalPoints * 0.3;
+                double perTestCase = testCaseWeight / testCases.size();
+
+                for (JsonNode tc : testCases) {
+                    String caseName = tc.path("case_name").asText("Unnamed");
+                    double penaltyValue = tc.path("penalty_value").asDouble(0.5);
+
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", String.format("Test case '%s': chưa thực thi (cần triển khai thêm)", caseName),
+                            "points", 0));
+                }
+            }
+
+            double finalScore = Math.min(earnedPoints, totalPoints);
+            if (positiveOnlyScoring && finalScore < 0) {
+                finalScore = 0;
+            }
+
+            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+
+        } catch (Exception e) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "Lỗi phân tích rubric: " + e.getMessage(),
+                    "points", 0));
+            return RubricTestGradeResponse.of(0, totalPoints, false, details);
+        }
+    }
+
+    private RubricTestGradeResponse executeTriggerRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            String gradingRubricJson,
+            double totalPoints) {
+
+        List<Map<String, Object>> details = new ArrayList<>();
+
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode gradingPayload = rubric.path("grading_payload");
+            JsonNode triggers = gradingPayload.path("triggers");
+            JsonNode testCases = gradingPayload.path("test_cases");
+            JsonNode gradingSettings = gradingPayload.path("grading_settings");
+
+            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
+            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
+
+            List<graduation_project_be.domain.models.TriggerMetadata> expectedTriggers = examSchemaService
+                    .extractTriggerMetadata(teacherSchema);
+            List<graduation_project_be.domain.models.TriggerMetadata> actualTriggers = examSchemaService
+                    .extractTriggerMetadata(studentSchema);
+
+            double earnedPoints = 0;
+            boolean allPassed = true;
+
+            if (expectedTriggers.isEmpty()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Không tìm thấy trigger trong đáp án chuẩn",
+                        "points", 0));
+                return RubricTestGradeResponse.of(0, totalPoints, false, details);
+            }
+
+            double perTriggerWeight = totalPoints / expectedTriggers.size();
+
+            for (graduation_project_be.domain.models.TriggerMetadata expected : expectedTriggers) {
+                graduation_project_be.domain.models.TriggerMetadata actual = actualTriggers.stream()
+                        .filter(t -> caseSensitiveNames
+                                ? t.getTriggerName().equals(expected.getTriggerName())
+                                : t.getTriggerName().equalsIgnoreCase(expected.getTriggerName()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (actual == null) {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Thiếu Trigger %s", expected.getTriggerName()),
+                            "points", 0));
+                    allPassed = false;
+                    continue;
+                }
+
+                double triggerScore = perTriggerWeight;
+
+                if (!expected.getTableName().equalsIgnoreCase(actual.getTableName())) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", String.format("Trigger %s gắn sai bảng (kỳ vọng: %s, thực tế: %s)",
+                                    expected.getTriggerName(), expected.getTableName(), actual.getTableName()),
+                            "points", (int) (-perTriggerWeight * 0.2)));
+                    triggerScore *= 0.8;
+                    allPassed = false;
+                }
+
+                if (expected.isInsert() != actual.isInsert() || expected.isUpdate() != actual.isUpdate()
+                        || expected.isDelete() != actual.isDelete()) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message",
+                            String.format("Trigger %s sai Event (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
+                            "points", (int) (-perTriggerWeight * 0.3)));
+                    triggerScore *= 0.7;
+                    allPassed = false;
+                }
+
+                if (expected.isAfter() != actual.isAfter()) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message",
+                            String.format("Trigger %s sai Timing (AFTER/INSTEAD OF)", expected.getTriggerName()),
+                            "points", (int) (-perTriggerWeight * 0.2)));
+                    triggerScore *= 0.8;
+                    allPassed = false;
+                }
+
+                earnedPoints += triggerScore;
+                details.add(Map.of(
+                        "type", "success",
+                        "message", String.format("Trigger %s: đúng", expected.getTriggerName()),
+                        "points", (int) triggerScore));
+            }
+
+            if (testCases.isArray() && testCases.size() > 0) {
+                double testCaseWeight = totalPoints * 0.3;
+                double perTestCase = testCaseWeight / testCases.size();
+
+                for (JsonNode tc : testCases) {
+                    String caseName = tc.path("case_name").asText("Unnamed");
+                    double penaltyValue = tc.path("penalty_value").asDouble(0.5);
+
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", String.format("Test case '%s': chưa thực thi (cần triển khai thêm)", caseName),
+                            "points", 0));
+                }
+            }
+
+            double finalScore = Math.min(earnedPoints, totalPoints);
+            if (positiveOnlyScoring && finalScore < 0) {
+                finalScore = 0;
+            }
+
+            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+
+        } catch (Exception e) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "Lỗi phân tích rubric: " + e.getMessage(),
+                    "points", 0));
+            return RubricTestGradeResponse.of(0, totalPoints, false, details);
+        }
     }
 }

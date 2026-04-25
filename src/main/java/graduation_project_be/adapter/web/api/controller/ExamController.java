@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+
 @RestController
 @RequestMapping("/api/exams")
 @RequiredArgsConstructor
@@ -216,7 +217,8 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId,
                         @PathVariable("questionId") @Positive Long questionId,
                         @RequestBody @Valid UpdateExamQuestionRequestDto requestDto) {
-                ExamQuestionResponse response = updateExamQuestionUsecase.execute(requestDto.toRequest(examId, questionId));
+                ExamQuestionResponse response = updateExamQuestionUsecase
+                                .execute(requestDto.toRequest(examId, questionId));
                 return ResponseEntity.ok(
                                 ResponseDto.of(
                                                 ExamQuestionResponseDto.fromResponse(response),
@@ -248,7 +250,6 @@ public class ExamController {
                                                 "OK",
                                                 "Question deleted successfully"));
         }
-
 
         @PostMapping("/{examId}/specification")
         @PreAuthorize("hasRole('TEACHER')")
@@ -410,7 +411,6 @@ public class ExamController {
                                         ResponseDto.of(dtos, "OK", "Questions retrieved successfully"));
                 }
         }
-
 
         // ===== STUDENT ENDPOINTS =====
 
@@ -677,6 +677,38 @@ public class ExamController {
                 }
         }
 
+        @PostMapping("/{examId}/test-grade-routine")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> testGradeRoutine(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid TestGradeRoutineRequestDto requestDto) {
+                try {
+                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeRoutine(
+                                        requestDto.toRequest(examId, objectMapper));
+                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Routine test grading completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "GRADING_ERROR",
+                                                        "Lỗi chấm thử Routine: " + e.getMessage()));
+                }
+        }
+
+        @PostMapping("/{examId}/test-grade-trigger")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> testGradeTrigger(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid TestGradeTriggerRequestDto requestDto) {
+                try {
+                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeTrigger(
+                                        requestDto.toRequest(examId, objectMapper));
+                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Trigger test grading completed"));
+                } catch (Exception e) {
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                        .body(ResponseDto.of(null, "GRADING_ERROR",
+                                                        "Lỗi chấm thử Trigger: " + e.getMessage()));
+                }
+        }
+
         @PostMapping("/{examId}/run-select-testcase")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> runSelectTestcase(
@@ -798,4 +830,3 @@ public class ExamController {
                 return ResponseEntity.ok(ResponseDto.of(null, "SUCCESS", "Đã cưỡng chế nộp bài thành công"));
         }
 }
-

@@ -35,8 +35,7 @@ import java.util.regex.Pattern;
 public class GeminiServiceImpl implements GeminiService {
     private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([^\"]+)\"");
 
-    private static final String GEMINI_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
+    private static final String GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?is)create\\s+table\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s*\\(");
     private static final Pattern CONSTRAINT_PREFIX_PATTERN = Pattern.compile(
@@ -46,7 +45,7 @@ public class GeminiServiceImpl implements GeminiService {
     private static final double CT_MISSING_COLUMN_PENALTY = 0.5d;
     private static final double CT_TYPE_MISMATCH_PENALTY = 0.25d;
     private static final double CT_MISSING_PK_FK_PENALTY = 0.5d;
-    private static final double[] CT_TABLE_PENALTY_STEPS = new double[] {0.25d, 0.2d};
+    private static final double[] CT_TABLE_PENALTY_STEPS = new double[] { 0.25d, 0.2d };
 
     private final String apiKey;
     private volatile HttpClient httpClient;
@@ -63,7 +62,13 @@ public class GeminiServiceImpl implements GeminiService {
 
     @Value("classpath:prompts/select_query_rubric_prompt.txt")
     private Resource selectQueryRubricPromptResource;
-    
+
+    @Value("classpath:prompts/routine_rubric_prompt.txt")
+    private Resource routineRubricPromptResource;
+
+    @Value("classpath:prompts/trigger_rubric_prompt.txt")
+    private Resource triggerRubricPromptResource;
+
     @Value("classpath:prompts/specification_schema_prompt.txt")
     private Resource specificationSchemaPromptResource;
 
@@ -74,6 +79,8 @@ public class GeminiServiceImpl implements GeminiService {
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
     private String selectQueryRubricPromptTemplate;
+    private String routineRubricPromptTemplate;
+    private String triggerRubricPromptTemplate;
     private String specificationSchemaPromptTemplate;
     private String createTableRulesPromptTemplate;
 
@@ -86,12 +93,22 @@ public class GeminiServiceImpl implements GeminiService {
     @PostConstruct
     public void init() {
         try {
-            this.systemPromptTemplate = StreamUtils.copyToString(systemPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.createTableRubricPromptTemplate = StreamUtils.copyToString(createTableRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.insertDataRubricPromptTemplate = StreamUtils.copyToString(insertDataRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.selectQueryRubricPromptTemplate = StreamUtils.copyToString(selectQueryRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.specificationSchemaPromptTemplate = StreamUtils.copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.createTableRulesPromptTemplate = StreamUtils.copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.systemPromptTemplate = StreamUtils.copyToString(systemPromptResource.getInputStream(),
+                    StandardCharsets.UTF_8);
+            this.createTableRubricPromptTemplate = StreamUtils
+                    .copyToString(createTableRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.insertDataRubricPromptTemplate = StreamUtils
+                    .copyToString(insertDataRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.selectQueryRubricPromptTemplate = StreamUtils
+                    .copyToString(selectQueryRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.routineRubricPromptTemplate = StreamUtils.copyToString(routineRubricPromptResource.getInputStream(),
+                    StandardCharsets.UTF_8);
+            this.triggerRubricPromptTemplate = StreamUtils.copyToString(triggerRubricPromptResource.getInputStream(),
+                    StandardCharsets.UTF_8);
+            this.specificationSchemaPromptTemplate = StreamUtils
+                    .copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.createTableRulesPromptTemplate = StreamUtils
+                    .copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -224,7 +241,8 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         HttpClient client = getOrCreateHttpClient();
-        if (client == null) return null;
+        if (client == null)
+            return null;
 
         String basePrompt;
         if ("CREATE_TABLE_RULES".equalsIgnoreCase(questionType)) {
@@ -233,6 +251,10 @@ public class GeminiServiceImpl implements GeminiService {
             basePrompt = buildInsertRubricPrompt(correctQuery, questionContent, totalPoints);
         } else if ("SELECT_QUERY".equalsIgnoreCase(questionType)) {
             basePrompt = buildSelectRubricPrompt(correctQuery, questionContent, totalPoints, priorQuestionContext);
+        } else if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
+            basePrompt = buildRoutineRubricPrompt(correctQuery, questionContent, totalPoints, questionType);
+        } else if ("TRIGGER".equalsIgnoreCase(questionType)) {
+            basePrompt = buildTriggerRubricPrompt(correctQuery, questionContent, totalPoints);
         } else {
             basePrompt = buildCreateTableRubricPrompt(correctQuery, questionContent, totalPoints);
         }
@@ -288,6 +310,25 @@ public class GeminiServiceImpl implements GeminiService {
                 return normalizedRubric;
             }
 
+            if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
+                String rubricJson = callGeminiForJson(client, basePrompt);
+                if (rubricJson == null) {
+                    return null;
+                }
+                logGeneratedRubric(questionType, rubricJson);
+                return rubricJson;
+            }
+
+            if ("TRIGGER".equalsIgnoreCase(questionType)) {
+                String rubricJson = callGeminiForJson(client, basePrompt);
+                if (rubricJson == null) {
+                    return null;
+                }
+                String wrappedRubric = wrapTriggerRubric(rubricJson, totalPoints);
+                logGeneratedRubric(questionType, wrappedRubric);
+                return wrappedRubric;
+            }
+
             if (!"SELECT_QUERY".equalsIgnoreCase(questionType)) {
                 String rubricJson = callGeminiForJson(client, basePrompt);
                 logGeneratedRubric(questionType, rubricJson);
@@ -316,8 +357,8 @@ public class GeminiServiceImpl implements GeminiService {
                 }
 
                 prompt = basePrompt + "\n\n=== FEEDBACK BẮT BUỘC SỬA ===\n"
-                    + String.join("\n", issues)
-                    + "\nHãy trả về JSON mới hoàn chỉnh, chỉ JSON, không giải thích.";
+                        + String.join("\n", issues)
+                        + "\nHãy trả về JSON mới hoàn chỉnh, chỉ JSON, không giải thích.";
             }
 
             return latestJson;
@@ -331,11 +372,11 @@ public class GeminiServiceImpl implements GeminiService {
     private String callGeminiForJson(HttpClient client, String prompt) throws Exception {
         String requestBody = buildRequestBody(prompt, 4096);
         HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(GEMINI_URL + apiKey))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-            .timeout(Duration.ofSeconds(60))
-            .build();
+                .uri(URI.create(GEMINI_URL + apiKey))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .timeout(Duration.ofSeconds(60))
+                .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
@@ -345,10 +386,10 @@ public class GeminiServiceImpl implements GeminiService {
 
         JsonNode root = objectMapper.readTree(response.body());
         String text = root
-            .path("candidates").get(0)
-            .path("content")
-            .path("parts").get(0)
-            .path("text").asText();
+                .path("candidates").get(0)
+                .path("content")
+                .path("parts").get(0)
+                .path("text").asText();
 
         text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
         objectMapper.readTree(text);
@@ -405,7 +446,8 @@ public class GeminiServiceImpl implements GeminiService {
         JsonNode rubricTables = rubricNode.path("grading_payload").path("tables");
 
         if (expectedTables.isEmpty()) {
-            issues.add("- Could not parse CREATE TABLE structure from the sample answer SQL. Return every table and every column from the SQL.");
+            issues.add(
+                    "- Could not parse CREATE TABLE structure from the sample answer SQL. Return every table and every column from the SQL.");
             return issues;
         }
 
@@ -591,7 +633,8 @@ public class GeminiServiceImpl implements GeminiService {
                 int bestIndex = 0;
                 for (int i = 1; i < tableCount; i++) {
                     if (remainders[i] > remainders[bestIndex] + 1e-9
-                            || (approximatelyEqual(remainders[i], remainders[bestIndex]) && weights[i] > weights[bestIndex])) {
+                            || (approximatelyEqual(remainders[i], remainders[bestIndex])
+                                    && weights[i] > weights[bestIndex])) {
                         bestIndex = i;
                     }
                 }
@@ -674,7 +717,8 @@ public class GeminiServiceImpl implements GeminiService {
 
                 if (expectedReferencesColumns != null
                         && !expectedReferencesColumns.isEmpty()
-                        && !sameIdentifierList(rubricConstraint.path("references_columns"), expectedReferencesColumns)) {
+                        && !sameIdentifierList(rubricConstraint.path("references_columns"),
+                                expectedReferencesColumns)) {
                     continue;
                 }
             }
@@ -1122,19 +1166,56 @@ public class GeminiServiceImpl implements GeminiService {
                 totalPoints);
     }
 
-        private String buildSelectRubricPrompt(
-          String correctQuery,
-          String questionContent,
-          double totalPoints,
-          String priorQuestionContext) {
+    private String buildSelectRubricPrompt(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String priorQuestionContext) {
         return String.format(selectQueryRubricPromptTemplate,
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
                 priorQuestionContext != null && !priorQuestionContext.isBlank()
-                  ? priorQuestionContext
-                  : "Không có ngữ cảnh bổ sung từ câu trước",
+                        ? priorQuestionContext
+                        : "Không có ngữ cảnh bổ sung từ câu trước",
                 totalPoints,
                 totalPoints);
+    }
+
+    private String buildRoutineRubricPrompt(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String routineType) {
+        return String.format(routineRubricPromptTemplate,
+                questionContent != null ? questionContent : "Không có nội dung câu hỏi",
+                correctQuery,
+                routineType,
+                totalPoints,
+                totalPoints);
+    }
+
+    private String buildTriggerRubricPrompt(
+            String correctQuery,
+            String questionContent,
+            double totalPoints) {
+        return String.format(triggerRubricPromptTemplate,
+                questionContent != null ? questionContent : "Không có nội dung câu hỏi",
+                correctQuery,
+                totalPoints);
+    }
+
+    private String wrapTriggerRubric(String rubricJson, double totalPoints) throws Exception {
+        JsonNode parsed = objectMapper.readTree(rubricJson);
+        if (!(parsed instanceof ObjectNode root)) {
+            return rubricJson;
+        }
+
+        ObjectNode wrapper = objectMapper.createObjectNode();
+        wrapper.put("question_category", "TRIGGER");
+        wrapper.put("total_points", totalPoints);
+        wrapper.set("grading_payload", root);
+
+        return objectMapper.writeValueAsString(wrapper);
     }
 
     @Override
@@ -1222,8 +1303,7 @@ public class GeminiServiceImpl implements GeminiService {
             String retryHint = retryDelay == null ? "" : " Vui lòng thử lại sau " + retryDelay + ".";
             return new BadRequestException(
                     "Hệ thống AI đang vượt quota (Gemini 429)." + retryHint
-                            + " Nếu lỗi lặp lại, hãy kiểm tra billing/quota của Gemini."
-            );
+                            + " Nếu lỗi lặp lại, hãy kiểm tra billing/quota của Gemini.");
         }
 
         if (providerMessage != null && !providerMessage.isBlank()) {
@@ -1231,8 +1311,7 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         return new BadRequestException(
-                "Không thể sinh schema từ AI (Gemini HTTP " + statusCode + "). Vui lòng thử lại sau."
-        );
+                "Không thể sinh schema từ AI (Gemini HTTP " + statusCode + "). Vui lòng thử lại sau.");
     }
 
     private String extractGeminiProviderMessage(String responseBody) {

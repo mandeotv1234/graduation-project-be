@@ -128,8 +128,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 String fk = rs.getString("fk_name");
                                 String table = rs.getString("table_name");
                                 try (Statement drop = conn.createStatement()) {
-                                    drop.execute("ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
-                                            + "]");
+                                    drop.execute(
+                                            "ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
+                                                    + "]");
                                 }
                             }
                         }
@@ -137,7 +138,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         // 3. Drop all tables
                         try (Statement stmt = conn.createStatement();
                                 ResultSet rs = stmt.executeQuery(
-                                        "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName + "')")) {
+                                        "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName
+                                                + "')")) {
                             while (rs.next()) {
                                 String table = rs.getString("name");
                                 try (Statement drop = conn.createStatement()) {
@@ -559,12 +561,13 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String firstToken = upper.split(" ")[0];
         List<String> allowedStarters = List.of(
                 "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE",
-                "EXEC", "EXECUTE", "DECLARE", "WITH", "SET", "MERGE", "BEGIN", "IF", "WHILE"
-        );
-        
+                "EXEC", "EXECUTE", "DECLARE", "WITH", "SET", "MERGE", "BEGIN", "IF", "WHILE");
+
         boolean isValidStart = allowedStarters.stream().anyMatch(firstToken::equals);
         if (!isValidStart) {
-            throw new IllegalArgumentException("Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '" + firstToken + "', hệ thống không tìm thấy lệnh này).");
+            throw new IllegalArgumentException(
+                    "Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '"
+                            + firstToken + "', hệ thống không tìm thấy lệnh này).");
         }
 
         String[] blockedPatterns = {

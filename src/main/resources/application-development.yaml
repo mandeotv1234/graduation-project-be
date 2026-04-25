@@ -32,6 +32,7 @@ spring:
   application:
     gemini:
       api-key: ${GEMINI_API_KEY}
+      model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     security:
       jwt:
         secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY}

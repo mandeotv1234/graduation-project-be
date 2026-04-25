@@ -7,6 +7,7 @@ public record GenerateGradingRubricRequest(
         String questionContent,
         double totalPoints,
         String questionType,
+        String schemaContext,
         List<ContextQuery> contextQueries) {
 
     public record ContextQuery(

@@ -311,11 +311,14 @@ public class UsecasesConfiguration {
     RubricTestingUsecase rubricTestingUsecase(
             GeminiService geminiService,
             ExamSchemaService examSchemaService,
+            ExamRepository examRepository,
+            ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             GradeExamUsecase gradeExamUsecase,
             ObjectMapper objectMapper) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
+                examRepository, examSpecificationRepository,
                 getExamQuestionsUsecase, gradeExamUsecase, objectMapper);
     }
 
@@ -537,9 +540,12 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
-            GeminiService geminiService) {
+            GeminiService geminiService,
+            graduation_project_be.infrastructure.services.RubricToTestCaseTransformer rubricTransformer,
+            graduation_project_be.infrastructure.services.ExpectedValueDeriver expectedValueDeriver) {
         return new CreateExamQuestionsUsecase(classRepository, examQuestionRepository, examRepository,
-                examSpecificationRepository, currentUserService, geminiService);
+                examSpecificationRepository, currentUserService, geminiService,
+                rubricTransformer, expectedValueDeriver);
     }
 
         @Bean

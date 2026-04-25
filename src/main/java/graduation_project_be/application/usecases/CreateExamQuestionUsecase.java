@@ -115,6 +115,12 @@ public class CreateExamQuestionUsecase {
                                 sb.append("\n");
                             });
                         }
+                        // Append raw DDL so AI can read FOREIGN KEY constraints
+                        // (SpecAttribute does not carry FK metadata).
+                        if (spec.getDdlScript() != null && !spec.getDdlScript().isBlank()) {
+                            sb.append("\n--- RAW DDL (use this to identify FOREIGN KEY constraints) ---\n");
+                            sb.append(spec.getDdlScript()).append("\n");
+                        }
                         return sb.toString();
                     })
                     .orElse("No schema specification available");

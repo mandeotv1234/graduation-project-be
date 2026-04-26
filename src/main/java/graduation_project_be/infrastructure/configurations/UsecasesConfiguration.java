@@ -797,8 +797,9 @@ public class UsecasesConfiguration {
     RemindStudentUsecase remindStudentUsecase(
             ExamRepository examRepository,
             CurrentUserService currentUserService,
-            ViolationNotificationService violationNotificationService) {
-        return new RemindStudentUsecase(examRepository, currentUserService, violationNotificationService);
+            ViolationNotificationService violationNotificationService,
+            ClassRepository classRepository) {
+        return new RemindStudentUsecase(examRepository, currentUserService, violationNotificationService, classRepository);
     }
 
     @Bean
@@ -808,8 +809,9 @@ public class UsecasesConfiguration {
             SubmitExamUsecase submitExamUsecase,
             ViolationNotificationService violationNotificationService,
             ExamSessionService examSessionService,
-            ExamDraftRepository examDraftRepository) {
-        return new ForceSubmitExamUsecase(examRepository, currentUserService, submitExamUsecase, violationNotificationService, examSessionService, examDraftRepository);
+            ExamDraftRepository examDraftRepository,
+            ClassRepository classRepository) {
+        return new ForceSubmitExamUsecase(examRepository, currentUserService, submitExamUsecase, violationNotificationService, examSessionService, examDraftRepository, classRepository);
     }
 
 }

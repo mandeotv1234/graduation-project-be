@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -28,6 +29,7 @@ public class ForceSubmitExamUsecase {
     private final ViolationNotificationService violationNotificationService;
     private final ExamSessionService examSessionService;
     private final ExamDraftRepository examDraftRepository;
+    private final ClassRepository classRepository;
 
     public void execute(Long examId, Long studentId) {
         User teacher = currentUserService.getCurrentUser();
@@ -35,7 +37,10 @@ public class ForceSubmitExamUsecase {
         Exam exam = examRepository.findById(examId)
                 .orElseThrow(() -> new IllegalArgumentException("Exam not found"));
 
-        if (!exam.getCreatorId().equals(teacher.getId())) {
+        boolean hasAccess = teacher.getId().equals(exam.getCreatorId()) ||
+                classRepository.existsTeacherAccess(exam.getClassId(), teacher.getId());
+
+        if (!hasAccess) {
             throw new UnauthorizedException("You are not authorized to monitor this exam");
         }
 

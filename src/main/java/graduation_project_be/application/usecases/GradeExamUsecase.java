@@ -1322,7 +1322,7 @@ public class GradeExamUsecase {
     }
 
     private boolean valuesEqual(String actual, String expected) {
-        if (java.util.Objects.equals(actual, expected)) {
+        if (Objects.equals(actual, expected)) {
             return true;
         }
         if (actual == null || expected == null) {
@@ -2833,8 +2833,8 @@ public class GradeExamUsecase {
     }
 
     private boolean gradeTriggerAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question, ExamSubmission submission) {
-        java.util.List<TriggerMetadata> expectedTriggers = examSchemaService.extractTriggerMetadata(teacherSchemaName);
-        java.util.List<TriggerMetadata> actualTriggers = examSchemaService.extractTriggerMetadata(schemaName);
+        List<TriggerMetadata> expectedTriggers = examSchemaService.extractTriggerMetadata(teacherSchemaName);
+        List<TriggerMetadata> actualTriggers = examSchemaService.extractTriggerMetadata(schemaName);
 
         if (expectedTriggers == null || expectedTriggers.isEmpty()) {
             return gradeByTestCases(schemaName, teacherSchemaName, question, submission);

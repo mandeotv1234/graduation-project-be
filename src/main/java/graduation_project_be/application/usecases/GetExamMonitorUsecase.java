@@ -16,11 +16,14 @@ import graduation_project_be.application.usecases.response.GetExamMonitorRespons
 import graduation_project_be.application.usecases.response.GetExamMonitorStudentResponse;
 import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamDraft;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamViolation;
 import graduation_project_be.domain.models.User;
+import graduation_project_be.shared.utils.TimeUtils;
 import lombok.RequiredArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -83,9 +86,9 @@ public class GetExamMonitorUsecase {
         List<ExamResult> results = examResultRepository.findByExamId(exam.getId());
         Map<Long, List<ExamResult>> resultsByStudent = results.stream()
                 .collect(Collectors.groupingBy(ExamResult::getStudentId));
-        
+
         Set<Long> draftedStudentIds = examDraftRepository.findByExamId(exam.getId()).stream()
-                .map(graduation_project_be.domain.models.ExamDraft::getStudentId)
+                .map(ExamDraft::getStudentId)
                 .collect(Collectors.toSet());
 
         boolean autoSubmitEnabled = exam.getSettings() != null
@@ -94,34 +97,66 @@ public class GetExamMonitorUsecase {
         List<GetExamMonitorStudentResponse> studentResponses = students.stream()
                 .sorted(Comparator.comparing(User::getFullName, Comparator.nullsLast(String::compareToIgnoreCase)))
                 .map(student -> {
-                    List<ExamViolation> violations = violationsByStudent.getOrDefault(student.getId(), List.of());
-                    int violationCount = violations.size();
-                    ExamViolation latestViolation = violations.isEmpty() ? null : violations.get(0);
-                    boolean autoSubmitted = autoSubmitEnabled && violationCount >= (exam.getSettings().getMaxViolations() != null ? exam.getSettings().getMaxViolations() : DEFAULT_MAX_VIOLATIONS);
-                    String status = autoSubmitted ? "AUTO_SUBMITTED"
-                            : violationCount > 0 ? "VIOLATING" : "NORMAL";
-
-                    // Determine examStatus
-                    boolean isActive = activeStudentIds.contains(student.getId()) || draftedStudentIds.contains(student.getId());
-                    List<ExamResult> studentResults = resultsByStudent.getOrDefault(student.getId(), List.of());
                     int maxAttempts = exam.getMaxAttempts() != null ? exam.getMaxAttempts() : 1;
                     boolean isUnlimitedAttempts = exam.getMaxAttempts() == null;
-                    
-                    String examStatus = "NOT_STARTED";
-                    if (isActive && (isUnlimitedAttempts || studentResults.size() < maxAttempts)) {
-                        examStatus = "IN_PROGRESS";
-                    } else if (!isUnlimitedAttempts && studentResults.size() >= maxAttempts) {
-                        examStatus = "SUBMITTED";
-                        if (autoSubmitted) {
-                            examStatus = "AUTO_SUBMITTED";
+                    List<ExamResult> studentResults = resultsByStudent.getOrDefault(student.getId(), List.of());
+
+                    boolean hasActiveFlags = activeStudentIds.contains(student.getId()) || draftedStudentIds.contains(student.getId());
+                    boolean canTakeMore = isUnlimitedAttempts || studentResults.size() < maxAttempts;
+
+                    boolean isCurrentlyTaking = hasActiveFlags && canTakeMore;
+
+                    int targetAttempt = studentResults.size() + (isCurrentlyTaking ? 1 : 0);
+
+                    List<ExamViolation> violations = violationsByStudent.getOrDefault(student.getId(), List.of());
+                    int violationCount = 0;
+                    ExamViolation latestViolation = null;
+
+                    if (targetAttempt > 0 && !violations.isEmpty()) {
+                        List<ExamViolation> latestAttemptViolations = violations.stream()
+                                .filter(v -> v.getAttemptNumber() == targetAttempt)
+                                .sorted(Comparator.comparing(ExamViolation::getCreatedAt).reversed())
+                                .toList();
+
+                        violationCount = latestAttemptViolations.size();
+                        if (violationCount > 0) {
+                            latestViolation = latestAttemptViolations.get(0);
                         }
-                    } else if (isUnlimitedAttempts && !studentResults.isEmpty() && !isActive) {
-                        examStatus = "SUBMITTED"; 
+                    }
+
+                    boolean autoSubmitted = autoSubmitEnabled && violationCount >= (exam.getSettings().getMaxViolations() != null ? exam.getSettings().getMaxViolations() : DEFAULT_MAX_VIOLATIONS);
+                    String status = autoSubmitted ? "AUTO_SUBMITTED" : (violationCount > 0 ? "VIOLATING" : "NORMAL");
+
+                    LocalDateTime now = TimeUtils.now();
+                    boolean isGlobalExamOver = exam.getEndTime() != null && now.isAfter(exam.getEndTime());
+                    boolean isStudentTimeUp = false;
+
+                    LocalDateTime studentStartTime = null;
+                    if (activeStudentIds.contains(student.getId())) {
+                        studentStartTime = examSessionService.getExamStartTime(exam.getId(), student.getId()).orElse(null);
+                    }
+
+                    Integer durationInMinutes = exam.getSettings() != null ? exam.getDurationMinutes() : null;
+
+                    if (durationInMinutes != null) {
+                        if (studentStartTime != null) {
+                            LocalDateTime studentEndTime = studentStartTime.plusMinutes(durationInMinutes);
+                            if (now.isAfter(studentEndTime)) {
+                                isStudentTimeUp = true;
+                            }
+                        } else if (isCurrentlyTaking && draftedStudentIds.contains(student.getId())) {
+                            isStudentTimeUp = true;
+                        }
+                    }
+
+                    boolean isTimeOver = isGlobalExamOver || isStudentTimeUp;
+
+                    String examStatus = "NOT_STARTED";
+
+                    if (isCurrentlyTaking) {
+                        examStatus = isTimeOver ? (autoSubmitted ? "AUTO_SUBMITTED" : "SUBMITTED") : "IN_PROGRESS";
                     } else if (!studentResults.isEmpty()) {
-                        // User has submissions but hasn't reached max attempts, 
-                        // could be NOT_STARTED on their next attempt or they are done.
-                        // Let's call it SUBMITTED since they aren't actively taking it right now.
-                        examStatus = "SUBMITTED";
+                        examStatus = autoSubmitted ? "AUTO_SUBMITTED" : "SUBMITTED";
                     }
 
                     return new GetExamMonitorStudentResponse(

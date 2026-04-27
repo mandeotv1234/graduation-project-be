@@ -135,6 +135,10 @@ public class UpdateExamUsecase {
                         patch.getShowResultAfterSubmit() != null
                                 ? patch.getShowResultAfterSubmit()
                                 : current.getShowResultAfterSubmit())
+                .isLoadDdl(
+                        patch.getIsLoadDdl() != null
+                                ? patch.getIsLoadDdl()
+                                : current.getIsLoadDdl())
                 .build();
     }
 }

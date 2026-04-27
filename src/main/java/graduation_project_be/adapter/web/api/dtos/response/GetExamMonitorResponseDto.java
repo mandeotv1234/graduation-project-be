@@ -15,6 +15,8 @@ public record GetExamMonitorResponseDto(
         Boolean isPublished,
         int totalStudents,
         int totalViolators,
+        int totalHighRisk,
+        int totalFilteredStudents,
         List<GetExamMonitorStudentResponseDto> students) {
 
     public static GetExamMonitorResponseDto fromResponse(GetExamMonitorResponse response) {
@@ -32,6 +34,8 @@ public record GetExamMonitorResponseDto(
                 response.isPublished(),
                 response.totalStudents(),
                 response.totalViolators(),
+                response.totalHighRisk(),
+                response.totalFilteredStudents(),
                 studentDtos);
     }
 }

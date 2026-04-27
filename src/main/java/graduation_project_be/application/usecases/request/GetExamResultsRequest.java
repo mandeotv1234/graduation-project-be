@@ -1,10 +1,11 @@
 package graduation_project_be.application.usecases.request;
 
-public record GetExamMonitorRequest(
+public record GetExamResultsRequest(
         Long examId,
         int page,
         int size,
         String keyword,
-        String riskFilter,
-        String examStatusFilter) {
+        String scoreFilter,
+        String encounterMode,
+        String sortOrder) {
 }

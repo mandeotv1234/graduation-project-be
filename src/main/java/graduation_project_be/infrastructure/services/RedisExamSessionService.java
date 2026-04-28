@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -124,7 +125,7 @@ public class RedisExamSessionService implements ExamSessionService {
         Set<String> sessionKeys = redisTemplate.keys(sessionPattern);
         Set<String> startTimeKeys = redisTemplate.keys(startTimePattern);
         
-        Set<Long> activeIds = new java.util.HashSet<>();
+        Set<Long> activeIds = new HashSet<>();
         
         if (sessionKeys != null) {
             activeIds.addAll(extractStudentIds(sessionKeys));

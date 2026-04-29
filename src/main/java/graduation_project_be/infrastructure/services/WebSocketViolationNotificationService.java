@@ -22,7 +22,25 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
                         String studentName, String violationType,
                         String description, long violationCount,
                         boolean autoSubmitted) {
-                // 1. Send real-time notification via WebSocket
+                // 1. Persist notification to DB FIRST so /unread-count API is consistent
+                TeacherNotification notification = TeacherNotification.builder()
+                                .teacherId(teacherId)
+                                .examId(examId)
+                                .studentId(studentId)
+                                .studentName(studentName)
+                                .violationType(violationType)
+                                .description(description)
+                                .violationCount(violationCount)
+                                .autoSubmitted(autoSubmitted)
+                                .isRead(false)
+                                .createdAt(TimeUtils.now())
+                                .build();
+
+                notificationBufferService.buffer(notification);
+                log.info("Violation notification persisted: exam={}, student={}", examId, studentId);
+
+                // 2. THEN send real-time notification via WebSocket
+                //    DB already has the record, so FE's reconcileUnreadCount() will see it
                 String destination = String.format("/topic/exam/%d/violations", examId);
 
                 Map<String, Object> payload = Map.of(
@@ -41,23 +59,6 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
 
                 log.info("WebSocket violation notification sent: exam={}, student={} ({}), type={}, count={}, autoSubmitted={}",
                                 examId, studentId, studentName, violationType, violationCount, autoSubmitted);
-
-                // 2. Buffer notification in Redis for persistence
-                TeacherNotification notification = TeacherNotification.builder()
-                                .teacherId(teacherId)
-                                .examId(examId)
-                                .studentId(studentId)
-                                .studentName(studentName)
-                                .violationType(violationType)
-                                .description(description)
-                                .violationCount(violationCount)
-                                .autoSubmitted(autoSubmitted)
-                                .isRead(false)
-                                .createdAt(TimeUtils.now())
-                                .build();
-
-                notificationBufferService.buffer(notification);
-                log.info("Violation notification buffered for persistence: exam={}, student={}", examId, studentId);
         }
 
         @Override

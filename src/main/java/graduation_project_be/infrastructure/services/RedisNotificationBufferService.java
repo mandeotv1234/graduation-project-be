@@ -39,8 +39,8 @@ public class RedisNotificationBufferService implements NotificationBufferService
         Long currentSize = redisTemplate.opsForList().size(BUFFER_KEY);
         log.info("Notification buffered in Redis. Buffer size: {}/{}", currentSize, flushThreshold);
 
-        if (currentSize != null && currentSize >= flushThreshold) {
-            log.info("Buffer threshold reached ({}). Flushing to database...", flushThreshold);
+        if (currentSize != null && currentSize > 0) {
+            log.info("Flushing notification buffer to database to keep API reads consistent.");
             flush();
         }
     }

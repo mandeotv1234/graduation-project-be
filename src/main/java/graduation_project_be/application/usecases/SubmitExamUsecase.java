@@ -13,6 +13,9 @@ import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSubmission;
+import graduation_project_be.domain.models.TeacherClass;
+import graduation_project_be.domain.models.TeacherNotification;
+import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import graduation_project_be.domain.models.enums.SubmissionStatus;
 import lombok.RequiredArgsConstructor;
@@ -26,9 +29,11 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -51,10 +56,14 @@ public class SubmitExamUsecase {
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamResultRepository examResultRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
+    private final ClassRepository classRepository;
+    private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
     private final ExamSessionService examSessionService;
     private final GradingQueueService gradingQueueService;
-    private final ExamDraftRepository examDraftRepository;    private final SimpMessagingTemplate messagingTemplate;
+    private final ExamDraftRepository examDraftRepository;
+    private final TeacherNotificationRepository teacherNotificationRepository;
+    private final SimpMessagingTemplate messagingTemplate;
     @Transactional
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -187,12 +196,21 @@ public class SubmitExamUsecase {
                 .build();
         examResultRepository.save(examResult);
 
-        // 9. Enqueue grading job to Redis List AFTER DB commit
+        User student = userRepository.findById(studentId).orElse(null);
+        String studentName = student != null ? student.getFullName() : "Unknown";
+        List<Long> teacherIds = resolveTeacherIds(exam);
+
+        // 9a. Save notification to DB WITHIN the same transaction
+        //     so that /unread-count API always sees it after commit.
+        saveSubmissionNotifications(exam, studentId, studentName, teacherIds);
+
+        // 9b. Enqueue grading job and send WebSocket AFTER DB commit
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 gradingQueueService.enqueue(examId, studentId, attemptNumber);
                 log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
+                sendSubmissionWebSocket(exam, studentId, studentName, teacherIds);
             }
         });
 
@@ -229,6 +247,76 @@ public class SubmitExamUsecase {
                 examId, studentId, submittedAt, GradingStatus.PENDING,
                 BigDecimal.ZERO, maxScore, 0, totalQuestions,
                 details, null);
+    }
+
+    /**
+     * Save submission notifications to DB — runs inside the main @Transactional
+     * so the records commit atomically with the exam submission.
+     */
+    private void saveSubmissionNotifications(Exam exam, Long studentId, String studentName, List<Long> teacherIds) {
+        if (teacherIds == null || teacherIds.isEmpty()) {
+            return;
+        }
+
+        String description = "Đã nộp bài. Đang chấm điểm.";
+        List<TeacherNotification> notifications = teacherIds.stream()
+                .distinct()
+                .map(teacherId -> TeacherNotification.builder()
+                        .teacherId(teacherId)
+                        .examId(exam.getId())
+                        .studentId(studentId)
+                        .studentName(studentName)
+                        .violationType("NỘP BÀI")
+                        .description(description)
+                        .violationCount(0)
+                        .autoSubmitted(false)
+                        .isRead(false)
+                        .createdAt(TimeUtils.now())
+                        .build())
+                .toList();
+
+        teacherNotificationRepository.saveAll(notifications);
+        log.info("Saved {} submission notifications to DB for exam={}, student={}",
+                notifications.size(), exam.getId(), studentId);
+    }
+
+    /**
+     * Send WebSocket notification to teachers — runs in afterCommit()
+     * so teachers only see it after DB has committed.
+     */
+    private void sendSubmissionWebSocket(Exam exam, Long studentId, String studentName, List<Long> teacherIds) {
+        if (teacherIds == null || teacherIds.isEmpty()) {
+            return;
+        }
+
+        messagingTemplate.convertAndSend(
+                "/topic/teacher/grading-results",
+                Map.of(
+                        "examId", exam.getId(),
+                        "examName", exam.getTitle() != null ? exam.getTitle() : ("Exam " + exam.getId()),
+                        "teacherIds", teacherIds,
+                        "studentId", studentId,
+                        "studentName", studentName,
+                        "totalScore", BigDecimal.ZERO,
+                        "maxScore", BigDecimal.ZERO,
+                        "status", "SUBMITTED",
+                        "message", "Đã nộp bài. Đang chấm điểm."));
+    }
+
+    private List<Long> resolveTeacherIds(Exam exam) {
+        List<Long> teacherIds = new ArrayList<>(classRepository.findTeachersByClassId(exam.getClassId())
+                .stream()
+                .map(TeacherClass::getTeacherId)
+                .toList());
+
+        if (exam.getCreatorId() != null) {
+            teacherIds.add(exam.getCreatorId());
+        }
+
+        return teacherIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     // ========== Backend time validation ==========

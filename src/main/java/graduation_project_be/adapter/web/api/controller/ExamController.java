@@ -192,14 +192,20 @@ public class ExamController {
                         @RequestParam(name = "size", defaultValue = "10") int size,
                         @RequestParam(name = "keyword", defaultValue = "") String keyword,
                         @RequestParam(name = "riskFilter", defaultValue = "all") String riskFilter,
-                        @RequestParam(name = "examStatusFilter", defaultValue = "IN_PROGRESS") String examStatusFilter) {
+                        @RequestParam(name = "examStatusFilter", defaultValue = "IN_PROGRESS") String examStatusFilter,
+                        @RequestParam(name = "highRiskThreshold", defaultValue = "3") int highRiskThreshold,
+                        @RequestParam(name = "sortColumn", defaultValue = "violationCount") String sortColumn,
+                        @RequestParam(name = "sortDirection", defaultValue = "desc") String sortDirection) {
                 GetExamMonitorRequestDto requestDto = new GetExamMonitorRequestDto(
                                 examId,
                                 page,
                                 size,
                                 keyword,
                                 riskFilter,
-                                examStatusFilter);
+                                examStatusFilter,
+                                highRiskThreshold,
+                                sortColumn,
+                                sortDirection);
                 GetExamMonitorResponse response = getExamMonitorUsecase.execute(requestDto.toRequest());
                 return ResponseEntity.ok(
                                 ResponseDto.of(

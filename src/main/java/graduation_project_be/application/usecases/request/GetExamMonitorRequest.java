@@ -6,5 +6,8 @@ public record GetExamMonitorRequest(
         int size,
         String keyword,
         String riskFilter,
-        String examStatusFilter) {
+        String examStatusFilter,
+        int highRiskThreshold,
+        String sortColumn,
+        String sortDirection) {
 }

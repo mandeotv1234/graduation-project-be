@@ -178,11 +178,12 @@ public class GetExamMonitorUsecase {
         int totalViolators = (int) studentResponses.stream()
                 .filter(item -> item.violationCount() > 0)
                 .count();
+        int highRiskThreshold = Math.max(1, request.highRiskThreshold());
         int totalHighRisk = (int) studentResponses.stream()
-                .filter(item -> item.violationCount() >= 3)
+                .filter(item -> item.violationCount() >= highRiskThreshold)
                 .count();
         List<GetExamMonitorStudentResponse> filteredStudents = applyFilters(studentResponses, request).stream()
-                .sorted(this::compareMonitorStudents)
+                .sorted((left, right) -> compareMonitorStudents(left, right, request))
                 .toList();
         int safePage = Math.max(1, request.page());
         int safeSize = Math.max(1, request.size());
@@ -210,14 +211,15 @@ public class GetExamMonitorUsecase {
         String keyword = request.keyword() == null ? "" : request.keyword().trim().toLowerCase();
         String riskFilter = request.riskFilter() == null ? "all" : request.riskFilter();
         String examStatusFilter = request.examStatusFilter() == null ? "ALL" : request.examStatusFilter();
+        int highRiskThreshold = Math.max(1, request.highRiskThreshold());
 
         return students.stream()
                 .filter(student -> keyword.isBlank()
                         || student.studentName().toLowerCase().contains(keyword))
                 .filter(student -> switch (riskFilter) {
                     case "none" -> student.violationCount() == 0;
-                    case "low" -> student.violationCount() > 0 && student.violationCount() < 3;
-                    case "high" -> student.violationCount() >= 3;
+                    case "low" -> student.violationCount() > 0 && student.violationCount() < highRiskThreshold;
+                    case "high" -> student.violationCount() >= highRiskThreshold;
                     default -> true;
                 })
                 .filter(student -> "ALL".equalsIgnoreCase(examStatusFilter)
@@ -227,7 +229,22 @@ public class GetExamMonitorUsecase {
 
     private int compareMonitorStudents(
             GetExamMonitorStudentResponse left,
-            GetExamMonitorStudentResponse right) {
+            GetExamMonitorStudentResponse right,
+            GetExamMonitorRequest request) {
+        String sortColumn = request.sortColumn() == null ? "violationCount" : request.sortColumn();
+        String sortDirection = request.sortDirection() == null ? "desc" : request.sortDirection();
+
+        boolean directionApplied = "latestViolationAt".equalsIgnoreCase(sortColumn);
+        int result = switch (sortColumn) {
+            case "latestViolationAt" -> compareLatestViolationAt(left.latestViolationAt(), right.latestViolationAt(), sortDirection);
+            case "violationCount" -> Integer.compare(left.violationCount(), right.violationCount());
+            default -> 0;
+        };
+
+        if (result != 0) {
+            return directionApplied || "asc".equalsIgnoreCase(sortDirection) ? result : -result;
+        }
+
         if (left.autoSubmitted() != right.autoSubmitted()) {
             return left.autoSubmitted() ? 1 : -1;
         }
@@ -236,5 +253,23 @@ public class GetExamMonitorUsecase {
         }
         return Comparator.nullsLast(String::compareToIgnoreCase)
                 .compare(left.studentName(), right.studentName());
+    }
+
+    private int compareLatestViolationAt(
+            LocalDateTime left,
+            LocalDateTime right,
+            String sortDirection) {
+        if (left == null && right == null) {
+            return 0;
+        }
+        if (left == null) {
+            return 1;
+        }
+        if (right == null) {
+            return -1;
+        }
+
+        int result = left.compareTo(right);
+        return "asc".equalsIgnoreCase(sortDirection) ? result : -result;
     }
 }

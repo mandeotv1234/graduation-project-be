@@ -8,8 +8,20 @@ public record GetExamMonitorRequestDto(
         int size,
         String keyword,
         String riskFilter,
-        String examStatusFilter) {
+        String examStatusFilter,
+        int highRiskThreshold,
+        String sortColumn,
+        String sortDirection) {
     public GetExamMonitorRequest toRequest() {
-        return new GetExamMonitorRequest(examId, page, size, keyword, riskFilter, examStatusFilter);
+        return new GetExamMonitorRequest(
+                examId,
+                page,
+                size,
+                keyword,
+                riskFilter,
+                examStatusFilter,
+                highRiskThreshold,
+                sortColumn,
+                sortDirection);
     }
 }

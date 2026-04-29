@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
@@ -11,13 +12,18 @@ import graduation_project_be.application.usecases.request.CreateExamQuestionsReq
 import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.QuestionType;
+import graduation_project_be.domain.models.TestCase;
+import graduation_project_be.infrastructure.services.ExpectedValueDeriver;
+import graduation_project_be.infrastructure.services.RubricToTestCaseTransformer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -29,6 +35,9 @@ public class CreateExamQuestionsUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
     private final GeminiService geminiService;
+    // T09: services for the rubric+test-case pipeline (SP/Function/Trigger only)
+    private final RubricToTestCaseTransformer rubricTransformer;
+    private final ExpectedValueDeriver expectedValueDeriver;
 
     @Transactional
     public CreateExamQuestionsResponse execute(CreateExamQuestionsRequest request) {
@@ -45,7 +54,15 @@ public class CreateExamQuestionsUsecase {
         // Build schema context from specification (if exists) for better AI prompts
         String schemaContext = buildSchemaContext(request.examId());
 
+        // Resolve spec once for the test-case pipeline below.
+        ExamSpecification specification = exam.getSpecificationId() != null
+                ? examSpecificationRepository.findById(exam.getSpecificationId()).orElse(null)
+                : null;
+
         List<ExamQuestion> questionsToSave = new ArrayList<>();
+        // Track the original input items aligned with questionsToSave so we can run
+        // the post-save rubric pipeline only for SP/FN/Trigger types.
+        List<CreateExamQuestionsRequest.QuestionItem> alignedItems = new ArrayList<>();
 
         for (CreateExamQuestionsRequest.QuestionItem item : request.questions()) {
             QuestionType questionType;
@@ -93,10 +110,108 @@ public class CreateExamQuestionsUsecase {
                     .build();
 
             questionsToSave.add(question);
+            alignedItems.add(item);
         }
 
         List<ExamQuestion> saved = examQuestionRepository.saveAll(questionsToSave);
+
+        // T09: post-save pipeline for SP/Function/Trigger.
+        // Order:
+        //   1. Generate rubric JSON via Gemini if not provided.
+        //   2. Parse → in-memory TestCase list (no expectedValue yet).
+        //   3. Sandbox-derive expectedValue from teacher's correctQuery.
+        //   4. Persist TestCase rows.
+        // Failure at ANY step throws BadRequestException — the @Transactional
+        // ensures the saved ExamQuestion rows roll back so the caller can fix the
+        // issue (bad correctQuery / unworkable test case) and retry without
+        // half-saved state.
+        for (int i = 0; i < saved.size(); i++) {
+            ExamQuestion q = saved.get(i);
+            if (!isRoutineOrTriggerType(q.getQuestionType())) {
+                continue;
+            }
+
+            String rubricJson = q.getGradingRubric();
+            if (rubricJson == null || rubricJson.isBlank()) {
+                rubricJson = generateRubricViaAi(q);
+                // Persist back so the rubric is visible from /generate-rubric callers
+                // and from regrade flows.
+                if (rubricJson != null) {
+                    q.setGradingRubric(rubricJson);
+                    examQuestionRepository.save(q);
+                }
+            }
+
+            if (rubricJson == null || rubricJson.isBlank()) {
+                throw new BadRequestException(String.format(
+                        "Q%d (%s): không sinh được rubric tự động. Hãy thử lại hoặc cung cấp rubric thủ công.",
+                        q.getOrderIndex(), q.getQuestionType()));
+            }
+
+            runRubricPipeline(q, rubricJson, specification);
+        }
+
         return CreateExamQuestionsResponse.fromModels(saved);
+    }
+
+    private boolean isRoutineOrTriggerType(QuestionType type) {
+        return type == QuestionType.STORED_PROCEDURE
+                || type == QuestionType.FUNCTION
+                || type == QuestionType.TRIGGER;
+    }
+
+    private String generateRubricViaAi(ExamQuestion q) {
+        try {
+            log.info("Calling Gemini.generateGradingRubric for Q{} ({})", q.getId(), q.getQuestionType());
+            return geminiService.generateGradingRubric(
+                    q.getCorrectQuery(),
+                    q.getContent(),
+                    q.getPoints() != null ? q.getPoints().doubleValue() : 0d,
+                    q.getQuestionType().name(),
+                    null);
+        } catch (Exception e) {
+            log.error("Gemini.generateGradingRubric failed for Q{}: {}", q.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Runs Parse → Derive → Persist for one question. Throws BadRequestException
+     * if the rubric is unparseable, if correctQuery cannot be applied, or if any
+     * test case cannot be derived. The transaction will roll back the saved
+     * ExamQuestion rows so the user gets a clean retry.
+     */
+    private void runRubricPipeline(ExamQuestion q, String rubricJson, ExamSpecification specification) {
+        List<TestCase> testCases = rubricTransformer.parse(q.getId(), rubricJson);
+        if (testCases.isEmpty()) {
+            throw new BadRequestException(String.format(
+                    "Q%d (%s): rubric không có test_cases hợp lệ. Vui lòng kiểm tra lại đề.",
+                    q.getOrderIndex(), q.getQuestionType()));
+        }
+
+        String ddlScript = specification != null ? specification.getDdlScript() : null;
+        ExpectedValueDeriver.DerivationResult result;
+        try {
+            result = expectedValueDeriver.derive(q.getId(), ddlScript, q.getCorrectQuery(), testCases);
+        } catch (ExpectedValueDeriver.DerivationException e) {
+            throw new BadRequestException(String.format(
+                    "Q%d (%s): %s", q.getOrderIndex(), q.getQuestionType(), e.getMessage()));
+        }
+
+        if (!result.isFullySuccessful()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("Q%d (%s): có test case không derive được expected:\n",
+                    q.getOrderIndex(), q.getQuestionType()));
+            for (Map.Entry<Integer, String> entry : result.testCaseErrors().entrySet()) {
+                sb.append("  - TC").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+            }
+            sb.append("Hãy điều chỉnh setup_script / invocation_query trong rubric và thử lại.");
+            throw new BadRequestException(sb.toString());
+        }
+
+        rubricTransformer.persist(q.getId(), testCases);
+        log.info("Q{} ({}) persisted {} test cases via T09 pipeline",
+                q.getId(), q.getQuestionType(), testCases.size());
     }
 
     private String buildSchemaContext(Long examId) {

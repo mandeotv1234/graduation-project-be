@@ -3,6 +3,7 @@ package graduation_project_be.infrastructure.services;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -441,6 +442,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     stmt.execute("EXECUTE AS USER = '" + userName + "'");
                 }
 
+                List<String> printMessages = new ArrayList<>();
                 try {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
@@ -511,6 +513,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             // Advance to next result (only call ONCE per iteration!)
                             isResultSet = stmt.getMoreResults();
                         }
+
+                        // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
+                        // the Statement is closed by try-with-resources.
+                        printMessages.addAll(collectPrintMessages(stmt));
                     }
 
                     String statusMessage = null;
@@ -526,6 +532,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             .resultSet(results)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
+                            .printMessages(printMessages)
                             .build();
                 } finally {
                     // Always revert context back to original user
@@ -538,6 +545,34 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
             throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Walks the SQLWarning chain attached to a Statement and collects messages.
+     * MSSQL JDBC driver delivers each T-SQL {@code PRINT} statement (and
+     * {@code RAISERROR ... WITH SEVERITY 0..10}) as one SQLWarning entry.
+     * Higher severity is delivered as a SQLException, which we don't capture here.
+     *
+     * <p>Used by gradeByTestCases when verification_type = PRINT_OUTPUT.
+     * Returns an empty list if there are no warnings or if reading them throws
+     * (we never want to break grading because of warning-extraction bugs).
+     */
+    private List<String> collectPrintMessages(Statement stmt) {
+        List<String> messages = new ArrayList<>();
+        try {
+            SQLWarning w = stmt.getWarnings();
+            while (w != null) {
+                String msg = w.getMessage();
+                if (msg != null && !msg.isBlank()) {
+                    messages.add(msg);
+                }
+                w = w.getNextWarning();
+            }
+            stmt.clearWarnings();
+        } catch (Exception e) {
+            log.warn("Failed to collect PRINT messages from statement: {}", e.getMessage());
+        }
+        return messages;
     }
 
     /**
@@ -648,6 +683,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         isResultSet = stmt.getMoreResults();
                     }
 
+                    // Capture PRINT output before the Statement closes.
+                    List<String> printMessages = collectPrintMessages(stmt);
+
                     String statusMessage = null;
                     if (results.isEmpty()) {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
@@ -661,6 +699,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             .resultSet(results)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
+                            .printMessages(printMessages)
                             .build();
                 }
             });

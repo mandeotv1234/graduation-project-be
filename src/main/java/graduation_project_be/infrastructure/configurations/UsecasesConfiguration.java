@@ -537,9 +537,12 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
-            GeminiService geminiService) {
+            GeminiService geminiService,
+            graduation_project_be.infrastructure.services.RubricToTestCaseTransformer rubricTransformer,
+            graduation_project_be.infrastructure.services.ExpectedValueDeriver expectedValueDeriver) {
         return new CreateExamQuestionsUsecase(classRepository, examQuestionRepository, examRepository,
-                examSpecificationRepository, currentUserService, geminiService);
+                examSpecificationRepository, currentUserService, geminiService,
+                rubricTransformer, expectedValueDeriver);
     }
 
         @Bean

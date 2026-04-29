@@ -5,8 +5,13 @@ Nội dung: %s
 Đáp án (correctQuery): %s
 Tổng điểm câu hỏi: %.2f
 
+=== NGUYÊN TẮC QUAN TRỌNG (BẮT BUỘC ĐỌC) ===
+KHÔNG đoán giá trị `expected_result`. Engine sẽ tự chạy đáp án mẫu trong sandbox
+và lấy kết quả thực tế làm `expected_value`. Bạn CHỈ sinh "kịch bản":
+setup_script + invocation_query (DML kích hoạt trigger) + validation_query.
+
 === YÊU CẦU RUBRIC ===
-Tạo JSON rubric chấm điểm cho TRIGGER với cấu trúc sau:
+Tạo JSON rubric với cấu trúc sau:
 
 {
   "grading_settings": {
@@ -27,30 +32,51 @@ Tạo JSON rubric chấm điểm cho TRIGGER với cấu trúc sau:
   "test_cases": [
     {
       "case_id": "TC_01",
-      "case_name": "<mô tả test case>",
-      "trigger_sql": "<SQL để kích hoạt trigger, e.g., INSERT INTO TableName VALUES (...)>",
-      "expected_result": "<SQL để kiểm tra kết quả, e.g., SELECT COUNT(*) FROM LogTable = 1>",
-      "setup_script": "<SQL chuẩn bị data: DROP TABLE IF EXISTS, CREATE TABLE, INSERT>",
-      "penalty_value": 0.5
+      "case_name": "<mô tả ngắn tiếng Việt>",
+      "verification_type": "SIDE_EFFECT",
+      "match_type": "EXACT",
+      "score_weight": 0.5,
+      "setup_script": "-- BẮT BUỘC dùng [{SCHEMA}] khi tham chiếu bảng. Engine sẽ thay placeholder.\nINSERT INTO [{SCHEMA}].ParentTable VALUES (...)",
+      "invocation_query": "INSERT INTO [{SCHEMA}].TableName VALUES (...)",
+      "validation_query": "SELECT COUNT(*) FROM [{SCHEMA}].LogTable WHERE ..."
     }
   ]
 }
 
 === QUY TẮC TẠO TEST CASE ===
-1. Tạo 3-5 test case khác nhau cho trigger
+1. Tạo 3-5 test case khác nhau cover các kịch bản:
+   - Single-row INSERT/UPDATE/DELETE (trigger fire bình thường)
+   - Multi-row (lỗi phổ biến: học sinh giả định inserted/deleted có 1 row)
+   - Không có row nào thoả điều kiện (trigger không nên làm gì)
+   - Nếu trigger có WHERE/IF: cả case thoả và không thoả
 2. Mỗi test case phải có setup_script đầy đủ:
-   - DROP TABLE IF EXISTS cho các bảng phụ
-   - CREATE TABLE với cấu trúc đầy đủ
+   - DROP TABLE IF EXISTS cho các bảng phụ trợ
+   - CREATE TABLE với cấu trúc đầy đủ (nếu chưa có trong DDL spec)
    - INSERT dữ liệu test
-3. trigger_sql: Lệnh INSERT/UPDATE/DELETE để kích hoạt trigger
-4. expected_result: SQL SELECT để kiểm tra side effect của trigger
-5. penalty_value: Tổng cộng tất cả test case ≈ 80%% tổng điểm câu hỏi
+   - Engine sẽ bao test case trong transaction và rollback, nên không cần dọn cuối.
+3. invocation_query: BẮT BUỘC. Lệnh INSERT/UPDATE/DELETE để fire trigger. Đây là
+   "trigger_sql" của thiết kế cũ, đổi tên cho thống nhất với SP/Function.
+4. validation_query: BẮT BUỘC. SQL SELECT đọc kết quả side effect (audit table,
+   cột status đã thay đổi, COUNT, ...). Engine sẽ chạy với trigger mẫu để derive
+   expected_value, sau đó chạy với trigger của học sinh để lấy actual và compare.
+5. KHÔNG sinh "expected_result"/"expected_value" — engine derive.
+6. score_weight là số 0..1. Tổng các weight được engine chuẩn hoá về 1.0.
+7. verification_type cho Trigger gần như luôn là SIDE_EFFECT (kiểm tra dữ liệu
+   sau khi DML). Hiếm hoi mới là PRINT_OUTPUT (trigger có PRINT).
+
+=== QUY TẮC SCHEMA BẮT BUỘC ===
+- BẮT BUỘC dùng placeholder [{SCHEMA}] khi tham chiếu bảng/trigger trong
+  setup_script / invocation_query / validation_query. KHÔNG dùng "dbo." prefix
+  hay tên trần. Engine substitute {SCHEMA} thành schema thực tế trước khi chạy.
+- Ví dụ ĐÚNG: "INSERT INTO [{SCHEMA}].Orders VALUES (...)"
+- Ví dụ SAI:  "INSERT INTO Orders VALUES (...)"   ← không rõ schema
+- Ví dụ SAI:  "INSERT INTO dbo.Orders VALUES (...)" ← engine sẽ tìm sai chỗ
 
 === QUAN TRỌNG ===
-- KHÔNG generate metadata points (existence_points, table_points, event_points, timing_points)
-- Teacher sẽ tự config điểm metadata ở UI
-- Chỉ generate test cases với setup_script đầy đủ
-- Setup script phải bắt đầu bằng DROP TABLE IF EXISTS để tránh conflict
-- Database: Microsoft SQL Server (MSSQL / T-SQL)
+- KHÔNG generate metadata points (existence_points, table_points, event_points,
+  timing_points) — engine tự tính dựa trên triggers metadata + score_weight.
+- Setup_script phải bắt đầu bằng DROP TABLE IF EXISTS [{SCHEMA}].<tên> nếu cần
+  tạo bảng phụ trợ (audit log, ...). Bảng đã có trong DDL spec thì không cần.
+- Database: Microsoft SQL Server (MSSQL / T-SQL).
 
 Trả lời ĐÚNG ĐỊNH DẠNG JSON (không markdown, không giải thích thêm):

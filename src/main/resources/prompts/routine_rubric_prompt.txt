@@ -13,6 +13,12 @@ Hãy tạo JSON rubric chấm loại ROUTINE (FUNCTION/STORED_PROCEDURE) theo m�
 === TỔNG ĐIỂM ===
 %.2f điểm
 
+=== NGUYÊN TẮC QUAN TRỌNG (BẮT BUỘC ĐỌC) ===
+KHÔNG đoán giá trị `expected_result`. Engine sẽ tự chạy đáp án mẫu trong sandbox
+và lấy kết quả thực tế làm `expected_value` chính thức. Bạn CHỈ sinh "kịch bản":
+setup_script + invocation_query + validation_query + verification_type. Mọi field
+mô tả "kết quả kỳ vọng" sẽ bị bỏ qua nếu bạn vẫn đặt vào.
+
 === YÊU CẦU ĐẦU RA ===
 Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 {
@@ -44,42 +50,78 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
         "case_id": "TC_01",
         "case_name": "Trường hợp thành công cơ bản",
         "verification_type": "RETURN_VALUE",
-        "penalty_value": 0.5,
+        "match_type": "EXACT",
+        "score_weight": 0.5,
         "description": "Kiểm tra routine trả về đúng với input hợp lệ",
-        "input_parameters": "@param1='value1', @param2=123",
-        "expected_result": "<giá trị kỳ vọng hoặc mô tả kết quả>",
-        "setup_script": "-- SQL để tạo dữ liệu test nếu cần\nINSERT INTO table VALUES (...)"
+        "setup_script": "-- SQL chuẩn bị data — chạy TRƯỚC invocation. Có thể rỗng nếu không cần.\nINSERT INTO [{SCHEMA}].TableName VALUES (...);",
+        "input_parameters": {"param1": "value1", "param2": 123},
+        "invocation_query": "-- BẮT BUỘC với SP/Trigger SIDE_EFFECT. Function thì để rỗng.\nEXEC [{SCHEMA}].<routine_name> @param1='value1', @param2=123",
+        "validation_query": "-- BẮT BUỘC. Engine tự chạy với routine mẫu để derive expected.\nSELECT [{SCHEMA}].<fn_name>(...)"
       },
       {
-        "case_id": "TC_02", 
-        "case_name": "Trường hợp biên/exception",
+        "case_id": "TC_02",
+        "case_name": "Trường hợp biên/null",
         "verification_type": "RETURN_VALUE",
-        "penalty_value": 0.3,
+        "match_type": "EXACT",
+        "score_weight": 0.3,
         "description": "Kiểm tra xử lý input biên hoặc null",
-        "input_parameters": "@param1=NULL, @param2=0",
-        "expected_result": "<giá trị kỳ vọng khi input biên>",
-        "setup_script": ""
+        "setup_script": "",
+        "input_parameters": {"param1": null, "param2": 0},
+        "invocation_query": "",
+        "validation_query": "SELECT [{SCHEMA}].<fn_name>(NULL, 0)"
       }
     ]
   }
 }
 
 === QUY TẮC BẮT BUỘC ===
-- Tạo ít nhất 2-3 test cases chất lượng cao.
-- verification_type phải là một trong: RETURN_VALUE, OUT_PARAMETER, RESULT_SET, SIDE_EFFECT, PRINT_OUTPUT
+- Tạo ít nhất 2-3 test cases chất lượng cao, mỗi cái cover một kịch bản khác nhau
+  (success path / boundary / NULL / exception ...).
+- verification_type phải là một trong: RETURN_VALUE, OUT_PARAMETER, RESULT_SET,
+  SIDE_EFFECT, PRINT_OUTPUT (xem mô tả dưới).
+- match_type: "EXACT" (mặc định, so khớp chuỗi sau trim) hoặc "CONTAINS" (actual
+  chứa expected — dùng khi format string có thể khác nhau, ví dụ PRINT_OUTPUT).
+- score_weight là số 0..1. Engine sẽ chuẩn hoá tổng các weight về 1.0 rồi nhân
+  ngược với total_points của câu. Càng quan trọng càng cao.
 - Phân tích SQL đáp án để xác định:
   + Tên routine chính xác
   + Kiểu trả về (nếu FUNCTION)
   + Danh sách tham số với kiểu và mode (IN/OUT/INOUT)
-- setup_script PHẢI có "DROP TABLE IF EXISTS table_name;" trước mỗi CREATE TABLE để đảm bảo sạch sẽ, sau đó mới CREATE TABLE và INSERT. Ví dụ: "DROP TABLE IF EXISTS TuyenXe; CREATE TABLE TuyenXe (...); INSERT INTO TuyenXe ..."
-- input_parameters format: @param1='value', @param2=123 (cách nhau bởi dấu phẩy)
-- expected_result: mô tả kết quả mong đợi (có thể là giá trị trả về, output param, hoặc mô tả side effect)
-- case_name phải là tiếng Việt, dễ hiểu
-- Tổng penalty_value của các test case nên bao phủ total_points (nếu sinh viên fail hết thì 0 điểm)
+- setup_script: nếu cần dữ liệu test, BẮT BUỘC bắt đầu bằng "DROP TABLE IF EXISTS
+  <tên>;" trước mỗi CREATE TABLE để chạy lại được nhiều lần. Setup này được engine
+  bao trong transaction và rollback sau mỗi test case nên không cần dọn cuối.
+- input_parameters: JSON object dạng {"tên_param": <value>, ...}. Engine dùng để
+  thay vào template invocation/validation. KHÔNG dùng định dạng "@p1='x',@p2=1".
+- invocation_query: chỉ bắt buộc cho SP với verification_type = SIDE_EFFECT,
+  PRINT_OUTPUT, OUT_PARAMETER. Function (RETURN_VALUE/RESULT_SET) bỏ trống vì
+  validation_query đã gọi trực tiếp.
+- validation_query: BẮT BUỘC. Là SQL "đọc kết quả" — engine sẽ chạy nó vào schema
+  của giáo viên để lấy expected, và vào schema của học sinh để lấy actual.
+- KHÔNG bao giờ sinh trường "expected_result" / "expected_value". Engine derive,
+  không tin trường này nếu bạn đặt nó.
+- case_name phải là tiếng Việt, ngắn gọn, hiển thị cho học sinh khi báo lỗi.
+
+=== QUY TẮC SCHEMA QUAN TRỌNG ===
+- BẮT BUỘC dùng placeholder {SCHEMA} trong setup_script / invocation_query /
+  validation_query khi tham chiếu đến bảng hoặc routine. KHÔNG dùng "dbo." prefix.
+  Engine sẽ thay {SCHEMA} bằng tên schema thực tế (của giáo viên khi derive
+  expected, của học sinh khi chấm) trước khi chạy.
+- Ví dụ ĐÚNG:   "SELECT [{SCHEMA}].fn_TongTien(1)"
+- Ví dụ SAI:    "SELECT dbo.fn_TongTien(1)"  ← engine sẽ tìm dbo.fn_TongTien không thấy
+- Ví dụ SAI:    "SELECT fn_TongTien(1)"      ← không có schema, ambiguous
 
 === LOẠI VERIFICATION ===
-- RETURN_VALUE: Kiểm tra giá trị trả về của FUNCTION (dùng SELECT dbo.fn_name(...))
-- OUT_PARAMETER: Kiểm tra giá trị tham số OUTPUT sau khi chạy SP
-- RESULT_SET: Kiểm tra dữ liệu trả về từ SELECT trong SP
-- SIDE_EFFECT: Kiểm tra thay đổi dữ liệu (INSERT/UPDATE/DELETE) sau khi chạy SP
-- PRINT_OUTPUT: Kiểm tra output từ PRINT statement
+- RETURN_VALUE: Function scalar. validation_query = "SELECT [{SCHEMA}].<fn>(args)".
+- RESULT_SET: Function trả TABLE hoặc SP có SELECT. validation_query trả nhiều
+  cột/dòng. Compare row-by-row. Ví dụ: "SELECT * FROM [{SCHEMA}].<fn>(args)" hoặc
+  "EXEC [{SCHEMA}].<sp_name>".
+- OUT_PARAMETER: SP với OUTPUT param. invocation_query phải có pattern
+  "DECLARE @out <type>; EXEC [{SCHEMA}].<sp> @in=..., @out=@out OUTPUT;".
+  validation_query = "SELECT @out;" (variable scope across batch).
+- SIDE_EFFECT: SP/Trigger thay đổi dữ liệu. invocation_query thực hiện thao tác
+  ("EXEC [{SCHEMA}].<sp> ..." hoặc "INSERT INTO [{SCHEMA}].<tbl> ..."),
+  validation_query SELECT từ bảng bị ảnh hưởng để check ("SELECT COUNT(*) FROM
+  [{SCHEMA}].<audit_tbl> WHERE ...").
+- PRINT_OUTPUT: SP/Function dùng PRINT. invocation_query = "EXEC [{SCHEMA}].<sp>".
+  Engine capture PRINT messages tự động qua SQLWarning chain (không qua result set).
+  validation_query có thể để rỗng — engine sẽ so khớp printMessages với expected.

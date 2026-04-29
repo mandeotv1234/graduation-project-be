@@ -187,8 +187,25 @@ public class ExamController {
         @GetMapping("/{examId}/monitor")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> getExamMonitor(
-                        @PathVariable("examId") @Positive Long examId) {
-                GetExamMonitorRequestDto requestDto = new GetExamMonitorRequestDto(examId);
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestParam(name = "page", defaultValue = "1") int page,
+                        @RequestParam(name = "size", defaultValue = "10") int size,
+                        @RequestParam(name = "keyword", defaultValue = "") String keyword,
+                        @RequestParam(name = "riskFilter", defaultValue = "all") String riskFilter,
+                        @RequestParam(name = "examStatusFilter", defaultValue = "IN_PROGRESS") String examStatusFilter,
+                        @RequestParam(name = "highRiskThreshold", defaultValue = "3") int highRiskThreshold,
+                        @RequestParam(name = "sortColumn", defaultValue = "violationCount") String sortColumn,
+                        @RequestParam(name = "sortDirection", defaultValue = "desc") String sortDirection) {
+                GetExamMonitorRequestDto requestDto = new GetExamMonitorRequestDto(
+                                examId,
+                                page,
+                                size,
+                                keyword,
+                                riskFilter,
+                                examStatusFilter,
+                                highRiskThreshold,
+                                sortColumn,
+                                sortDirection);
                 GetExamMonitorResponse response = getExamMonitorUsecase.execute(requestDto.toRequest());
                 return ResponseEntity.ok(
                                 ResponseDto.of(
@@ -314,14 +331,29 @@ public class ExamController {
 
         @GetMapping("/{examId}/results")
         @PreAuthorize("hasRole('TEACHER')")
-        public ResponseEntity<ResponseDto> getExamResults(
-                        @PathVariable("examId") @Positive Long examId) {
-                List<GetExamResultsResponse> responses = getExamResultsUsecase.execute(examId);
-                List<GetExamResultsResponseDto> dtos = responses.stream()
-                                .map(GetExamResultsResponseDto::fromResponse)
-                                .toList();
+        public ResponseEntity<PaginationResponseDto<GetExamResultsResponseDto>> getExamResults(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestParam(name = "page", defaultValue = "1") int page,
+                        @RequestParam(name = "size", defaultValue = "5") int size,
+                        @RequestParam(name = "keyword", defaultValue = "") String keyword,
+                        @RequestParam(name = "scoreFilter", defaultValue = "all") String scoreFilter,
+                        @RequestParam(name = "encounterMode", defaultValue = "all") String encounterMode,
+                        @RequestParam(name = "sortOrder", defaultValue = "timeDesc") String sortOrder) {
+                GetExamResultsRequest request = new GetExamResultsRequest(
+                                examId,
+                                page,
+                                size,
+                                keyword,
+                                scoreFilter,
+                                encounterMode,
+                                sortOrder);
+                PaginationResponse<GetExamResultsResponse> responses = getExamResultsUsecase.execute(request);
                 return ResponseEntity.ok(
-                                ResponseDto.of(dtos, "OK", "Exam results retrieved successfully"));
+                                PaginationResponseDto.fromResponse(
+                                                responses,
+                                                GetExamResultsResponseDto::fromResponse,
+                                                "OK",
+                                                "Exam results retrieved successfully"));
         }
 
         @GetMapping("/{examId}/statistics")

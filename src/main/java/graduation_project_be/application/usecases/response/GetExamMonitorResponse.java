@@ -13,5 +13,7 @@ public record GetExamMonitorResponse(
         Boolean isPublished,
         int totalStudents,
         int totalViolators,
+        int totalHighRisk,
+        int totalFilteredStudents,
         List<GetExamMonitorStudentResponse> students) {
 }

@@ -1,0 +1,52 @@
+databaseChangeLog:
+  # T16: Mark exam results that contain SP/FN/Trigger questions for regrade.
+  # The new pipeline (T01–T14) changes how those question types are graded, so
+  # any score given before this changelog runs is no longer trustworthy.
+  #
+  # Strategy: do NOT delete the old score; instead flip status back to PENDING
+  # and reset submission status so the existing GradingWorker picks them up
+  # and re-runs the new pipeline. The teacher/student gets notified per the
+  # standard grading-completed flow.
+  #
+  # NOTE: this assumes the GradingWorker is configured to scan PENDING results
+  # and re-enqueue them on startup. If not, an ops engineer must manually
+  # trigger a /regrade-all endpoint after this migration runs.
+  - changeSet:
+      id: "3003260010"
+      author: system
+      comment: "T16: Reset status to PENDING for exam_results that contain SP/FN/Trigger questions"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE exam_results
+              SET status = 'PENDING'
+              WHERE status = 'COMPLETED'
+                AND exam_id IN (
+                  SELECT DISTINCT exam_id
+                  FROM exam_questions
+                  WHERE question_type IN ('STORED_PROCEDURE', 'FUNCTION', 'TRIGGER')
+                );
+
+  - changeSet:
+      id: "3003260011"
+      author: system
+      comment: "T16: Reset submissions of regraded results to PENDING so worker re-runs them"
+      changes:
+        - sql:
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE exam_submissions
+              SET status = 'PENDING'
+              WHERE (exam_id, student_id, attempt_number) IN (
+                SELECT exam_id, student_id, attempt_number
+                FROM exam_results
+                WHERE status = 'PENDING'
+                  AND exam_id IN (
+                    SELECT DISTINCT exam_id
+                    FROM exam_questions
+                    WHERE question_type IN ('STORED_PROCEDURE', 'FUNCTION', 'TRIGGER')
+                  )
+              );

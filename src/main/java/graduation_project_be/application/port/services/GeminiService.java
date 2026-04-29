@@ -21,7 +21,8 @@ public interface GeminiService {
             String questionContent,
             double totalPoints,
             String questionType,
-            String priorQuestionContext);
+            String priorQuestionContext,
+            String schemaContext);
 
     /**
      * Generate DB schema JSON from natural-language specification description.

@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import graduation_project_be.application.exceptions.BadRequestException;
+import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
@@ -19,14 +21,17 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,21 +40,31 @@ import java.util.regex.Pattern;
 public class GeminiServiceImpl implements GeminiService {
     private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([^\"]+)\"");
 
-    private static final String GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
+    private static final String GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?is)create\\s+table\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s*\\(");
     private static final Pattern CONSTRAINT_PREFIX_PATTERN = Pattern.compile(
             "(?is)^constraint\\s+[^\\s]+\\s+");
     private static final Pattern REFERENCES_PATTERN = Pattern.compile(
             "(?is)references\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s*\\(([^\\)]*)\\)");
+    private static final Pattern ROUTINE_SQL_OBJECT_REFERENCE_PATTERN = Pattern.compile(
+            "(?is)\\b(?:FROM|JOIN|UPDATE|INTO)\\s+((?:\\[[^\\]]+\\]|\\{SCHEMA\\}|[#@]?[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z_][A-Za-z0-9_]*))?)");
+    private static final Pattern ROUTINE_SQL_EXEC_REFERENCE_PATTERN = Pattern.compile(
+            "(?is)\\bEXEC(?:UTE)?\\s+(?:@\\w+\\s*=\\s*)?((?:\\[[^\\]]+\\]|\\{SCHEMA\\}|[#@]?[A-Za-z_][A-Za-z0-9_]*)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z_][A-Za-z0-9_]*))?)");
+    private static final Pattern ROUTINE_SCHEMA_QUALIFIED_INSERT_WITH_COLUMNS_PATTERN = Pattern.compile(
+            "(?is)\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\]|\\{SCHEMA\\})\\s*\\.\\s*\\[?([A-Za-z_][A-Za-z0-9_]*)\\]?\\s*\\(([^\\)]*)\\)");
+    private static final Pattern ALTER_TABLE_FOREIGN_KEY_PATTERN = Pattern.compile(
+            "(?is)\\bALTER\\s+TABLE\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s+ADD\\s+(?:CONSTRAINT\\s+[\\[\\]A-Za-z0-9_]+\\s+)?FOREIGN\\s+KEY\\s*\\(([^\\)]*)\\)\\s+REFERENCES\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s*\\(([^\\)]*)\\)");
     private static final double CT_MISSING_COLUMN_PENALTY = 0.5d;
     private static final double CT_TYPE_MISMATCH_PENALTY = 0.25d;
     private static final double CT_MISSING_PK_FK_PENALTY = 0.5d;
     private static final double[] CT_TABLE_PENALTY_STEPS = new double[] { 0.25d, 0.2d };
 
     private final String apiKey;
+    private final String geminiModel;
     private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final ExamSchemaService examSchemaService;
 
     @Value("classpath:prompts/system_prompt.txt")
     private Resource systemPromptResource;
@@ -63,8 +78,14 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/select_query_rubric_prompt.txt")
     private Resource selectQueryRubricPromptResource;
 
-    @Value("classpath:prompts/routine_rubric_prompt.txt")
-    private Resource routineRubricPromptResource;
+    @Value("classpath:prompts/function_rubric_prompt.txt")
+    private Resource functionRubricPromptResource;
+
+    @Value("classpath:prompts/stored_procedure_rubric_prompt.txt")
+    private Resource storedProcedureRubricPromptResource;
+
+    @Value("classpath:prompts/stored_procedure_rubric_repair_prompt.txt")
+    private Resource storedProcedureRubricRepairPromptResource;
 
     @Value("classpath:prompts/trigger_rubric_prompt.txt")
     private Resource triggerRubricPromptResource;
@@ -79,15 +100,26 @@ public class GeminiServiceImpl implements GeminiService {
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
     private String selectQueryRubricPromptTemplate;
-    private String routineRubricPromptTemplate;
+    private String functionRubricPromptTemplate;
+    private String storedProcedureRubricPromptTemplate;
+    private String storedProcedureRubricRepairPromptTemplate;
     private String triggerRubricPromptTemplate;
     private String specificationSchemaPromptTemplate;
     private String createTableRulesPromptTemplate;
 
-    public GeminiServiceImpl(@Value("${spring.application.gemini.api-key}") String apiKey) {
+    public GeminiServiceImpl(
+            @Value("${spring.application.gemini.api-key}") String apiKey,
+            @Value("${spring.application.gemini.model:gemini-2.5-flash}") String geminiModel,
+            ExamSchemaService examSchemaService) {
         this.apiKey = apiKey;
+        this.geminiModel = geminiModel;
         this.httpClient = null;
         this.objectMapper = new ObjectMapper();
+        this.examSchemaService = examSchemaService;
+    }
+
+    private String geminiEndpoint() {
+        return String.format(GEMINI_URL_TEMPLATE, geminiModel, apiKey);
     }
 
     @PostConstruct
@@ -101,8 +133,12 @@ public class GeminiServiceImpl implements GeminiService {
                     .copyToString(insertDataRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.selectQueryRubricPromptTemplate = StreamUtils
                     .copyToString(selectQueryRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
-            this.routineRubricPromptTemplate = StreamUtils.copyToString(routineRubricPromptResource.getInputStream(),
+            this.functionRubricPromptTemplate = StreamUtils.copyToString(functionRubricPromptResource.getInputStream(),
                     StandardCharsets.UTF_8);
+            this.storedProcedureRubricPromptTemplate = StreamUtils
+                    .copyToString(storedProcedureRubricPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.storedProcedureRubricRepairPromptTemplate = StreamUtils
+                    .copyToString(storedProcedureRubricRepairPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.triggerRubricPromptTemplate = StreamUtils.copyToString(triggerRubricPromptResource.getInputStream(),
                     StandardCharsets.UTF_8);
             this.specificationSchemaPromptTemplate = StreamUtils
@@ -132,7 +168,7 @@ public class GeminiServiceImpl implements GeminiService {
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(GEMINI_URL + apiKey))
+                    .uri(URI.create(geminiEndpoint()))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .timeout(Duration.ofSeconds(30))
@@ -234,7 +270,8 @@ public class GeminiServiceImpl implements GeminiService {
             String questionContent,
             double totalPoints,
             String questionType,
-            String priorQuestionContext) {
+            String priorQuestionContext,
+            String schemaContext) {
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API key is missing. Cannot generate rubric.");
             return null;
@@ -251,10 +288,14 @@ public class GeminiServiceImpl implements GeminiService {
             basePrompt = buildInsertRubricPrompt(correctQuery, questionContent, totalPoints);
         } else if ("SELECT_QUERY".equalsIgnoreCase(questionType)) {
             basePrompt = buildSelectRubricPrompt(correctQuery, questionContent, totalPoints, priorQuestionContext);
-        } else if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
-            basePrompt = buildRoutineRubricPrompt(correctQuery, questionContent, totalPoints, questionType);
+        } else if ("FUNCTION".equalsIgnoreCase(questionType)) {
+            basePrompt = buildFunctionRubricPrompt(correctQuery, questionContent, totalPoints, questionType,
+                    schemaContext);
+        } else if ("STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
+            basePrompt = buildStoredProcedureRubricPrompt(correctQuery, questionContent, totalPoints, questionType,
+                    schemaContext);
         } else if ("TRIGGER".equalsIgnoreCase(questionType)) {
-            basePrompt = buildTriggerRubricPrompt(correctQuery, questionContent, totalPoints);
+            basePrompt = buildTriggerRubricPrompt(correctQuery, questionContent, totalPoints, schemaContext);
         } else {
             basePrompt = buildCreateTableRubricPrompt(correctQuery, questionContent, totalPoints);
         }
@@ -310,21 +351,100 @@ public class GeminiServiceImpl implements GeminiService {
                 return normalizedRubric;
             }
 
-            if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
+            if ("STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
                 String rubricJson = callGeminiForJson(client, basePrompt);
                 if (rubricJson == null) {
                     return null;
                 }
-                logGeneratedRubric(questionType, rubricJson);
-                return rubricJson;
+
+                List<RoutineRubricIssue> issues = validateStoredProcedureRubricExecutable(
+                        rubricJson, correctQuery, questionContent, schemaContext);
+                if (issues.isEmpty()) {
+                    logGeneratedRubric(questionType, rubricJson);
+                    logRoutineRubricDiagnostics(questionType, rubricJson);
+                    return rubricJson;
+                }
+
+                log.warn("STORED_PROCEDURE rubric executable validation failed, attempting one repair: {}", issues);
+                String repairPrompt = buildStoredProcedureRubricRepairPrompt(
+                        questionContent, correctQuery, schemaContext, rubricJson, issues);
+                String repairedRubricJson = callGeminiForJson(client, repairPrompt);
+                if (repairedRubricJson == null) {
+                    return buildNeedsReviewRubricResponse(rubricJson, issues);
+                }
+
+                List<RoutineRubricIssue> repairedIssues = validateStoredProcedureRubricExecutable(
+                        repairedRubricJson, correctQuery, questionContent, schemaContext);
+                if (repairedIssues.isEmpty()) {
+                    logGeneratedRubric(questionType, repairedRubricJson);
+                    logRoutineRubricDiagnostics(questionType, repairedRubricJson);
+                    return repairedRubricJson;
+                }
+
+                log.warn("STORED_PROCEDURE rubric still needs review after one repair: {}", repairedIssues);
+                return buildNeedsReviewRubricResponse(repairedRubricJson, repairedIssues);
+            }
+
+            if ("FUNCTION".equalsIgnoreCase(questionType)) {
+                String prompt = basePrompt;
+                String latestJson = null;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    latestJson = callGeminiForJson(client, prompt);
+                    if (latestJson == null) {
+                        return null;
+                    }
+
+                    JsonNode rubricNode = objectMapper.readTree(latestJson);
+                    List<String> issues = validateRoutineRubricHeuristics(questionType, rubricNode, schemaContext);
+                    if (issues.isEmpty()) {
+                        logGeneratedRubric(questionType, latestJson);
+                        logRoutineRubricDiagnostics(questionType, latestJson);
+                        return latestJson;
+                    }
+
+                    if (attempt == 2) {
+                        log.warn("ROUTINE rubric still has issues after retries: {}", issues);
+                        logGeneratedRubric(questionType, latestJson);
+                        logRoutineRubricDiagnostics(questionType, latestJson);
+                        return null;
+                    }
+
+                    prompt = basePrompt + "\n\n=== REQUIRED FIXES FOR ROUTINE RUBRIC ===\n"
+                            + String.join("\n", issues)
+                            + "\nReturn corrected JSON only. Do not use markdown.";
+                }
+                return latestJson;
             }
 
             if ("TRIGGER".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
-                if (rubricJson == null) {
-                    return null;
+                String prompt = basePrompt;
+                String latestJson = null;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    latestJson = callGeminiForJson(client, prompt);
+                    if (latestJson == null) {
+                        return null;
+                    }
+
+                    JsonNode rubricNode = objectMapper.readTree(latestJson);
+                    List<String> issues = validateTriggerRubricHeuristics(rubricNode, schemaContext);
+                    if (issues.isEmpty()) {
+                        String wrappedRubric = wrapTriggerRubric(latestJson, totalPoints);
+                        logGeneratedRubric(questionType, wrappedRubric);
+                        return wrappedRubric;
+                    }
+
+                    if (attempt == 2) {
+                        log.warn("TRIGGER rubric still has issues after retries: {}", issues);
+                        String wrappedRubric = wrapTriggerRubric(latestJson, totalPoints);
+                        logGeneratedRubric(questionType, wrappedRubric);
+                        return wrappedRubric;
+                    }
+
+                    prompt = basePrompt + "\n\n=== REQUIRED FIXES FOR TRIGGER RUBRIC ===\n"
+                            + String.join("\n", issues)
+                            + "\nReturn corrected JSON only. Do not use markdown. Read DDL schema context carefully for exact column names and data types.";
                 }
-                String wrappedRubric = wrapTriggerRubric(rubricJson, totalPoints);
+                String wrappedRubric = wrapTriggerRubric(latestJson, totalPoints);
                 logGeneratedRubric(questionType, wrappedRubric);
                 return wrappedRubric;
             }
@@ -370,12 +490,12 @@ public class GeminiServiceImpl implements GeminiService {
     }
 
     private String callGeminiForJson(HttpClient client, String prompt) throws Exception {
-        String requestBody = buildRequestBody(prompt, 4096);
+        String requestBody = buildRequestBody(prompt, 16384);
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(GEMINI_URL + apiKey))
+                .uri(URI.create(geminiEndpoint()))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .timeout(Duration.ofSeconds(60))
+                .timeout(Duration.ofSeconds(120))
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -385,14 +505,40 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         JsonNode root = objectMapper.readTree(response.body());
-        String text = root
-                .path("candidates").get(0)
+        JsonNode candidate = root.path("candidates").get(0);
+        String finishReason = candidate.path("finishReason").asText("");
+        JsonNode usage = root.path("usageMetadata");
+        String text = candidate
                 .path("content")
                 .path("parts").get(0)
                 .path("text").asText();
 
         text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-        objectMapper.readTree(text);
+
+        log.info(
+                "Gemini response: finishReason={} promptTokens={} candidatesTokens={} thoughtsTokens={} totalTokens={} textLength={}\n--- BEGIN RAW TEXT ---\n{}\n--- END RAW TEXT ---",
+                finishReason,
+                usage.path("promptTokenCount").asInt(-1),
+                usage.path("candidatesTokenCount").asInt(-1),
+                usage.path("thoughtsTokenCount").asInt(-1),
+                usage.path("totalTokenCount").asInt(-1),
+                text.length(),
+                text);
+
+        try {
+            objectMapper.readTree(text);
+        } catch (Exception parseErr) {
+            log.error(
+                    "Gemini returned invalid JSON. finishReason={} textLength={} parseError={}\nFull wrapper response:\n{}",
+                    finishReason, text.length(), parseErr.getMessage(), response.body());
+            if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) {
+                throw new RuntimeException(
+                        "Gemini bị cắt do MAX_TOKENS (output > maxOutputTokens). Tăng maxOutputTokens hoặc giảm phạm vi rubric. textLength="
+                                + text.length(),
+                        parseErr);
+            }
+            throw parseErr;
+        }
         return text;
     }
 
@@ -410,6 +556,1288 @@ public class GeminiServiceImpl implements GeminiService {
             log.warn("Gemini generated rubric for questionType={} but pretty logging failed. Raw rubric: {}",
                     questionType, rubricJson);
         }
+    }
+
+    private void logRoutineRubricDiagnostics(String questionType, String rubricJson) {
+        if (rubricJson == null || rubricJson.isBlank()) {
+            return;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(rubricJson);
+            JsonNode payload = root.path("grading_payload");
+            JsonNode routines = payload.path("routines");
+            JsonNode testCases = payload.path("test_cases");
+
+            log.debug("[ROUTINE_RUBRIC_RAW][{}] {}", questionType, rubricJson);
+            log.info("[ROUTINE_RUBRIC_SUMMARY][{}] routines={}, testCases={}",
+                    questionType,
+                    routines.isArray() ? routines.size() : 0,
+                    testCases.isArray() ? testCases.size() : 0);
+
+            if (!testCases.isArray()) {
+                log.warn("[ROUTINE_RUBRIC_INVALID][{}] grading_payload.test_cases is missing or not an array",
+                        questionType);
+                return;
+            }
+
+            for (int i = 0; i < testCases.size(); i++) {
+                JsonNode tc = testCases.get(i);
+                String caseName = tc.path("case_name").asText("TC" + (i + 1));
+                String setup = tc.path("setup_script").asText("");
+                String invocation = tc.path("invocation_query").asText("");
+                String validation = tc.path("validation_query").asText("");
+                String combinedSql = setup + "\n" + invocation + "\n" + validation;
+
+                log.info(
+                        "[ROUTINE_RUBRIC_TC][{}][{}] caseName='{}', verificationType='{}', matchType='{}', scoreWeight='{}'",
+                        questionType,
+                        i + 1,
+                        caseName,
+                        tc.path("verification_type").asText(""),
+                        tc.path("match_type").asText(""),
+                        tc.path("score_weight").asText(""));
+
+                if (validation.isBlank()
+                        && !"PRINT_OUTPUT".equalsIgnoreCase(tc.path("verification_type").asText(""))) {
+                    log.warn("[ROUTINE_RUBRIC_TC_INVALID][{}][{}] validation_query is blank for caseName='{}'",
+                            questionType, i + 1, caseName);
+                }
+
+                if (combinedSql.matches("(?is).*\\bTHIS\\s*\\..*")
+                        || combinedSql.matches("(?is).*\\[\\s*THIS\\s*\\].*")
+                        || combinedSql.matches("(?is).*\\bdbo\\s*\\..*")) {
+                    log.warn(
+                            "[ROUTINE_RUBRIC_TC_SCHEMA_WARNING][{}][{}] caseName='{}' may contain invalid schema placeholder. setup='{}' invocation='{}' validation='{}'",
+                            questionType,
+                            i + 1,
+                            caseName,
+                            truncateForLog(setup, 500),
+                            truncateForLog(invocation, 500),
+                            truncateForLog(validation, 500));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[ROUTINE_RUBRIC_DIAGNOSTICS_FAILED][{}] {}", questionType, e.getMessage());
+        }
+    }
+
+    private List<String> validateRoutineRubricHeuristics(String questionType, JsonNode rubricNode,
+            String schemaContext) {
+        List<String> issues = new ArrayList<>();
+        JsonNode testCases = rubricNode.path("grading_payload").path("test_cases");
+
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            issues.add("- grading_payload.test_cases must be a non-empty array.");
+            return issues;
+        }
+
+        boolean storedProcedure = "STORED_PROCEDURE".equalsIgnoreCase(questionType);
+        Map<String, Set<String>> identityColumnsByTable = parseIdentityColumnsByTable(schemaContext);
+        List<RoutineForeignKey> foreignKeys = parseRoutineForeignKeys(schemaContext);
+        boolean hasSideEffectCase = false;
+        boolean hasPrintOutputCase = false;
+        boolean hasSideEffectFailureCase = false;
+        double totalScoreWeight = 0.0d;
+
+        for (int i = 0; i < testCases.size(); i++) {
+            JsonNode tc = testCases.get(i);
+            String label = "TC" + (i + 1) + " (" + tc.path("case_name").asText("unnamed") + ")";
+            String verificationType = tc.path("verification_type").asText("");
+            String setup = tc.path("setup_script").asText("");
+            String invocation = tc.path("invocation_query").asText("");
+            String validation = tc.path("validation_query").asText("");
+            String combined = setup + "\n" + invocation + "\n" + validation;
+            String scenarioText = tc.path("case_name").asText("") + " " + tc.path("description").asText("");
+            List<RoutineSetupInsert> setupInserts = extractSetupInserts(setup);
+            Map<String, Set<String>> setupInsertColumnsByTable = extractSetupInsertColumnsByTable(setupInserts);
+            boolean sideEffect = "SIDE_EFFECT".equalsIgnoreCase(verificationType);
+            boolean printOutput = "PRINT_OUTPUT".equalsIgnoreCase(verificationType);
+
+            if (tc.has("score_weight") && tc.get("score_weight").isNumber()) {
+                totalScoreWeight += Math.abs(tc.get("score_weight").asDouble());
+            }
+            hasSideEffectCase |= sideEffect;
+            hasPrintOutputCase |= printOutput;
+            hasSideEffectFailureCase |= sideEffect && looksLikeFailureScenario(scenarioText);
+
+            if (!"PRINT_OUTPUT".equalsIgnoreCase(verificationType) && validation.isBlank()) {
+                issues.add("- " + label + ": validation_query is required unless verification_type is PRINT_OUTPUT.");
+            }
+
+            if ("PRINT_OUTPUT".equalsIgnoreCase(verificationType) && !validation.isBlank()) {
+                issues.add("- " + label + ": PRINT_OUTPUT must leave validation_query empty. "
+                        + "The engine captures SQL Server PRINT messages directly; do not query PRINT_LOG.");
+            }
+
+            if (combined.matches("(?is).*\\bPRINT_LOG\\b.*")) {
+                issues.add("- " + label
+                        + ": do not use PRINT_LOG. No such table is provided; PRINT_OUTPUT is captured by the engine.");
+            }
+
+            if (combined.matches("(?is).*\\bdbo\\s*\\..*")
+                    || combined.matches("(?is).*\\[\\s*dbo\\s*\\]\\s*\\..*")) {
+                issues.add("- " + label + ": do not use dbo.; use [{SCHEMA}].ObjectName everywhere.");
+            }
+
+            if (combined.matches("(?is).*\\bTHIS\\s*\\..*") || combined.matches("(?is).*\\[\\s*THIS\\s*\\].*")) {
+                issues.add("- " + label + ": do not use THIS as schema placeholder; use [{SCHEMA}] only.");
+            }
+
+            addRoutineSchemaQualificationIssues(issues, label, combined);
+
+            if (invocation.matches("(?is).*@([A-Za-z0-9_]+)\\s*=\\s*@\\1\\b.*")
+                    && !invocation.matches("(?is).*\\bDECLARE\\s+@\\w+\\b.*")) {
+                issues.add("- " + label + ": invocation_query uses an undeclared variable as an argument value "
+                        + "(for example @MaXe = @MaXe). Use a literal value from input_parameters instead, "
+                        + "such as @MaXe = 'XE001', or declare the variable first.");
+            }
+
+            if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {
+                issues.add("- " + label + ": setup_script must not CREATE/ALTER/DROP base tables. "
+                        + "The exam specification DDL is already loaded; only seed rows with DELETE/INSERT/UPDATE.");
+            }
+
+            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\b.*")
+                    && !setup.matches("(?is).*\\bDELETE\\s+FROM\\b.*")) {
+                issues.add("- " + label + ": setup_script inserts test rows but does not delete those keys first. "
+                        + "Make setup idempotent because the specification DDL may already contain seed data.");
+            }
+
+            addRoutineSetupIdentityIssues(issues, label, setup, setupInsertColumnsByTable, identityColumnsByTable);
+            addRoutineSetupForeignKeyIssues(issues, label, setupInsertColumnsByTable, foreignKeys);
+            addRoutineSetupForeignKeyOrderIssues(issues, label, setupInserts, foreignKeys);
+            // Do not block on missing parent rows inferred only from invocation/validation.
+            // Many valid failure cases intentionally pass a missing FK-like input
+            // (for example CustomerId does not exist) and should be judged by the
+            // executable gate against the reference procedure instead of this heuristic.
+
+            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[?\\{SCHEMA\\}\\]?\\.\\[?ChuyenXe\\]?.*")
+                    || setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[[^\\]]+\\]\\.\\[?ChuyenXe\\]?.*")) {
+                if (setup.matches("(?is).*\\bTuyenXe\\b.*")
+                        && !setup.matches(
+                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?TuyenXe\\]?.*")) {
+                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
+                            + "parent TuyenXe rows first. ChuyenXe.TuyenXe has a foreign key to TuyenXe.MaTuyen.");
+                }
+                if (setup.matches("(?is).*\\bMaXe\\b.*")
+                        && !setup.matches(
+                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?Xe\\]?.*")) {
+                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
+                            + "parent Xe rows first. ChuyenXe.MaXe has a foreign key to Xe.MaXe.");
+                }
+            }
+
+            if (storedProcedure) {
+                if (!"RESULT_SET".equalsIgnoreCase(verificationType)
+                        && invocation.matches("(?is).*\\bSELECT\\b.*")) {
+                    issues.add("- " + label + ": invocation_query must not return a result set with SELECT. "
+                            + "It should only DECLARE variables and EXEC the stored procedure. Move SELECT @out AS ... "
+                            + "or SELECT @rc AS ... into validation_query.");
+                }
+
+                if (validation.matches("(?is).*\\b(?:CROSS|OUTER)\\s+APPLY\\b.*")) {
+                    issues.add("- " + label + ": validation_query must not use CROSS APPLY/OUTER APPLY for SIDE_EFFECT "
+                            + "checks. It can fail with unnamed columns and can return zero rows when the target row "
+                            + "does not exist. Use scalar subqueries instead, for example SELECT @Result AS return_value, "
+                            + "(SELECT COUNT(*) FROM [{SCHEMA}].<table> WHERE <condition>) AS affected_count.");
+                }
+
+                if (validation.matches("(?is).*@result_table.*")
+                        && !(invocation + "\n" + validation)
+                                .matches("(?is).*DECLARE\\s+@result_table\\s+TABLE\\s*\\(.*")) {
+                    issues.add("- " + label + ": validation_query references @result_table but the test case does not "
+                            + "declare it. If using @result_table, put DECLARE @result_table TABLE (...) and INSERT EXEC "
+                            + "in invocation_query before validation_query SELECTs from it.");
+                }
+
+                if (validation.matches("(?is).*SELECT\\s+return_value\\s+FROM\\s+@\\w+.*")) {
+                    issues.add("- " + label + ": invalid validation_query. @rc is a scalar variable, not a table. "
+                            + "Use SELECT @rc AS return_value, never SELECT return_value FROM @rc.");
+                }
+
+                if (validation.matches("(?is).*SELECT\\s+RETURN_VALUE\\s+FROM\\s+.*")) {
+                    issues.add("- " + label + ": invalid SQL Server stored procedure validation_query. "
+                            + "Never use SELECT RETURN_VALUE FROM <stored_procedure>. "
+                            + "Use DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value, "
+                            + "or use SIDE_EFFECT validation_query that SELECTs from affected tables.");
+                }
+
+                if ("RETURN_VALUE".equalsIgnoreCase(verificationType)
+                        && !invocation.matches("(?is).*EXEC\\s+@\\w+\\s*=.*")
+                        && !invocation.matches("(?is).*SELECT\\s+@\\w+\\s+AS\\s+return_value.*")) {
+                    issues.add("- " + label
+                            + ": STORED_PROCEDURE RETURN_VALUE must capture return code in invocation_query, "
+                            + "for example DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value.");
+                }
+
+                if (sideEffect
+                        && looksLikeSuccessScenario(scenarioText)
+                        && !looksLikeDeleteScenario(scenarioText)
+                        && sideEffectValidationOnlyCountsRows(validation)) {
+                    issues.add("- " + label + ": DML INSERT/UPDATE success SIDE_EFFECT must select affected business "
+                            + "columns, not only COUNT(*). Include @rc AS return_value plus columns such as keys, "
+                            + "foreign keys, and updated/input values.");
+                }
+            }
+        }
+
+        if (Math.abs(totalScoreWeight - 1.0d) > 0.01d) {
+            issues.add("- test_cases score_weight values must sum to 1.0. Current sum is "
+                    + String.format(Locale.ROOT, "%.2f", totalScoreWeight) + ".");
+        }
+
+        if (storedProcedure && hasSideEffectCase && hasPrintOutputCase && !hasSideEffectFailureCase) {
+            issues.add(
+                    "- DML stored procedure rubric has PRINT_OUTPUT failure cases but no SIDE_EFFECT failure/no-change case. "
+                            + "Add at least one invalid-input SIDE_EFFECT test that captures @rc AS return_value and proves no unintended "
+                            + "INSERT/UPDATE/DELETE occurred.");
+        }
+
+        return issues;
+    }
+
+    private List<RoutineRubricIssue> validateStoredProcedureRubricExecutable(
+            String rubricJson,
+            String correctQuery,
+            String questionContent,
+            String schemaContext) {
+        List<RoutineRubricIssue> issues = new ArrayList<>();
+        JsonNode rubricNode;
+        try {
+            rubricNode = objectMapper.readTree(rubricJson);
+        } catch (Exception e) {
+            issues.add(new RoutineRubricIssue("RUBRIC", "PARSE", "INVALID_JSON", e.getMessage(), null));
+            return issues;
+        }
+
+        for (String issue : validateRoutineRubricHeuristics("STORED_PROCEDURE", rubricNode, schemaContext)) {
+            issues.add(new RoutineRubricIssue("RUBRIC", "STATIC_VALIDATION", "HEURISTIC_ISSUE", issue, null));
+        }
+        if (!issues.isEmpty()) {
+            return issues;
+        }
+
+        String ddlScript = buildExecutableDdlFromSchemaContext(schemaContext);
+        if (ddlScript == null || ddlScript.isBlank()) {
+            issues.add(new RoutineRubricIssue("RUBRIC", "SCHEMA", "SCHEMA_CONTEXT_NOT_EXECUTABLE",
+                    "Cannot build executable DDL from schemaContext, so generated SP rubric cannot be run-tested.",
+                    null));
+            return issues;
+        }
+
+        JsonNode testCases = rubricNode.path("grading_payload").path("test_cases");
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            issues.add(new RoutineRubricIssue("RUBRIC", "STATIC_VALIDATION", "NO_TEST_CASES",
+                    "grading_payload.test_cases must be a non-empty array.", null));
+            return issues;
+        }
+
+        String schemaName = "rubric_sp_validate_" + System.currentTimeMillis();
+        try {
+            examSchemaService.resetSchema(schemaName, false);
+            try {
+                examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+            } catch (Exception e) {
+                issues.add(new RoutineRubricIssue("RUBRIC", "SCHEMA", classifySqlError(e),
+                        "Failed to load schemaContext DDL: " + rootMessage(e), truncateForLog(ddlScript, 1200)));
+                return issues;
+            }
+
+            try {
+                executeSqlScriptBatches(schemaName, correctQuery);
+            } catch (Exception e) {
+                issues.add(new RoutineRubricIssue("RUBRIC", "REFERENCE_SQL", classifySqlError(e),
+                        "Reference SQL failed on validation schema: " + rootMessage(e),
+                        truncateForLog(correctQuery, 1200)));
+                return issues;
+            }
+
+            Set<String> expectedRoutineNames = extractExpectedRoutineNames(rubricNode);
+            for (int i = 0; i < testCases.size(); i++) {
+                JsonNode tc = testCases.get(i);
+                RoutineRubricIssue issue = runStoredProcedureRubricTestCase(schemaName, tc, i + 1,
+                        expectedRoutineNames);
+                if (issue != null) {
+                    issues.add(issue);
+                }
+            }
+        } finally {
+            try {
+                examSchemaService.dropSchema(schemaName);
+            } catch (Exception e) {
+                log.warn("Failed to drop SP rubric validation schema {}: {}", schemaName, e.getMessage());
+            }
+        }
+
+        return issues;
+    }
+
+    private RoutineRubricIssue runStoredProcedureRubricTestCase(
+            String schemaName,
+            JsonNode tc,
+            int index,
+            Set<String> expectedRoutineNames) {
+        String caseId = tc.path("case_id").asText("TC_" + index);
+        String setup = resolveRoutineSql(textOrNull(tc, "setup_script"), schemaName, schemaName);
+        String invocation = resolveRoutineSql(textOrNull(tc, "invocation_query"), schemaName, schemaName);
+        String validation = resolveRoutineSql(textOrNull(tc, "validation_query"), schemaName, schemaName);
+        String verificationType = tc.path("verification_type").asText("RETURN_VALUE");
+        boolean printOutput = "PRINT_OUTPUT".equalsIgnoreCase(verificationType);
+
+        if (!printOutput && (validation == null || validation.isBlank())) {
+            return new RoutineRubricIssue(caseId, "VALIDATION", "MISSING_VALIDATION_QUERY",
+                    "validation_query is required unless verification_type is PRINT_OUTPUT.", null);
+        }
+        if (!printOutput && validationCallsExpectedRoutine(validation, expectedRoutineNames)) {
+            return new RoutineRubricIssue(caseId, "VALIDATION", "VALIDATION_REEXECUTES_ROUTINE",
+                    "validation_query must not EXEC/EXECUTE the stored procedure under test again. "
+                            + "Call the procedure exactly once in invocation_query, then validate output variables "
+                            + "and side effects with SELECT only.",
+                    truncateForLog(validation, 1200));
+        }
+
+        StringBuilder batch = new StringBuilder();
+        batch.append("DECLARE @__rubric_phase NVARCHAR(32) = N'SETUP';\n");
+        batch.append("BEGIN TRY\n");
+        batch.append("  BEGIN TRANSACTION;\n");
+        appendSqlStatement(batch, setup);
+        batch.append("  SET @__rubric_phase = N'INVOCATION';\n");
+        appendSqlStatement(batch, invocation);
+        if (!printOutput && validation != null && !validation.isBlank()) {
+            batch.append("  SET @__rubric_phase = N'VALIDATION';\n");
+            batch.append("  SELECT NULL AS __VALIDATION_MARKER__;\n");
+            appendSqlStatement(batch, validation);
+        }
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append("END TRY\n");
+        batch.append("BEGIN CATCH\n");
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append(
+                "  DECLARE @__rubric_msg NVARCHAR(4000) = CONCAT(N'RUBRIC_PHASE=', @__rubric_phase, N'; ', ERROR_MESSAGE());\n");
+        batch.append("  THROW 51000, @__rubric_msg, 1;\n");
+        batch.append("END CATCH;");
+
+        try {
+            SqlExecutionResult result = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
+            if (!printOutput && (result == null || result.getResultSet() == null || result.getResultSet().isEmpty())) {
+                return new RoutineRubricIssue(caseId, "VALIDATION", "VALIDATION_RETURNED_NO_ROWS",
+                        "validation_query should return at least one deterministic row for comparison.",
+                        truncateForLog(validation, 1200));
+            }
+            return null;
+        } catch (Exception e) {
+            String message = rootMessage(e);
+            return new RoutineRubricIssue(caseId, extractRubricPhase(message), classifySqlError(e),
+                    message, truncateForLog(batch.toString(), 1600));
+        }
+    }
+
+    private Set<String> extractExpectedRoutineNames(JsonNode rubricNode) {
+        Set<String> names = new LinkedHashSet<>();
+        JsonNode routines = rubricNode.path("grading_payload").path("routines");
+        if (!routines.isArray()) {
+            return names;
+        }
+        for (JsonNode routine : routines) {
+            String name = normalizeIdentifierKey(routine.path("expected_name").asText(""));
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
+    }
+
+    private boolean validationCallsExpectedRoutine(String validation, Set<String> expectedRoutineNames) {
+        if (validation == null || validation.isBlank()
+                || expectedRoutineNames == null || expectedRoutineNames.isEmpty()) {
+            return false;
+        }
+        Matcher matcher = Pattern.compile("(?is)\\bEXEC(?:UTE)?\\b(?:\\s+@\\w+\\s*=)?\\s+([^\\s;,(]+)")
+                .matcher(validation);
+        while (matcher.find()) {
+            String calledName = normalizeIdentifierKey(matcher.group(1));
+            if (expectedRoutineNames.contains(calledName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String buildExecutableDdlFromSchemaContext(String schemaContext) {
+        if (schemaContext == null || schemaContext.isBlank()) {
+            return null;
+        }
+        String trimmed = schemaContext.trim();
+        if (trimmed.matches("(?is).*\\bCREATE\\s+TABLE\\b.*")) {
+            return trimmed;
+        }
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+            return null;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(trimmed);
+            JsonNode tables = root.isArray() ? root : firstArray(root, "tables", "databaseSpec", "schema", "items");
+            if (tables == null || !tables.isArray() || tables.isEmpty()) {
+                return null;
+            }
+
+            StringBuilder createTables = new StringBuilder();
+            StringBuilder foreignKeys = new StringBuilder();
+            for (JsonNode table : tables) {
+                String tableName = firstText(table, "tableName", "table_name", "name");
+                if (tableName.isBlank()) {
+                    continue;
+                }
+                JsonNode columns = firstArray(table, "columns", "columnDefinitions", "fields");
+                if (columns == null || !columns.isArray() || columns.isEmpty()) {
+                    continue;
+                }
+
+                List<String> columnDefs = new ArrayList<>();
+                List<String> primaryKeys = new ArrayList<>();
+                for (JsonNode column : columns) {
+                    String columnName = firstText(column, "columnName", "column_name", "name");
+                    if (columnName.isBlank()) {
+                        continue;
+                    }
+                    String dataType = firstText(column, "rawDataType", "raw_data_type", "dataType", "data_type",
+                            "type");
+                    if (dataType.isBlank()) {
+                        dataType = "NVARCHAR(255)";
+                    }
+                    boolean nullable = column.path("nullable").asBoolean(column.path("isNullable").asBoolean(true));
+                    boolean primaryKey = column.path("primaryKey").asBoolean(false)
+                            || column.path("isPrimaryKey").asBoolean(false)
+                            || column.path("primary_key").asBoolean(false);
+                    if (primaryKey) {
+                        primaryKeys.add(quoteSqlIdentifier(columnName));
+                        nullable = false;
+                    }
+                    columnDefs
+                            .add(quoteSqlIdentifier(columnName) + " " + dataType + (nullable ? " NULL" : " NOT NULL"));
+
+                    String referencesTable = firstText(column,
+                            "referencesTable", "references_table", "referencedTable", "referenced_table");
+                    String referencesColumn = firstText(column,
+                            "referencesColumn", "references_column", "referencedColumn", "referenced_column");
+                    if (!referencesTable.isBlank()) {
+                        if (referencesColumn.isBlank()) {
+                            referencesColumn = "id";
+                        }
+                        String constraintName = "FK_" + normalizeIdentifier(tableName) + "_"
+                                + normalizeIdentifier(columnName) + "_" + normalizeIdentifier(referencesTable);
+                        foreignKeys.append("ALTER TABLE ").append(quoteSqlIdentifier(tableName))
+                                .append(" ADD CONSTRAINT ").append(quoteSqlIdentifier(constraintName))
+                                .append(" FOREIGN KEY (").append(quoteSqlIdentifier(columnName)).append(")")
+                                .append(" REFERENCES ").append(quoteSqlIdentifier(referencesTable))
+                                .append("(").append(quoteSqlIdentifier(referencesColumn)).append(");\n");
+                    }
+                }
+                if (columnDefs.isEmpty()) {
+                    continue;
+                }
+                if (!primaryKeys.isEmpty()) {
+                    columnDefs.add("CONSTRAINT " + quoteSqlIdentifier("PK_" + normalizeIdentifier(tableName))
+                            + " PRIMARY KEY (" + String.join(", ", primaryKeys) + ")");
+                }
+                createTables.append("CREATE TABLE ").append(quoteSqlIdentifier(tableName)).append(" (\n  ")
+                        .append(String.join(",\n  ", columnDefs))
+                        .append("\n);\n");
+            }
+
+            String ddl = createTables.append(foreignKeys).toString().trim();
+            return ddl.isBlank() ? null : ddl;
+        } catch (Exception e) {
+            log.warn("Failed to synthesize executable DDL from schemaContext: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void executeSqlScriptBatches(String schemaName, String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return;
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    examSchemaService.executeSql(schemaName, normalizeDboReferences(executable, schemaName));
+                }
+            }
+        }
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        Matcher matcher = Pattern
+                .compile("(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        return prefix.isBlank() ? List.of(routine) : List.of(prefix, routine);
+    }
+
+    private String normalizeDboReferences(String sql, String schemaName) {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        return sql.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+    }
+
+    private String resolveRoutineSql(String sql, String targetSchema, String teacherSchema) {
+        if (sql == null) {
+            return null;
+        }
+        return sql
+                .replace("{SCHEMA}", targetSchema)
+                .replace("{TEACHER_SCHEMA}", teacherSchema)
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .trim()
+                .replaceAll("(?i)\\[dbo\\]\\s*\\.", "[" + targetSchema + "].")
+                .replaceAll("(?i)\\bdbo\\s*\\.", "[" + targetSchema + "].");
+    }
+
+    private String textOrNull(JsonNode node, String fieldName) {
+        if (node == null || fieldName == null) {
+            return null;
+        }
+        JsonNode value = node.get(fieldName);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        String text = value.isTextual() ? value.asText() : value.toString();
+        return text.isBlank() ? null : text;
+    }
+
+    private void appendSqlStatement(StringBuilder batch, String sql) {
+        if (sql == null || sql.isBlank()) {
+            return;
+        }
+        batch.append("  ").append(sql).append(";\n");
+    }
+
+    private String buildStoredProcedureRubricRepairPrompt(
+            String questionContent,
+            String correctQuery,
+            String schemaContext,
+            String currentRubricJson,
+            List<RoutineRubricIssue> issues) throws Exception {
+        return String.format(storedProcedureRubricRepairPromptTemplate,
+                questionContent != null ? questionContent : "Khong co noi dung cau hoi",
+                correctQuery != null ? correctQuery : "",
+                schemaContext != null && !schemaContext.isBlank() ? truncateForLog(schemaContext, 8000)
+                        : "No schema context was provided.",
+                currentRubricJson != null ? currentRubricJson : "",
+                objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(issues));
+    }
+
+    private String buildNeedsReviewRubricResponse(String rubricJson, List<RoutineRubricIssue> issues) {
+        try {
+            ObjectNode root = objectMapper.createObjectNode();
+            root.put("status", "NEEDS_REVIEW");
+            root.set("rubric", objectMapper.readTree(rubricJson));
+            root.set("issues", objectMapper.valueToTree(issues));
+            return objectMapper.writeValueAsString(root);
+        } catch (Exception e) {
+            return rubricJson;
+        }
+    }
+
+    private String quoteSqlIdentifier(String identifier) {
+        String normalized = normalizeIdentifier(identifier);
+        return "[" + normalized.replace("]", "]]") + "]";
+    }
+
+    private String classifySqlError(Exception e) {
+        String message = rootMessage(e).toLowerCase(Locale.ROOT);
+        if (message.contains("foreign key") || message.contains("conflicted with the reference constraint")) {
+            return "FOREIGN_KEY_VIOLATION";
+        }
+        if (message.contains("invalid column name")) {
+            return "INVALID_COLUMN";
+        }
+        if (message.contains("invalid object name")) {
+            return "INVALID_OBJECT";
+        }
+        if (message.contains("already been declared")) {
+            return "VARIABLE_REDECLARED";
+        }
+        if (message.contains("could not find stored procedure")) {
+            return "ROUTINE_NOT_FOUND";
+        }
+        return "SQL_EXECUTION_ERROR";
+    }
+
+    private String extractRubricPhase(String message) {
+        if (message == null) {
+            return "EXECUTION";
+        }
+        Matcher matcher = Pattern.compile("RUBRIC_PHASE=([A-Z_]+)").matcher(message);
+        return matcher.find() ? matcher.group(1) : "EXECUTION";
+    }
+
+    private String rootMessage(Throwable throwable) {
+        if (throwable == null) {
+            return "";
+        }
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() != null ? current.getMessage() : current.getClass().getSimpleName();
+    }
+
+    private Map<String, Set<String>> parseIdentityColumnsByTable(String schemaContext) {
+        Map<String, Set<String>> identityColumnsByTable = new LinkedHashMap<>();
+        if (schemaContext == null || schemaContext.isBlank()) {
+            return identityColumnsByTable;
+        }
+
+        Matcher matcher = CREATE_TABLE_PATTERN.matcher(schemaContext);
+        while (matcher.find()) {
+            String tableName = normalizeIdentifierKey(matcher.group(1));
+            int openParenIndex = matcher.end() - 1;
+            int closeParenIndex = findMatchingParen(schemaContext, openParenIndex);
+            if (tableName.isBlank() || closeParenIndex <= openParenIndex) {
+                continue;
+            }
+
+            String body = schemaContext.substring(openParenIndex + 1, closeParenIndex);
+            for (String rawSegment : splitTopLevelComma(body)) {
+                String segment = rawSegment.trim();
+                if (!segment.matches("(?is).*\\bIDENTITY\\s*\\(.*")) {
+                    continue;
+                }
+
+                String columnName = normalizeIdentifierKey(extractLeadingIdentifier(segment));
+                if (!columnName.isBlank()) {
+                    identityColumnsByTable
+                            .computeIfAbsent(tableName, ignored -> new LinkedHashSet<>())
+                            .add(columnName);
+                }
+            }
+        }
+
+        return identityColumnsByTable;
+    }
+
+    private List<RoutineForeignKey> parseRoutineForeignKeys(String schemaContext) {
+        if (schemaContext == null || schemaContext.isBlank()) {
+            return List.of();
+        }
+
+        List<RoutineForeignKey> foreignKeys = new ArrayList<>();
+        foreignKeys.addAll(parseRoutineForeignKeysFromSchemaJson(schemaContext));
+
+        Map<String, ParsedCreateTable> createTables = parseCreateTableSql(schemaContext);
+        for (ParsedCreateTable table : createTables.values()) {
+            for (ParsedForeignKey foreignKey : table.foreignKeys()) {
+                foreignKeys.add(new RoutineForeignKey(
+                        normalizeIdentifierKey(table.tableName()),
+                        normalizeIdentifierKeys(foreignKey.columns()),
+                        normalizeIdentifierKey(foreignKey.referencesTable()),
+                        normalizeIdentifierKeys(foreignKey.referencesColumns())));
+            }
+        }
+
+        Matcher matcher = ALTER_TABLE_FOREIGN_KEY_PATTERN.matcher(schemaContext);
+        while (matcher.find()) {
+            foreignKeys.add(new RoutineForeignKey(
+                    normalizeIdentifierKey(matcher.group(1)),
+                    normalizeIdentifierKeys(splitIdentifiers(matcher.group(2))),
+                    normalizeIdentifierKey(matcher.group(3)),
+                    normalizeIdentifierKeys(splitIdentifiers(matcher.group(4)))));
+        }
+
+        return foreignKeys;
+    }
+
+    private List<String> validateTriggerRubricHeuristics(JsonNode rubricNode, String schemaContext) {
+        List<String> issues = new ArrayList<>();
+        JsonNode testCases = rubricNode.path("test_cases");
+
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            issues.add("- test_cases must be a non-empty array.");
+            return issues;
+        }
+
+        double totalScoreWeight = 0.0d;
+
+        for (int i = 0; i < testCases.size(); i++) {
+            JsonNode tc = testCases.get(i);
+            String label = "TC" + (i + 1) + " (" + tc.path("case_name").asText("unnamed") + ")";
+            String setup = tc.path("setup_script").asText("");
+            String invocation = tc.path("invocation_query").asText("");
+            String validation = tc.path("validation_query").asText("");
+            String combined = setup + "\n" + invocation + "\n" + validation;
+
+            if (tc.has("score_weight") && tc.get("score_weight").isNumber()) {
+                totalScoreWeight += Math.abs(tc.get("score_weight").asDouble());
+            }
+
+            if (invocation.isBlank()) {
+                issues.add("- " + label + ": invocation_query is required (DML that fires the trigger).");
+            }
+
+            if (combined.matches("(?is).*\\{SCHEMA\\}.*") && !combined.matches("(?is).*\\[\\{SCHEMA\\}\\].*")) {
+                issues.add("- " + label + ": use [{SCHEMA}] not {SCHEMA} for schema placeholder.");
+            }
+
+            if (combined.matches("(?is).*\\bdbo\\s*\\..*")
+                    || combined.matches("(?is).*\\[\\s*dbo\\s*\\]\\s*\\..*")) {
+                issues.add("- " + label + ": do not use dbo.; use [{SCHEMA}].ObjectName everywhere.");
+            }
+
+            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\b.*")
+                    && !setup.matches("(?is).*\\bDELETE\\s+FROM\\b.*")) {
+                issues.add("- " + label + ": setup_script inserts test rows but does not DELETE those keys first. "
+                        + "Make setup idempotent to avoid duplicate primary key errors.");
+            }
+
+            if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {
+                issues.add("- " + label + ": setup_script must not CREATE/ALTER/DROP base tables. "
+                        + "The exam specification DDL is already loaded; only seed rows with DELETE/INSERT/UPDATE.");
+            }
+
+            // Check if INSERT has correct number of VALUES
+            if (combined.matches("(?is).*\\bINSERT\\s+INTO\\b.*")) {
+                // This is a heuristic check - we can't fully validate without parsing
+                if (schemaContext != null && !schemaContext.isBlank()) {
+                    // Extract table names from INSERT statements
+                    java.util.regex.Pattern insertPattern = java.util.regex.Pattern.compile(
+                            "(?i)\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?([A-Za-z0-9_]+)\\]?\\s*\\(([^)]+)\\)\\s*VALUES\\s*\\(([^)]+)\\)",
+                            java.util.regex.Pattern.DOTALL);
+                    java.util.regex.Matcher insertMatcher = insertPattern.matcher(combined);
+                    while (insertMatcher.find()) {
+                        String tableName = insertMatcher.group(1);
+                        String columns = insertMatcher.group(2);
+                        String values = insertMatcher.group(3);
+                        int columnCount = columns.split(",").length;
+                        int valueCount = values.split(",").length;
+                        if (columnCount != valueCount) {
+                            issues.add("- " + label + ": INSERT INTO " + tableName + " has " + columnCount
+                                    + " columns but " + valueCount + " values. They must match.");
+                        }
+                    }
+                }
+            }
+        }
+
+        if (Math.abs(totalScoreWeight - 1.0d) > 0.01d) {
+            issues.add("- test_cases score_weight values must sum to 1.0. Current sum is "
+                    + String.format(Locale.ROOT, "%.2f", totalScoreWeight) + ".");
+        }
+
+        return issues;
+    }
+
+    private List<RoutineForeignKey> parseRoutineForeignKeysFromSchemaJson(String schemaContext) {
+        String trimmed = schemaContext == null ? "" : schemaContext.trim();
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+            return List.of();
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(trimmed);
+            JsonNode tables = root.isArray() ? root : firstArray(root, "tables", "databaseSpec", "schema", "items");
+            if (tables == null || !tables.isArray()) {
+                return List.of();
+            }
+
+            List<RoutineForeignKey> foreignKeys = new ArrayList<>();
+            for (JsonNode table : tables) {
+                String tableName = firstText(table, "tableName", "table_name", "name");
+                if (tableName.isBlank()) {
+                    continue;
+                }
+
+                JsonNode columns = firstArray(table, "columns", "columnDefinitions", "fields");
+                if (columns == null || !columns.isArray()) {
+                    continue;
+                }
+
+                for (JsonNode column : columns) {
+                    boolean isForeignKey = column.path("foreignKey").asBoolean(false)
+                            || column.path("isForeignKey").asBoolean(false)
+                            || column.path("foreign_key").asBoolean(false);
+                    String referencesTable = firstText(column,
+                            "referencesTable", "references_table", "referencedTable", "referenced_table");
+                    String referencesColumn = firstText(column,
+                            "referencesColumn", "references_column", "referencedColumn", "referenced_column");
+
+                    if (!isForeignKey && referencesTable.isBlank()) {
+                        continue;
+                    }
+
+                    String columnName = firstText(column, "columnName", "column_name", "name");
+                    if (columnName.isBlank() || referencesTable.isBlank()) {
+                        continue;
+                    }
+
+                    foreignKeys.add(new RoutineForeignKey(
+                            normalizeIdentifierKey(tableName),
+                            List.of(normalizeIdentifierKey(columnName)),
+                            normalizeIdentifierKey(referencesTable),
+                            referencesColumn.isBlank()
+                                    ? List.of()
+                                    : List.of(normalizeIdentifierKey(referencesColumn))));
+                }
+            }
+
+            return foreignKeys;
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    private JsonNode firstArray(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return null;
+        }
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isArray()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstText(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return "";
+        }
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (!value.isMissingNode() && !value.isNull()) {
+                String text = value.asText("");
+                if (!text.isBlank()) {
+                    return text;
+                }
+            }
+        }
+        return "";
+    }
+
+    private void addRoutineSetupIdentityIssues(
+            List<String> issues,
+            String label,
+            String setup,
+            Map<String, Set<String>> setupInsertColumnsByTable,
+            Map<String, Set<String>> identityColumnsByTable) {
+        if (setup == null || setup.isBlank()
+                || setupInsertColumnsByTable.isEmpty()
+                || identityColumnsByTable.isEmpty()) {
+            return;
+        }
+
+        Set<String> reported = new HashSet<>();
+        for (Map.Entry<String, Set<String>> insertEntry : setupInsertColumnsByTable.entrySet()) {
+            String tableName = insertEntry.getKey();
+            Set<String> identityColumns = identityColumnsByTable.get(tableName);
+            if (identityColumns == null || identityColumns.isEmpty()) {
+                continue;
+            }
+
+            for (String identityColumn : identityColumns) {
+                if (!insertEntry.getValue().contains(identityColumn)) {
+                    continue;
+                }
+
+                String reportKey = tableName + "." + identityColumn;
+                if (!reported.add(reportKey)) {
+                    continue;
+                }
+
+                boolean hasOn = hasIdentityInsertState(setup, tableName, "ON");
+                boolean hasOff = hasIdentityInsertState(setup, tableName, "OFF");
+                if (!hasOn || !hasOff) {
+                    issues.add("- " + label + ": setup_script inserts explicit value into IDENTITY column "
+                            + tableName + "." + identityColumn
+                            + " but does not wrap that table's INSERT with both "
+                            + "SET IDENTITY_INSERT [{SCHEMA}]." + tableName + " ON and OFF. "
+                            + "Either omit the identity column and capture the generated id, or turn IDENTITY_INSERT "
+                            + "ON only for this table, insert valid rows, then turn it OFF before another table.");
+                }
+            }
+        }
+    }
+
+    private void addRoutineSetupForeignKeyIssues(
+            List<String> issues,
+            String label,
+            Map<String, Set<String>> setupInsertColumnsByTable,
+            List<RoutineForeignKey> foreignKeys) {
+        if (setupInsertColumnsByTable.isEmpty() || foreignKeys.isEmpty()) {
+            return;
+        }
+
+        Set<String> reported = new HashSet<>();
+        for (RoutineForeignKey foreignKey : foreignKeys) {
+            Set<String> childColumns = setupInsertColumnsByTable.get(foreignKey.tableName());
+            if (childColumns == null) {
+                continue;
+            }
+
+            boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
+                    || childColumns.containsAll(foreignKey.columns());
+            if (!insertsForeignKeyColumns || setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
+                continue;
+            }
+
+            String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable()
+                    + ":" + String.join(",", foreignKey.columns());
+            if (!reported.add(reportKey)) {
+                continue;
+            }
+
+            issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
+                    + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
+                    + " but does not insert matching parent table " + foreignKey.referencesTable()
+                    + " in the same setup. Insert parent rows first and do not rely on seed data or invalid FK rows.");
+        }
+    }
+
+    private void addRoutineSetupForeignKeyOrderIssues(
+            List<String> issues,
+            String label,
+            List<RoutineSetupInsert> setupInserts,
+            List<RoutineForeignKey> foreignKeys) {
+        if (setupInserts.isEmpty() || foreignKeys.isEmpty()) {
+            return;
+        }
+
+        Set<String> tablesInSetup = setupInserts.stream()
+                .map(RoutineSetupInsert::tableName)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<String, Integer> firstSeenInsertByTable = new LinkedHashMap<>();
+        Set<String> reported = new HashSet<>();
+
+        for (RoutineSetupInsert insert : setupInserts) {
+            for (RoutineForeignKey foreignKey : foreignKeys) {
+                if (!insert.tableName().equals(foreignKey.tableName())) {
+                    continue;
+                }
+
+                boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
+                        || insert.columns().containsAll(foreignKey.columns());
+                if (!insertsForeignKeyColumns || !tablesInSetup.contains(foreignKey.referencesTable())) {
+                    continue;
+                }
+
+                if (firstSeenInsertByTable.containsKey(foreignKey.referencesTable())) {
+                    continue;
+                }
+
+                String reportKey = insert.position() + ":" + foreignKey.tableName() + "->"
+                        + foreignKey.referencesTable() + ":" + String.join(",", foreignKey.columns());
+                if (!reported.add(reportKey)) {
+                    continue;
+                }
+
+                issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
+                        + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
+                        + " before inserting parent table " + foreignKey.referencesTable()
+                        + ". Insert parent rows first. For cyclic FK relationships, omit/null the cyclic FK column first,"
+                        + " insert both rows, then UPDATE the FK column if that state is required.");
+            }
+
+            firstSeenInsertByTable.putIfAbsent(insert.tableName(), insert.position());
+        }
+    }
+
+    private void addRoutineInvocationForeignKeyPreconditionIssues(
+            List<String> issues,
+            String label,
+            Map<String, Set<String>> setupInsertColumnsByTable,
+            String invocation,
+            String validation,
+            String scenarioText,
+            boolean sideEffect,
+            List<RoutineForeignKey> foreignKeys) {
+        if (!sideEffect
+                || foreignKeys.isEmpty()
+                || !looksLikeFailureScenario(scenarioText)) {
+            return;
+        }
+
+        String executableSql = (invocation == null ? "" : invocation) + "\n" + (validation == null ? "" : validation);
+        Set<String> reported = new HashSet<>();
+        for (RoutineForeignKey foreignKey : foreignKeys) {
+            if (!referencesTable(executableSql, foreignKey.tableName())
+                    || setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
+                continue;
+            }
+            if (looksLikeMissingParentScenarioForForeignKey(scenarioText, foreignKey)) {
+                continue;
+            }
+
+            String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable();
+            if (!reported.add(reportKey)) {
+                continue;
+            }
+
+            issues.add("- " + label + ": failure SIDE_EFFECT case targets child table "
+                    + foreignKey.tableName() + " but setup_script does not insert valid parent table "
+                    + foreignKey.referencesTable() + ". Unless this case explicitly tests a missing parent/FK, "
+                    + "insert all parent rows used by invocation_query so the procedure reaches the intended "
+                    + "business rule instead of returning early on an unrelated FK/precondition guard.");
+        }
+    }
+
+    private boolean looksLikeMissingParentScenarioForForeignKey(String text, RoutineForeignKey foreignKey) {
+        String normalized = normalizeSearchText(text);
+        if (!(normalized.contains("missing")
+                || normalized.contains("khong ton tai")
+                || normalized.contains("nonexist")
+                || normalized.contains("not exist")
+                || normalized.contains("foreign key")
+                || normalized.contains("fk")
+                || normalized.contains("parent"))) {
+            return false;
+        }
+        if (looksLikeMissingParentScenario(text)) {
+            return true;
+        }
+        if (normalized.contains(normalizeSearchText(foreignKey.referencesTable()))) {
+            return true;
+        }
+        for (String column : foreignKey.columns()) {
+            if (normalized.contains(normalizeSearchText(column))) {
+                return true;
+            }
+        }
+        for (String column : foreignKey.referencesColumns()) {
+            if (normalized.contains(normalizeSearchText(column))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean referencesTable(String sql, String tableName) {
+        if (sql == null || sql.isBlank() || tableName == null || tableName.isBlank()) {
+            return false;
+        }
+
+        String identifier = Pattern.quote(tableName);
+        Pattern pattern = Pattern.compile(
+                "(?is)(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\]|\\b\\w+\\b)\\s*\\.\\s*\\[?"
+                        + identifier + "\\]?\\b|\\b" + identifier + "\\b");
+        return pattern.matcher(sql).find();
+    }
+
+    private Map<String, Set<String>> extractSetupInsertColumnsByTable(List<RoutineSetupInsert> setupInserts) {
+        Map<String, Set<String>> insertColumnsByTable = new LinkedHashMap<>();
+
+        for (RoutineSetupInsert setupInsert : setupInserts) {
+            if (setupInsert.tableName().isBlank()) {
+                continue;
+            }
+
+            insertColumnsByTable
+                    .computeIfAbsent(setupInsert.tableName(), ignored -> new LinkedHashSet<>())
+                    .addAll(setupInsert.columns());
+        }
+
+        return insertColumnsByTable;
+    }
+
+    private List<RoutineSetupInsert> extractSetupInserts(String setup) {
+        List<RoutineSetupInsert> inserts = new ArrayList<>();
+        if (setup == null || setup.isBlank()) {
+            return inserts;
+        }
+
+        Matcher matcher = ROUTINE_SCHEMA_QUALIFIED_INSERT_WITH_COLUMNS_PATTERN.matcher(setup);
+        while (matcher.find()) {
+            String tableName = normalizeIdentifierKey(matcher.group(1));
+            if (tableName.isBlank()) {
+                continue;
+            }
+
+            Set<String> columns = new LinkedHashSet<>();
+            for (String column : splitIdentifiers(matcher.group(2))) {
+                String normalizedColumn = normalizeIdentifierKey(column);
+                if (!normalizedColumn.isBlank()) {
+                    columns.add(normalizedColumn);
+                }
+            }
+
+            inserts.add(new RoutineSetupInsert(tableName, columns, matcher.start()));
+        }
+
+        return inserts;
+    }
+
+    private boolean hasIdentityInsertState(String setup, String tableName, String state) {
+        if (setup == null || tableName == null || state == null) {
+            return false;
+        }
+
+        Pattern pattern = Pattern.compile(
+                "(?is)\\bSET\\s+IDENTITY_INSERT\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\]|\\{SCHEMA\\})\\s*\\.\\s*\\[?"
+                        + Pattern.quote(tableName)
+                        + "\\]?\\s+" + Pattern.quote(state) + "\\b");
+        return pattern.matcher(setup).find();
+    }
+
+    private String normalizeIdentifierKey(String raw) {
+        return normalizeIdentifier(raw).toLowerCase(Locale.ROOT);
+    }
+
+    private List<String> normalizeIdentifierKeys(List<String> values) {
+        List<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String key = normalizeIdentifierKey(value);
+            if (!key.isBlank()) {
+                normalized.add(key);
+            }
+        }
+        return normalized;
+    }
+
+    private String formatIdentifierList(List<String> identifiers) {
+        if (identifiers == null || identifiers.isEmpty()) {
+            return "(unknown)";
+        }
+        return String.join(", ", identifiers);
+    }
+
+    private void addRoutineSchemaQualificationIssues(List<String> issues, String label, String sql) {
+        if (sql == null || sql.isBlank()) {
+            return;
+        }
+
+        Matcher objectMatcher = ROUTINE_SQL_OBJECT_REFERENCE_PATTERN.matcher(sql);
+        while (objectMatcher.find()) {
+            String objectRef = objectMatcher.group(1);
+            if (!isAllowedRoutineSqlObjectReference(objectRef)) {
+                issues.add("- " + label + ": object reference '" + objectRef
+                        + "' is not schema-qualified. Use [{SCHEMA}].ObjectName in setup_script, "
+                        + "invocation_query, and validation_query.");
+                return;
+            }
+        }
+
+        Matcher execMatcher = ROUTINE_SQL_EXEC_REFERENCE_PATTERN.matcher(sql);
+        while (execMatcher.find()) {
+            String routineRef = execMatcher.group(1);
+            if (!isAllowedRoutineSqlObjectReference(routineRef)) {
+                issues.add("- " + label + ": EXEC target '" + routineRef
+                        + "' is not schema-qualified. Use EXEC ... = [{SCHEMA}].<procedure_name>.");
+                return;
+            }
+        }
+    }
+
+    private boolean isAllowedRoutineSqlObjectReference(String objectRef) {
+        if (objectRef == null || objectRef.isBlank()) {
+            return true;
+        }
+        String normalized = objectRef.trim().replaceAll("\\s+", "");
+        return normalized.startsWith("[{SCHEMA}].")
+                || normalized.startsWith("@")
+                || normalized.startsWith("#");
+    }
+
+    private boolean sideEffectValidationOnlyCountsRows(String validation) {
+        if (validation == null || validation.isBlank()
+                || !validation.matches("(?is).*\\bCOUNT\\s*\\(.*")) {
+            return false;
+        }
+
+        Matcher matcher = Pattern.compile("(?is)\\bSELECT\\s+(.*?)\\s+FROM\\b").matcher(validation);
+        if (!matcher.find()) {
+            return false;
+        }
+
+        String selectList = matcher.group(1);
+        String[] expressions = selectList.split(",");
+        for (String expression : expressions) {
+            String normalized = expression
+                    .replaceAll("(?is)\\s+AS\\s+\\[[^\\]]+\\]\\s*$", "")
+                    .replaceAll("(?is)\\s+AS\\s+[A-Za-z_][A-Za-z0-9_]*\\s*$", "")
+                    .trim();
+            if (normalized.matches("(?is)@rc\\b.*")
+                    || normalized.matches("(?is)return_value\\b.*")
+                    || normalized.matches("(?is)COUNT\\s*\\(.*")
+                    || normalized.matches("(?is)\\d+")
+                    || normalized.matches("(?is)N?'[^']*'")) {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private boolean looksLikeSuccessScenario(String text) {
+        String normalized = normalizeSearchText(text);
+        return normalized.contains("success")
+                || normalized.contains("thanh cong")
+                || normalized.contains("hop le");
+    }
+
+    private boolean looksLikeFailureScenario(String text) {
+        String normalized = normalizeSearchText(text);
+        return normalized.contains("fail")
+                || normalized.contains("invalid")
+                || normalized.contains("khong")
+                || normalized.contains("loi")
+                || normalized.contains("that bai")
+                || normalized.contains("qua som")
+                || normalized.contains("ton tai");
+    }
+
+    private boolean looksLikeMissingParentScenario(String text) {
+        String normalized = normalizeSearchText(text);
+        return (normalized.contains("missing") || normalized.contains("khong ton tai")
+                || normalized.contains("nonexist") || normalized.contains("foreign key")
+                || normalized.contains("fk") || normalized.contains("parent"))
+                && (normalized.contains("parent") || normalized.contains("foreign key")
+                        || normalized.contains("fk"));
+    }
+
+    private boolean looksLikeDeleteScenario(String text) {
+        String normalized = normalizeSearchText(text);
+        return normalized.contains("delete")
+                || normalized.contains("xoa");
+    }
+
+    private String normalizeSearchText(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        return Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(Locale.ROOT);
+    }
+
+    private String truncateForLog(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength) + "...";
     }
 
     private List<String> validateSelectRubricHeuristics(JsonNode rubricNode) {
@@ -957,6 +2385,27 @@ public class GeminiServiceImpl implements GeminiService {
             List<String> referencesColumns) {
     }
 
+    private record RoutineForeignKey(
+            String tableName,
+            List<String> columns,
+            String referencesTable,
+            List<String> referencesColumns) {
+    }
+
+    private record RoutineSetupInsert(
+            String tableName,
+            Set<String> columns,
+            int position) {
+    }
+
+    private record RoutineRubricIssue(
+            String caseId,
+            String phase,
+            String errorCode,
+            String message,
+            String sql) {
+    }
+
     private String normalizeInsertRubricSchema(String rubricJson, double totalPoints) throws Exception {
         JsonNode parsed = objectMapper.readTree(rubricJson);
         if (!(parsed instanceof ObjectNode root)) {
@@ -1181,15 +2630,36 @@ public class GeminiServiceImpl implements GeminiService {
                 totalPoints);
     }
 
-    private String buildRoutineRubricPrompt(
+    private String buildFunctionRubricPrompt(
             String correctQuery,
             String questionContent,
             double totalPoints,
-            String routineType) {
-        return String.format(routineRubricPromptTemplate,
+            String routineType,
+            String schemaContext) {
+        return String.format(functionRubricPromptTemplate,
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
                 routineType,
+                schemaContext != null && !schemaContext.isBlank()
+                        ? truncateForLog(schemaContext, 6000)
+                        : "No schema context was provided.",
+                totalPoints,
+                totalPoints);
+    }
+
+    private String buildStoredProcedureRubricPrompt(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String routineType,
+            String schemaContext) {
+        return String.format(storedProcedureRubricPromptTemplate,
+                questionContent != null ? questionContent : "Không có nội dung câu hỏi",
+                correctQuery,
+                routineType,
+                schemaContext != null && !schemaContext.isBlank()
+                        ? truncateForLog(schemaContext, 6000)
+                        : "No schema context was provided.",
                 totalPoints,
                 totalPoints);
     }
@@ -1197,11 +2667,13 @@ public class GeminiServiceImpl implements GeminiService {
     private String buildTriggerRubricPrompt(
             String correctQuery,
             String questionContent,
-            double totalPoints) {
+            double totalPoints,
+            String schemaContext) {
         return String.format(triggerRubricPromptTemplate,
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
-                totalPoints);
+                totalPoints,
+                schemaContext != null && !schemaContext.isBlank() ? schemaContext : "Không có DDL schema context");
     }
 
     private String wrapTriggerRubric(String rubricJson, double totalPoints) throws Exception {
@@ -1244,7 +2716,7 @@ public class GeminiServiceImpl implements GeminiService {
             log.info("Calling Gemini for specification schema generation. Description length={}",
                     specificationDescription == null ? 0 : specificationDescription.length());
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(GEMINI_URL + apiKey))
+                    .uri(URI.create(geminiEndpoint()))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .timeout(Duration.ofSeconds(60))

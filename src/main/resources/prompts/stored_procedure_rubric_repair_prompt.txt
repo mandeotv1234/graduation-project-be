@@ -1,0 +1,177 @@
+You are repairing an existing SQL Server grading rubric for a STORED_PROCEDURE question.
+Return only valid JSON. Do not use markdown.
+
+Your task is NOT to generate a new rubric from scratch.
+Your task is to repair the CURRENT RUBRIC JSON using the executable validation
+errors below. The backend has already tried to run each test case as:
+
+BEGIN TRANSACTION
+  setup_script
+  invocation_query
+  validation_query
+ROLLBACK TRANSACTION
+
+Each error tells you which case failed, which phase failed, and the SQL Server
+message. Use that runtime truth to repair the rubric.
+
+QUESTION:
+%s
+
+REFERENCE SQL:
+%s
+
+DATABASE SPEC CONTEXT:
+%s
+
+CURRENT RUBRIC JSON:
+%s
+
+EXECUTABLE VALIDATION ERRORS:
+%s
+
+STEP 1 - Return shape
+Return the FULL corrected rubric JSON with the same shape:
+{
+  "question_id": "Q_AUTO_01",
+  "total_points": <same value as current rubric>,
+  "question_category": "ROUTINE",
+  "grading_payload": {
+    "grading_settings": {
+      "syntax_error_action": "FAIL_ALL",
+      "print_output_compare_mode": "LENIENT"
+    },
+    "routines": [ <same required stored procedure metadata unless explicitly broken> ],
+    "test_cases": [ <all test cases, including repaired cases> ]
+  }
+}
+
+Do not return a patch, diff, explanation, or only the broken test cases.
+Do not add expected_result, expected_value, expected_output, or teacher-derived values.
+
+STEP 2 - What to change
+- Repair ONLY the failing test cases listed in EXECUTABLE VALIDATION ERRORS.
+- Keep test cases that are not listed unchanged.
+- Keep case_id, case_name, description, verification_type, match_type, and score_weight
+  unchanged unless the error proves that field is the cause.
+- Preserve score_weight total around 1.0.
+- Preserve routines[] metadata unless the error says the procedure name/signature/type is wrong.
+
+STEP 3 - How to read validation errors
+- phase = SETUP:
+  Fix setup_script. Usually this means missing FK parent rows, invalid table/column
+  names, wrong insert order, missing NOT NULL values, or invalid SQL syntax.
+- phase = INVOCATION:
+  Fix invocation_query. Usually this means wrong procedure name, missing/incorrect
+  OUTPUT syntax, undeclared variables, or invalid parameter literals.
+- phase = VALIDATION:
+  Fix validation_query. Usually this means invalid column/table names, zero-row
+  validation for failure cases, variable redeclare, or selecting output from the
+  wrong place.
+- error_code = FOREIGN_KEY_VIOLATION:
+  Read DATABASE SPEC CONTEXT, find the child table/column and referenced parent
+  table/column, then add valid parent rows BEFORE inserting the child row.
+- error_code = VARIABLE_REDECLARED:
+  Do not DECLARE the same variable in validation_query. Variables declared in
+  invocation_query are still visible to validation_query.
+- error_code = VALIDATION_RETURNED_NO_ROWS:
+  Rewrite validation_query to return exactly one deterministic row, usually using
+  scalar subqueries such as SELECT @Result AS return_value, (SELECT COUNT(*) ...)
+  AS affected_count.
+- If a SQL Server error says a NULL value cannot be inserted or updated into a
+  NOT NULL column during invocation_query, inspect REFERENCE SQL before repairing.
+  If REFERENCE SQL does not explicitly guard that exact NULL parameter before DML
+  (for example "@Param IS NULL", "ISNULL(@Param", "COALESCE(@Param", or TRY/CATCH
+  that sets a stable failure result), the test case is invalid. Replace that case's
+  invocation with another business-rule failure that REFERENCE SQL actually
+  handles; do not merely change validation_query to expect @Result = 0.
+
+STEP 4 - Stored procedure execution rules
+The engine runs setup_script, invocation_query, and validation_query in one batch.
+Variables declared in invocation_query are visible to validation_query.
+
+Correct DML stored procedure pattern with output parameter:
+invocation_query:
+"DECLARE @res INT;
+ EXEC [{SCHEMA}].<sp_name> @Param1 = <literal>, @Result = @res OUTPUT;"
+validation_query:
+"SELECT @res AS return_value,
+        (SELECT COUNT(*) FROM [{SCHEMA}].<target_table> WHERE <condition>) AS affected_count"
+
+Do not put the final SELECT in invocation_query.
+Do not re-execute the stored procedure in validation_query.
+Do not redeclare @res or any output variable in validation_query.
+
+STEP 5 - Schema qualification rules
+- Every table and procedure reference in setup_script, invocation_query, and
+  validation_query must use the literal placeholder [{SCHEMA}].
+- Never use dbo., [dbo]., THIS., [THIS]., THIS_SCHEMA, TARGET_SCHEMA,
+  YOUR_SCHEMA, SCHEMA_NAME, or bare unqualified object names.
+- Correct: EXEC [{SCHEMA}].<procedure_name> ...
+- Correct: INSERT INTO [{SCHEMA}].<table> (...)
+- Correct: DELETE FROM [{SCHEMA}].<table> WHERE ...
+- Correct: SELECT ... FROM [{SCHEMA}].<table> ...
+
+STEP 6 - setup_script repair rules
+- setup_script may use DELETE, INSERT, and UPDATE only.
+- setup_script must never CREATE, ALTER, DROP, CREATE PROCEDURE, CREATE FUNCTION,
+  or use GO.
+- Make setup idempotent: DELETE exact test keys before INSERTing those keys.
+- Make setup self-contained: do not rely on seed data from another test case.
+- SQL Server IDENTITY values are not reset by DELETE and are not rolled back by
+  transaction rollback. Do not assume an inserted identity parent row receives
+  id = 1 or any other literal after prior tests or seed data.
+- When INSERTing setup rows, include all required columns from DATABASE SPEC
+  CONTEXT: primary keys, FK columns, NOT NULL columns without defaults, and any
+  nullable columns the procedure reads or validation checks.
+- Do not invent tables or columns not present in DATABASE SPEC CONTEXT or clearly
+  used by REFERENCE SQL.
+
+Foreign key checklist for every setup_script you repair:
+1. List every INSERT INTO [{SCHEMA}].<table>.
+2. Scan DATABASE SPEC CONTEXT for both compact FK arrows
+   (FK->parent.column) and raw DDL constraints
+   (FOREIGN KEY (...) REFERENCES parent(...)).
+3. For each inserted table, find every FK where that table is the child.
+4. If your INSERT supplies a FK value, insert the referenced parent row first.
+   This applies to every setup row, not only to values used by invocation_query.
+5. If the inserted table is a junction/assignment/detail table with multiple FKs,
+   insert every parent row on every FK edge before inserting the child row.
+6. If a parent row you add is itself a child through the columns you provide,
+   insert that parent's required parents first.
+7. If an inserted table has an IDENTITY primary key and a later child INSERT,
+   invocation argument, or validation condition needs that key, never guess a
+   literal such as 1. Repair with one of these safe patterns:
+   a) deterministic explicit key: wrap only that table's INSERT with
+      SET IDENTITY_INSERT [{SCHEMA}].<table> ON/OFF and insert a unique test id;
+   b) generated key lookup: insert without the identity column, then use the
+      actual generated/found id in child INSERTs, invocation_query, and
+      validation_query. Do not mix generated parent ids with hard-coded child FK
+      values.
+8. DELETE order is the reverse: child rows before parent rows.
+9. If the case explicitly tests missing parent/FK behavior, call the procedure
+   with the missing key, but do not insert invalid child rows that violate FK
+   constraints during setup.
+
+Failure case isolation:
+- If the case checks one business rule such as invalid time range, duplicate key,
+  null input, role/status restriction, department/ownership mismatch, or protected
+  row, then all unrelated parent rows and preconditions must be valid in setup.
+- Do not let the procedure return early on an unrelated missing parent or missing
+  setup row.
+- Null input is only a valid silent failure case when REFERENCE SQL explicitly
+  handles null for that parameter. Do not keep a NULL test that reaches an
+  unhandled SQL Server NOT NULL/FK/runtime exception in the reference procedure.
+
+STEP 7 - validation_query repair rules
+- For SIDE_EFFECT success cases, validation_query must prove the actual DML effect,
+  not only that the procedure returned success.
+- For INSERT/UPDATE success, select affected business columns when possible.
+- For DELETE success, return @Result plus COUNT(*) proving target and related rows
+  are gone.
+- For silent failure/no-change cases, validation_query must still return exactly
+  one row. Use scalar subqueries; avoid FROM clauses that disappear when the
+  target row is absent.
+- Avoid CROSS APPLY / OUTER APPLY for SIDE_EFFECT validation.
+- For PRINT_OUTPUT cases, validation_query must be empty.
+
+Return only the corrected full JSON rubric.

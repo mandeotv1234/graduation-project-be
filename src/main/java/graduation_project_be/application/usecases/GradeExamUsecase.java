@@ -20,8 +20,10 @@ import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.User;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import graduation_project_be.domain.models.enums.SubmissionStatus;
+import graduation_project_be.domain.models.enums.VerificationType;
 import graduation_project_be.domain.models.TestCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +71,131 @@ public class GradeExamUsecase {
                 });
     }
 
+    /**
+     * Loads DDL specification (and optionally the first active dataset) into a
+     * schema. Used to reconstruct the same baseline state that the student saw
+     * when starting the exam, so that grading questions which reference spec
+     * tables (Function/SP/Trigger) work even if the exam has no CREATE_TABLE
+     * questions.
+     */
+    private void setupSchemaWithSpec(String schemaName, ExamSpecification specification, boolean includeDataset) {
+        if (specification == null || specification.getDdlScript() == null) {
+            return;
+        }
+        String defaultDataScript = null;
+        if (includeDataset && specification.getDatasets() != null) {
+            defaultDataScript = specification.getDatasets().stream()
+                    .filter(SpecDataset::isActive)
+                    .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
+                    .map(SpecDataset::getDataScript)
+                    .filter(s -> s != null && !s.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
+        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), defaultDataScript);
+    }
+
+    /**
+     * Runs correctQuery of each non-SELECT question against the teacher schema in
+     * orderIndex order. Returns a map of questionId -> error for any question
+     * whose correctQuery failed to load. Those questions are marked with a clear
+     * "[ĐỀ LỖI]" message during grading instead of silently failing the student.
+     *
+     * <p>Why per-question error capture instead of failing the whole grading job:
+     * a single bad correctQuery (e.g. wrong column name in CREATE TRIGGER) should
+     * NOT prevent grading of unrelated questions. Each failure is isolated.
+     */
+    private Map<Long, String> populateTeacherSchemaWithAnswers(String teacherSchemaName,
+            List<ExamQuestion> sortedQuestions) {
+        Map<Long, String> errors = new HashMap<>();
+        for (ExamQuestion q : sortedQuestions) {
+            // Skip types that are NOT applied as DDL on teacher schema:
+            //  - SELECT_QUERY: it's a query, not a state-mutating DDL.
+            //  - CREATE_TABLE / INSERT_DATA: the spec.ddlScript loaded earlier already
+            //    contains the schema and seed data. Re-running these correctQuery
+            //    would conflict ("object already exists" / PK violation) and falsely
+            //    flag the question as broken. The metadata/data needed by SP/FN/
+            //    Trigger questions comes from the spec, not from these Q's.
+            QuestionType type = q.getQuestionType();
+            if (type == QuestionType.SELECT_QUERY
+                    || type == QuestionType.CREATE_TABLE
+                    || type == QuestionType.INSERT_DATA) {
+                continue;
+            }
+            String correctQuery = q.getCorrectQuery();
+            if (correctQuery == null || correctQuery.isBlank()) {
+                continue;
+            }
+            // Skip placeholder text from failed AI generation.
+            String trimmed = correctQuery.trim();
+            if (trimmed.startsWith("--") && !trimmed.contains("\n")) {
+                log.warn("[TEACHER_SCHEMA] Q{} correctQuery looks like a placeholder, skipping: {}",
+                        q.getId(), trimmed);
+                continue;
+            }
+            try {
+                executeSqlScriptBatches(teacherSchemaName, correctQuery);
+                log.info("[TEACHER_SCHEMA] Q{} ({}) correctQuery applied", q.getId(), q.getQuestionType());
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                errors.put(q.getId(), msg);
+                log.error("[TEACHER_SCHEMA] Q{} ({}) correctQuery failed: {}",
+                        q.getId(), q.getQuestionType(), msg);
+            }
+        }
+        return errors;
+    }
+
+    private void executeSqlScriptBatches(String schemaName, String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return;
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    examSchemaService.executeSql(schemaName, normalizeDboReferences(executable, schemaName));
+                }
+            }
+        }
+    }
+
+    private String normalizeDboReferences(String sql, String schemaName) {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        return sql.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        if (prefix.isBlank()) {
+            return List.of(routine);
+        }
+        return List.of(prefix, routine);
+    }
+
     @Transactional
     public void execute(Long examId, Long studentId, int attemptNumber) {
         log.info("Starting grading: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
@@ -112,23 +239,35 @@ public class GradeExamUsecase {
             String schemaName = String.format("exam_%d_student_%d", examId, studentId);
             String teacherSchemaName = schemaName + "_teacher";
 
-            // 6. Reset schemas before grading
-            log.info("Resetting schema [{}] before grading", schemaName);
-            examSchemaService.resetSchema(schemaName, false);
-
-            log.info("Setting up teacher schema [{}] for test case validation", teacherSchemaName);
-            examSchemaService.resetSchema(teacherSchemaName, false);
-            if (specification != null && specification.getDdlScript() != null) {
-                examSchemaService.loadTemplateIntoSchema(teacherSchemaName, specification.getDdlScript(), null);
-            }
-
-            // 7. Grade ALL questions sequentially (order by orderIndex)
-            BigDecimal totalScore = BigDecimal.ZERO;
-            int correctCount = 0;
-
+            // 6. Sort questions once — used both to populate the teacher schema and
+            // to grade student answers in deterministic order.
             List<ExamQuestion> sortedQuestions = allQuestions.stream()
                     .sorted(Comparator.comparingInt(ExamQuestion::getOrderIndex))
                     .toList();
+
+            // 7. Reset + reload student schema with DDL spec (mirror startSession state).
+            // Without this, SP/Function/Trigger questions referencing tables from the spec
+            // would fail because the schema was wiped clean before grading.
+            boolean isLoadDdl = exam.getSettings() != null
+                    && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+            log.info("Resetting schema [{}] before grading (isLoadDdl={})", schemaName, isLoadDdl);
+            examSchemaService.resetSchema(schemaName, false);
+            setupSchemaWithSpec(schemaName, specification, isLoadDdl);
+
+            // 8. Setup teacher schema as a "reference answer" environment.
+            // DDL only (no datasets — test cases provide their own setup data),
+            // then run each question's correctQuery so that:
+            //   - extractRoutineMetadata(teacher) returns the expected routines/triggers
+            //   - SIDE_EFFECT/RESULT_SET test cases can derive expected_value by running
+            //     their validation_query against the teacher's correct answer.
+            log.info("Setting up teacher schema [{}] for test case validation", teacherSchemaName);
+            examSchemaService.resetSchema(teacherSchemaName, false);
+            setupSchemaWithSpec(teacherSchemaName, specification, false);
+            Map<Long, String> teacherSetupErrors = populateTeacherSchemaWithAnswers(teacherSchemaName, sortedQuestions);
+
+            // 9. Grade ALL questions sequentially (order by orderIndex)
+            BigDecimal totalScore = BigDecimal.ZERO;
+            int correctCount = 0;
 
             for (ExamQuestion question : sortedQuestions) {
                 ExamSubmission submission = submissionByQuestionId.get(question.getId());
@@ -141,6 +280,18 @@ public class GradeExamUsecase {
 
                 if (studentQuery == null || studentQuery.isBlank()) {
                     errorMessage = "No answer submitted";
+                } else if (teacherSetupErrors.containsKey(question.getId())) {
+                    // Teacher's correctQuery failed to load — this is a question-design bug,
+                    // not the student's fault. Mark with a clear "[ĐỀ LỖI]" prefix so a
+                    // teacher can spot it and override later. Keep score at 0 for now;
+                    // a future task will add an AWAITING_TEACHER_REVIEW status.
+                    errorMessage = "[ĐỀ LỖI] Đáp án mẫu của câu này không chạy được trên schema mẫu: "
+                            + teacherSetupErrors.get(question.getId())
+                            + ". Câu hỏi cần được giáo viên kiểm tra lại — điểm chấm tự động không tin cậy.";
+                    log.warn("Q{} skipped grading due to teacher setup failure", question.getId());
+                    if (submission != null) {
+                        submission.setScoreEarned(BigDecimal.ZERO);
+                    }
                 } else {
                     long startTime = System.currentTimeMillis();
                     try {
@@ -190,7 +341,7 @@ public class GradeExamUsecase {
                                     hasExecutionError = true;
                                 }
                             }
-                            if (hasExecutionError && isCreateTableFailAllMode(question)) {
+                            if (hasExecutionError && isSyntaxErrorFailAllMode(question)) {
                                 if (submission != null) {
                                     submission.setScoreEarned(BigDecimal.ZERO);
                                     submission.setErrorMessage(
@@ -473,8 +624,8 @@ public class GradeExamUsecase {
         return allPassed;
     }
 
-    private boolean isCreateTableFailAllMode(ExamQuestion question) {
-        if (question == null || question.getQuestionType() != QuestionType.CREATE_TABLE) {
+    private boolean isSyntaxErrorFailAllMode(ExamQuestion question) {
+        if (question == null) {
             return false;
         }
         if (question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
@@ -2664,68 +2815,54 @@ public class GradeExamUsecase {
                 testCases == null ? 0 : testCases.size());
 
         if (testCases == null || testCases.isEmpty()) {
+            // Fail-loud for DDL types: surface the "missing rubric/test cases" reason
+            // on the submission so the teacher knows the question needs setup.
+            QuestionType type = question.getQuestionType();
+            if (submission != null && (type == QuestionType.STORED_PROCEDURE
+                    || type == QuestionType.FUNCTION
+                    || type == QuestionType.TRIGGER)) {
+                submission.setErrorMessage(
+                        "[THIẾU TEST CASE] Câu hỏi này chưa có test case nào trong DB. "
+                                + "Hãy chạy pipeline tạo rubric (T08/T09) hoặc thêm test case thủ công. "
+                                + "Điểm hiện tại chỉ phản ánh phần kiểm tra metadata.");
+            }
             return gradeByStrictComparison(schemaName, question);
         }
 
         BigDecimal earnedTotal = BigDecimal.ZERO;
         boolean allPassed = true;
         StringBuilder errorBuilder = new StringBuilder();
+        String printOutputCompareMode = readPrintOutputCompareMode(question);
 
         for (TestCase tc : testCases) {
+            int tcOrder = tc.getOrderIndex() != null ? tc.getOrderIndex() : 0;
             try {
-                String validationQuery = tc.getValidationQuery()
-                        .replace("{SCHEMA}", schemaName)
-                        .replace("{TEACHER_SCHEMA}", teacherSchemaName);
-                log.info("[gradeByTestCases] Q{} TC{} running query: {}", question.getId(), tc.getOrderIndex(),
-                        validationQuery);
+                TestCaseRunResult run = runOneTestCase(schemaName, teacherSchemaName, tc);
+                String actualSerialized = run.actualValue;
+                String expected = tc.getExpectedValue() != null ? tc.getExpectedValue().trim() : "";
 
-                List<Map<String, Object>> actual = examSchemaService.executeAdminSql(validationQuery).getResultSet();
-                log.info("[gradeByTestCases] Q{} TC{} actual result: {}", question.getId(), tc.getOrderIndex(), actual);
+                boolean isTcCorrect = compareWithMatchType(actualSerialized, expected, tc, printOutputCompareMode);
 
-                boolean isTcCorrect = false;
-
-                if (tc.getExpectedValue() == null) {
-                    // null expectedValue = just verify the query ran without error and returned
-                    // some result
-                    isTcCorrect = actual != null && !actual.isEmpty()
-                            && actual.get(0).values().stream().anyMatch(v -> v != null);
-                    log.info("[gradeByTestCases] Q{} TC{} null-expected check, result non-null: {}", question.getId(),
-                            tc.getOrderIndex(), isTcCorrect);
-                } else if (tc.getExpectedValue() != null) {
-                    String expectedStr = tc.getExpectedValue().trim();
-                    if (actual != null && actual.size() == 1 && actual.get(0).size() == 1) {
-                        Object firstVal = actual.get(0).values().iterator().next();
-                        String actualStr = normalizeValue(firstVal);
-                        log.info("[gradeByTestCases] Q{} TC{} compare: actual='{}' expected='{}'", question.getId(),
-                                tc.getOrderIndex(), actualStr, expectedStr);
-                        if (actualStr.equalsIgnoreCase(expectedStr)) {
-                            isTcCorrect = true;
-                        }
-                    } else if (actual != null && actual.isEmpty() && "0".equals(expectedStr)) {
-                        isTcCorrect = true;
-                    } else {
-                        log.warn("[gradeByTestCases] Q{} TC{} unexpected result shape: rows={}, expected='{}'",
-                                question.getId(), tc.getOrderIndex(),
-                                actual == null ? "null" : actual.size(), expectedStr);
-                    }
-                }
+                log.info("[gradeByTestCases] Q{} TC{} ({}): actual='{}' expected='{}' match={}",
+                        question.getId(), tcOrder,
+                        tc.getVerificationType(),
+                        truncateForLog(actualSerialized), truncateForLog(expected), isTcCorrect);
 
                 if (isTcCorrect) {
-                    earnedTotal = earnedTotal.add(tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO);
-                    log.info("[gradeByTestCases] Q{} TC{} PASSED, earnedTotal={}", question.getId(), tc.getOrderIndex(),
-                            earnedTotal);
+                    earnedTotal = earnedTotal.add(
+                            tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO);
                 } else {
                     allPassed = false;
-                    errorBuilder.append(java.lang.String.format("Test case %d failed. ",
-                            tc.getOrderIndex() != null ? tc.getOrderIndex() : tc.getId()));
-                    log.warn("[gradeByTestCases] Q{} TC{} FAILED", question.getId(), tc.getOrderIndex());
+                    String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
+                    errorBuilder.append(String.format("[%s] expected='%s' actual='%s'. ",
+                            tcLabel, truncateForLog(expected), truncateForLog(actualSerialized)));
                 }
             } catch (Exception e) {
                 allPassed = false;
-                errorBuilder.append(java.lang.String.format("Test case %d error: %s. ",
-                        tc.getOrderIndex() != null ? tc.getOrderIndex() : tc.getId(), e.getMessage()));
-                log.error("[gradeByTestCases] Q{} TC{} threw exception: {}", question.getId(), tc.getOrderIndex(),
-                        e.getMessage(), e);
+                String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
+                errorBuilder.append(String.format("[%s] runtime error: %s. ", tcLabel, e.getMessage()));
+                log.error("[gradeByTestCases] Q{} TC{} threw exception: {}",
+                        question.getId(), tcOrder, e.getMessage(), e);
             }
         }
         log.info("[gradeByTestCases] Q{} allPassed={} earnedTotal={}", question.getId(), allPassed, earnedTotal);
@@ -2740,7 +2877,237 @@ public class GradeExamUsecase {
         return allPassed;
     }
 
+    /**
+     * Runs one test case against the student's schema, dispatching by
+     * {@link VerificationType}. The sequence setup → invocation → validation is
+     * executed inside a SQL Server BEGIN TRAN / ROLLBACK TRAN block so that any
+     * INSERT/UPDATE/DELETE side effects (especially common for SIDE_EFFECT and
+     * Trigger TC's) do not leak to the next TC.
+     *
+     * <p>Note on connection: ROLLBACK must run on the same connection as BEGIN
+     * TRAN. We achieve that by sending the whole script as ONE batch via
+     * executeSqlBatchAsSchemaUser (a single jdbcTemplate.execute call uses one
+     * connection). The validation_query's result set is read by the engine
+     * BEFORE the ROLLBACK statement clears it — standard MSSQL pattern.
+     *
+     * <p>Note on impersonation (P0-2): the batch runs under EXECUTE AS USER for
+     * the student's schema-scoped DB user, NOT under the admin connection. This
+     * is what stops a malicious or buggy student SP from reading other
+     * students' schemas. executeSqlBatchAsSchemaUser also enforces
+     * QUERY_TIMEOUT_SECONDS (P0-3) so an infinite loop / WAITFOR cannot hang
+     * the grading worker.
+     */
+    private TestCaseRunResult runOneTestCase(String schemaName, String teacherSchemaName, TestCase tc) {
+        VerificationType type = tc.getVerificationType() != null
+                ? tc.getVerificationType()
+                : VerificationType.RETURN_VALUE;
+
+        String setup = applyPlaceholders(tc.getSetupScript(), schemaName, teacherSchemaName);
+        String invocation = applyPlaceholders(tc.getInvocationQuery(), schemaName, teacherSchemaName);
+        String validation = applyPlaceholders(tc.getValidationQuery(), schemaName, teacherSchemaName);
+
+        // Build a single SQL batch that wraps the whole TC in a transaction.
+        // Why TRY/CATCH: if any inner statement throws, we still want a clean
+        // ROLLBACK and a thrown exception (the catch re-throws via THROW).
+        StringBuilder batch = new StringBuilder();
+        batch.append("BEGIN TRY\n");
+        batch.append("  BEGIN TRANSACTION;\n");
+        if (setup != null && !setup.isBlank()) {
+            batch.append("  ").append(setup).append(";\n");
+        }
+        if (invocation != null && !invocation.isBlank()) {
+            batch.append("  ").append(invocation).append(";\n");
+        }
+        if (validation != null && !validation.isBlank()) {
+            // P1-2: emit a marker result set right before validation_query.
+            // If invocation_query unintentionally produced result sets (e.g. an
+            // SP whose body has SELECT statements), executeSqlBatchAsSchemaUser
+            // would concatenate them together with validation rows. The marker
+            // lets us drop everything before validation when serializing.
+            batch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
+            batch.append("  ").append(validation).append(";\n");
+        }
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append("END TRY\n");
+        batch.append("BEGIN CATCH\n");
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append("  THROW;\n");
+        batch.append("END CATCH;");
+
+        // Run as the student's schema-scoped DB user (NOT admin) so that any
+        // student-defined routine called inside the batch is restricted to its
+        // own schema's permissions. Also enforces query timeout.
+        SqlExecutionResult execResult = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
+
+        // Capture per verification_type — must match ExpectedValueDeriver.serializeResult
+        // exactly so EXACT compare works.
+        String actual;
+        if (type == VerificationType.PRINT_OUTPUT) {
+            List<String> prints = execResult.getPrintMessages() != null
+                    ? execResult.getPrintMessages()
+                    : new ArrayList<>();
+            actual = String.join("\n", prints).trim();
+        } else {
+            actual = serializeResultForCompare(dropRowsBeforeValidationMarker(execResult));
+        }
+        return new TestCaseRunResult(actual);
+    }
+
+    /** Column name used to mark the start of validation_query's result set. */
+    private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+
+    /**
+     * Returns a copy of {@code execResult} with all rows up to AND including the
+     * marker row removed. If no marker row is present (e.g. test case has no
+     * validation_query, or marker was added by a different layer), returns the
+     * original result unchanged.
+     */
+    private SqlExecutionResult dropRowsBeforeValidationMarker(SqlExecutionResult execResult) {
+        if (execResult == null || execResult.getResultSet() == null) {
+            return execResult;
+        }
+        List<Map<String, Object>> rows = execResult.getResultSet();
+        int markerIdx = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).containsKey(VALIDATION_MARKER_COLUMN)) {
+                markerIdx = i;
+                break;
+            }
+        }
+        if (markerIdx < 0) {
+            return execResult;
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>(rows.subList(markerIdx + 1, rows.size()));
+        return SqlExecutionResult.builder()
+                .resultSet(filtered)
+                .rowCount(filtered.size())
+                .statusMessage(execResult.getStatusMessage())
+                .printMessages(execResult.getPrintMessages())
+                .build();
+    }
+
+    /**
+     * Mirrors ExpectedValueDeriver.serializeResult — both must agree on the
+     * canonical string form, otherwise EXACT compare always fails.
+     */
+    private String serializeResultForCompare(SqlExecutionResult result) {
+        if (result == null || result.getResultSet() == null || result.getResultSet().isEmpty()) {
+            return "";
+        }
+        List<Map<String, Object>> rows = result.getResultSet();
+        if (rows.size() == 1 && rows.get(0).size() == 1) {
+            Object v = rows.get(0).values().iterator().next();
+            return v == null ? "null" : v.toString().trim();
+        }
+        List<String> rowStrs = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            StringBuilder sb = new StringBuilder();
+            boolean first = true;
+            for (Object v : row.values()) {
+                if (!first) sb.append("|");
+                sb.append(v == null ? "null" : v.toString().trim());
+                first = false;
+            }
+            rowStrs.add(sb.toString());
+        }
+        Collections.sort(rowStrs);
+        return String.join("\n", rowStrs);
+    }
+
+    private boolean compareWithMatchType(String actual, String expected, TestCase tc, String printOutputCompareMode) {
+        if (actual == null) actual = "";
+        if (expected == null) expected = "";
+        actual = actual.trim();
+        expected = expected.trim();
+
+        if (tc.getVerificationType() == VerificationType.PRINT_OUTPUT
+                && "LENIENT".equalsIgnoreCase(printOutputCompareMode)) {
+            actual = normalizePrintOutputForCompare(actual);
+            expected = normalizePrintOutputForCompare(expected);
+        }
+
+        graduation_project_be.domain.models.enums.MatchType match = tc.getMatchType() != null
+                ? tc.getMatchType()
+                : graduation_project_be.domain.models.enums.MatchType.EXACT;
+        if (match == graduation_project_be.domain.models.enums.MatchType.CONTAINS) {
+            return actual.toLowerCase().contains(expected.toLowerCase());
+        }
+        // EXACT (default)
+        return actual.equalsIgnoreCase(expected);
+    }
+
+    private String readPrintOutputCompareMode(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return "LENIENT";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(question.getGradingRubric());
+            return root.path("grading_payload")
+                    .path("grading_settings")
+                    .path("print_output_compare_mode")
+                    .asText("LENIENT");
+        } catch (Exception e) {
+            log.warn("Cannot parse print_output_compare_mode for Q{}: {}", question.getId(), e.getMessage());
+            return "LENIENT";
+        }
+    }
+
+    private String normalizePrintOutputForCompare(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        return normalized.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String applyPlaceholders(String sql, String schemaName, String teacherSchemaName) {
+        if (sql == null) return null;
+        String result = sql;
+        if (schemaName != null) result = result.replace("{SCHEMA}", schemaName);
+        if (teacherSchemaName != null) result = result.replace("{TEACHER_SCHEMA}", teacherSchemaName);
+        // [dbo] / dbo. is a recurring AI hallucination from REFERENCE SQL.
+        // The grading engine runs every batch inside a per-user schema, never dbo,
+        // so hardcoded dbo always fails with "Could not find stored procedure".
+        // Coerce to the target schema; safe because no question in this system
+        // intentionally targets dbo objects.
+        if (schemaName != null) {
+            result = result.replaceAll("(?i)\\[dbo\\]\\s*\\.", "[" + schemaName + "].");
+            result = result.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+        }
+        return result;
+    }
+
+    private static String truncateForLog(String s) {
+        if (s == null) return "null";
+        return s.length() <= 200 ? s : s.substring(0, 200) + "...";
+    }
+
+    private record TestCaseRunResult(String actualValue) {
+    }
+
     private boolean gradeByStrictComparison(String schemaName, ExamQuestion question) {
+        // Fail-loud for DDL-style questions. correctQuery for these types is
+        // CREATE PROC/FUNCTION/TRIGGER — re-running it on the student schema
+        // either throws "object already exists" (if the student got it right)
+        // or returns no result set (which we'd interpret as wrong answer).
+        // Either way, strict comparison is the wrong semantics for DDL.
+        // Instead we surface a clear "missing rubric/test cases" message so the
+        // teacher knows to add test cases for this question.
+        QuestionType type = question.getQuestionType();
+        if (type == QuestionType.STORED_PROCEDURE
+                || type == QuestionType.FUNCTION
+                || type == QuestionType.TRIGGER) {
+            log.error("[gradeByStrictComparison] Q{} ({}) has no test cases AND no usable rubric — "
+                    + "fallback strict comparison is not valid for DDL types. Score will rely on "
+                    + "metadata-only check (and likely be 0 if metadata is also missing).",
+                    question.getId(), type);
+            return false;
+        }
+
         try {
             List<Map<String, Object>> actual = examSchemaService.executeSql(
                     schemaName, question.getCorrectQuery()).getResultSet();
@@ -2809,23 +3176,35 @@ public class GradeExamUsecase {
 
     private boolean gradeRoutineAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question,
             ExamSubmission submission) {
-        // Execute setup_script from rubric if available (for creating test tables)
-        if (question.getGradingRubric() != null && !question.getGradingRubric().isBlank()) {
-            String setupScript = extractSetupScriptFromRubric(question.getGradingRubric());
-            if (setupScript != null && !setupScript.isBlank()) {
-                try {
-                    String normalizedSetup = setupScript.replaceAll("(?i)\\s*GO\\s*", "\n").trim();
-                    examSchemaService.executeSql(teacherSchemaName, normalizedSetup);
-                    examSchemaService.executeSql(schemaName, normalizedSetup);
-                    log.info("[gradeRoutineAlgorithmic] Q{} executed setup_script from rubric", question.getId());
-                } catch (Exception e) {
-                    log.warn("[gradeRoutineAlgorithmic] Q{} failed to execute setup_script: {}", question.getId(),
-                            e.getMessage());
-                }
-            }
-        }
+        // T11/T12: setup_script is now applied per-test-case inside a transaction
+        // (see gradeByTestCases.runOneTestCase). The previous upfront concatenation
+        // here is removed because:
+        //  1. it ran with literal {SCHEMA} placeholders (not substituted),
+        //     causing MSSQL parse errors with the new prompt convention.
+        //  2. concatenating all setups across TC's leaked state across TC's.
+        //  3. MSSQL does deferred name resolution for CREATE PROCEDURE/FUNCTION/
+        //     TRIGGER bodies, so referenced tables don't need to exist at CREATE
+        //     time — only at invocation time, which happens inside per-TC TX.
 
-        List<RoutineMetadata> expectedRoutines = examSchemaService.extractRoutineMetadata(teacherSchemaName);
+        // Source of truth for "what routines the question requires" is the AI
+        // rubric, not the teacher schema. Teacher's correctQuery may include
+        // helper FNs/SPs as implementation detail (e.g. an FN_NextId helper
+        // called from inside the main SP); the question itself only asks the
+        // student to create the user-facing routine. Penalizing students for
+        // not creating those helpers would be unfair — they may inline the
+        // logic, use a CTE, or take a different approach entirely.
+        // See md/GRAD-141_SP_GRADING_GAPS.md §2 LỖ HỔNG 1.
+        List<RoutineMetadata> expectedRoutines =
+                extractExpectedRoutinesFromRubric(question.getGradingRubric());
+        List<RoutineMetadata> teacherSchemaRoutines =
+                examSchemaService.extractRoutineMetadata(teacherSchemaName);
+        if (expectedRoutines == null || expectedRoutines.isEmpty()) {
+            // Legacy questions (created before the rubric was authoritative
+            // for routines[]) fall back to teacher schema metadata.
+            expectedRoutines = teacherSchemaRoutines;
+        } else {
+            logHelperRoutinesIgnored(question.getId(), expectedRoutines, teacherSchemaRoutines);
+        }
         List<RoutineMetadata> actualRoutines = examSchemaService.extractRoutineMetadata(schemaName);
 
         BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
@@ -2852,9 +3231,18 @@ public class GradeExamUsecase {
             return passed;
         }
 
-        // Metadata check is worth 20% if there are test cases, otherwise 100%
-        BigDecimal metadataWeight = hasTestCases ? new BigDecimal("0.20") : BigDecimal.ONE;
-        BigDecimal testCaseWeight = hasTestCases ? new BigDecimal("0.80") : BigDecimal.ZERO;
+        // Stored procedure metadata is diagnostic when test cases exist; business
+        // behavior is scored entirely by test cases. Functions keep the legacy
+        // 20/80 split because they share this routine grader but are not part of
+        // the current SP-only rubric change.
+        boolean metadataDiagnosticOnly = hasTestCases
+                && question.getQuestionType() == QuestionType.STORED_PROCEDURE;
+        BigDecimal metadataWeight = metadataDiagnosticOnly
+                ? BigDecimal.ZERO
+                : (hasTestCases ? new BigDecimal("0.20") : BigDecimal.ONE);
+        BigDecimal testCaseWeight = metadataDiagnosticOnly
+                ? BigDecimal.ONE
+                : (hasTestCases ? new BigDecimal("0.80") : BigDecimal.ZERO);
 
         BigDecimal maxMetadataScore = totalPoints.multiply(metadataWeight);
         BigDecimal perRoutineMax = maxMetadataScore.divide(BigDecimal.valueOf(expectedRoutines.size()), 4,
@@ -2878,8 +3266,12 @@ public class GradeExamUsecase {
 
             double score = 0.5; // Found it
 
-            // Type check (Procedure vs Function)
-            if (expected.getRoutineType().equalsIgnoreCase(actual.getRoutineType())) {
+            // Type check (Procedure vs Function).
+            // AI rubric ghi "STORED_PROCEDURE" theo enum domain trong khi
+            // INFORMATION_SCHEMA.ROUTINES.ROUTINE_TYPE trả "PROCEDURE" — normalize
+            // hai bên trước khi so để không log "Sai loại Routine" oan.
+            if (normalizeRoutineType(expected.getRoutineType())
+                    .equalsIgnoreCase(normalizeRoutineType(actual.getRoutineType()))) {
                 score += 0.2;
             } else {
                 errorBuilder.append(String.format("Sai loại Routine %s (Kỳ vọng: %s). ", expected.getRoutineName(),
@@ -2915,38 +3307,30 @@ public class GradeExamUsecase {
             }
         }
 
-        BigDecimal finalScore = earnedMetadataScore.add(earnedTestCaseScore);
+        BigDecimal finalScore = metadataDiagnosticOnly
+                ? earnedTestCaseScore
+                : earnedMetadataScore.add(earnedTestCaseScore);
         if (finalScore.compareTo(totalPoints) > 0)
             finalScore = totalPoints;
 
         if (submission != null) {
             submission.setScoreEarned(finalScore);
-            boolean totalPassed = allPassedMetadata && testCasesPassed;
+            boolean totalPassed = metadataDiagnosticOnly
+                    ? testCasesPassed
+                    : allPassedMetadata && testCasesPassed;
             if (!totalPassed) {
                 String tcError = submission.getErrorMessage() != null ? submission.getErrorMessage() : "";
                 submission.setErrorMessage((errorBuilder.toString().trim() + " " + tcError).trim());
             }
         }
 
-        return allPassedMetadata && testCasesPassed;
+        return metadataDiagnosticOnly ? testCasesPassed : allPassedMetadata && testCasesPassed;
     }
 
     private boolean gradeTriggerAlgorithmic(String schemaName, String teacherSchemaName, ExamQuestion question,
             ExamSubmission submission) {
-        String gradingRubricJson = question.getGradingRubric();
-        if (gradingRubricJson != null && !gradingRubricJson.isBlank()) {
-            String setupScript = extractSetupScriptFromRubric(gradingRubricJson);
-            if (setupScript != null && !setupScript.isBlank()) {
-                try {
-                    String normalizedSetup = setupScript.replaceAll("(?i)\\s*GO\\s*", "\n").trim();
-                    examSchemaService.executeSql(teacherSchemaName, normalizedSetup);
-                    examSchemaService.executeSql(schemaName, normalizedSetup);
-                } catch (Exception e) {
-                    log.warn("[gradeTriggerAlgorithmic] Q{} failed to execute setup_script: {}", question.getId(),
-                            e.getMessage());
-                }
-            }
-        }
+        // T11/T12: setup_script applied per-test-case inside a transaction.
+        // See note in gradeRoutineAlgorithmic — same reasoning applies here.
 
         java.util.List<TriggerMetadata> expectedTriggers = examSchemaService.extractTriggerMetadata(teacherSchemaName);
         java.util.List<TriggerMetadata> actualTriggers = examSchemaService.extractTriggerMetadata(schemaName);
@@ -3018,8 +3402,16 @@ public class GradeExamUsecase {
 
         if (hasTestCases) {
             testCasesPassed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+            // gradeByTestCases sets scoreEarned as sum of normalized scoreWeights
+            // (range 0..1). Multiply by maxTestCaseScore (= totalPoints * testCaseWeight)
+            // to get the absolute points contribution. Same formula as gradeRoutineAlgorithmic.
+            // BUG FIX (P0-1): previous code did scoreEarned * testCaseWeight which
+            // missed the totalPoints factor, capping trigger TC contribution at 0.8
+            // regardless of points (e.g. 10-point trigger with 100% TC pass yielded
+            // 0.8 instead of 8).
             if (submission != null && submission.getScoreEarned() != null) {
-                earnedTestCaseScore = submission.getScoreEarned().multiply(testCaseWeight);
+                BigDecimal maxTestCaseScore = totalPoints.multiply(testCaseWeight);
+                earnedTestCaseScore = maxTestCaseScore.multiply(submission.getScoreEarned());
             }
         }
 
@@ -3064,6 +3456,97 @@ public class GradeExamUsecase {
             } catch (Exception e) {
                 log.warn("Failed to {} constraints for table {}: {}",
                         enabled ? "enable" : "disable", tableName, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Parses {@code grading_payload.routines[]} from the rubric JSON into
+     * RoutineMetadata. Returns an empty list when the rubric is missing,
+     * malformed, or omits the routines array — caller falls back to teacher
+     * schema metadata in that case.
+     */
+    /**
+     * Normalize routine type to a canonical form ("PROCEDURE" / "FUNCTION") so
+     * that the rubric-side label ("STORED_PROCEDURE" coming from the AI / enum
+     * domain) compares equal with the metadata-side label coming from
+     * INFORMATION_SCHEMA.ROUTINES.ROUTINE_TYPE ("PROCEDURE" / "FUNCTION").
+     */
+    private static String normalizeRoutineType(String raw) {
+        if (raw == null) return "";
+        String upper = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("STORED_PROCEDURE".equals(upper) || "SQL_STORED_PROCEDURE".equals(upper)) {
+            return "PROCEDURE";
+        }
+        if ("SCALAR_FUNCTION".equals(upper) || "TABLE_VALUED_FUNCTION".equals(upper)
+                || "SQL_SCALAR_FUNCTION".equals(upper) || "SQL_TABLE_VALUED_FUNCTION".equals(upper)) {
+            return "FUNCTION";
+        }
+        return upper;
+    }
+
+    private List<RoutineMetadata> extractExpectedRoutinesFromRubric(String gradingRubricJson) {
+        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode routines = rubric.path("grading_payload").path("routines");
+            if (!routines.isArray() || routines.isEmpty()) {
+                return List.of();
+            }
+            List<RoutineMetadata> result = new ArrayList<>();
+            for (JsonNode r : routines) {
+                String name = r.path("expected_name").asText("").trim();
+                if (name.isBlank()) continue;
+                String type = r.path("expected_type").asText("").trim();
+                String returnType = r.path("expected_return_type").asText("").trim();
+
+                List<RoutineMetadata.ParameterMetadata> params = new ArrayList<>();
+                JsonNode pNode = r.path("parameters");
+                if (pNode.isArray()) {
+                    for (JsonNode p : pNode) {
+                        params.add(RoutineMetadata.ParameterMetadata.builder()
+                                .parameterName(p.path("name").asText("").trim())
+                                .dataType(p.path("expected_type").asText("").trim())
+                                .parameterMode(p.path("expected_mode").asText("IN").trim())
+                                .build());
+                    }
+                }
+
+                result.add(RoutineMetadata.builder()
+                        .routineName(name)
+                        .routineType(type)
+                        .dataType(returnType.isBlank() ? null : returnType)
+                        .parameters(params)
+                        .build());
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Cannot parse routines[] from rubric: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Logs (info-level, no penalty) routines present in the teacher schema but
+     * not listed as required in the rubric. These are helper FN/SP that the
+     * teacher used as implementation detail — students aren't required to
+     * recreate them.
+     */
+    private void logHelperRoutinesIgnored(Long questionId,
+                                          List<RoutineMetadata> rubricRoutines,
+                                          List<RoutineMetadata> teacherRoutines) {
+        if (teacherRoutines == null || teacherRoutines.isEmpty()) return;
+        Set<String> required = new HashSet<>();
+        for (RoutineMetadata r : rubricRoutines) {
+            if (r.getRoutineName() != null) required.add(r.getRoutineName().toLowerCase());
+        }
+        for (RoutineMetadata t : teacherRoutines) {
+            if (t.getRoutineName() == null) continue;
+            if (!required.contains(t.getRoutineName().toLowerCase())) {
+                log.info("[Q{}] Teacher reference uses helper {} {} not in rubric routines[] — not required from student",
+                        questionId, t.getRoutineType(), t.getRoutineName());
             }
         }
     }

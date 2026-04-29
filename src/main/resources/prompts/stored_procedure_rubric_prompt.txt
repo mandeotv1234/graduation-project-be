@@ -1,0 +1,204 @@
+You are generating a SQL Server grading rubric for a STORED_PROCEDURE question.
+Return only valid JSON. Do not use markdown.
+
+QUESTION:
+%s
+
+REFERENCE SQL:
+%s
+
+ROUTINE TYPE:
+%s
+
+DATABASE SPEC CONTEXT:
+%s
+
+TOTAL POINTS:
+%.2f
+
+OUTPUT JSON SHAPE:
+{
+  "question_id": "Q_AUTO_01",
+  "total_points": %.2f,
+  "question_category": "ROUTINE",
+  "grading_payload": {
+    "grading_settings": {
+      "syntax_error_action": "FAIL_ALL",
+      "print_output_compare_mode": "LENIENT"
+    },
+    "routines": [
+      {
+        "expected_name": "<procedure name>",
+        "expected_type": "STORED_PROCEDURE",
+        "expected_return_type": null,
+        "parameters": [
+          { "name": "<@p>", "expected_type": "<sql type>", "expected_mode": "IN|OUT|INOUT" }
+        ]
+      }
+    ],
+    "test_cases": [
+      {
+        "case_id": "TC_NN",
+        "case_name": "<short Vietnamese display name>",
+        "verification_type": "RETURN_VALUE|RESULT_SET|OUT_PARAMETER|SIDE_EFFECT|PRINT_OUTPUT",
+        "match_type": "EXACT|CONTAINS",
+        "score_weight": <number; all weights sum to 1.0 within 0.01>,
+        "description": "<behavior checked>",
+        "setup_script": "<test data setup only>",
+        "input_parameters": {},
+        "invocation_query": "<declare variables and execute the procedure once>",
+        "validation_query": "<select actual outcome for comparison>"
+      }
+    ]
+  }
+}
+
+Generate 5 to 6 high-quality test cases, never fewer than 5.
+routines[] must list only the stored procedure(s) the QUESTION asks the student to create.
+Do not list helper routines used internally by REFERENCE SQL.
+Do not include expected_result, expected_value, expected_output, explanations, or markdown.
+The backend derives expected values by running REFERENCE SQL.
+
+1. UNDERSTAND REFERENCE SQL
+- Read the user-facing stored procedure body in REFERENCE SQL.
+- Identify observable behavior: DML side effects, return code, OUTPUT parameters, SELECT result set, and PRINT messages.
+- Test only behavior visible in REFERENCE SQL. Do not invent ideal business rules that the reference procedure does not implement.
+- NULL-input failure cases are valid only when REFERENCE SQL explicitly handles that exact NULL parameter before DML, for example "@Param IS NULL", "ISNULL(@Param", "COALESCE(@Param", or TRY/CATCH that returns a stable failure status/message. Do not create a NULL failure case only because a table column is NOT NULL.
+
+2. CHOOSE verification_type
+- DML success path: use SIDE_EFFECT. Never use RETURN_VALUE alone for successful INSERT/UPDATE/DELETE/MERGE.
+- DML failure/no-change path: use SIDE_EFFECT and prove no unintended data change.
+- Read-only SELECT result: use RESULT_SET.
+- Status-only procedure: use RETURN_VALUE.
+- Main behavior in OUTPUT parameters: use OUT_PARAMETER.
+- PRINT behavior: use PRINT_OUTPUT with match_type "CONTAINS" and validation_query "".
+- If a DML procedure also returns a code or OUTPUT value, include that value in the SIDE_EFFECT validation_query when possible.
+
+3. BATCH, SCHEMA, AND EXECUTION RULES
+The engine runs setup_script, invocation_query, and validation_query in one SQL Server batch and one transaction.
+Variables declared in invocation_query are visible in validation_query.
+
+- invocation_query is the only place that may execute the stored procedure under test.
+- validation_query must not EXEC, EXECUTE, INSERT EXEC, or otherwise call the stored procedure under test again.
+- Do not put the final SELECT in invocation_query.
+- Do not redeclare variables in validation_query. Reuse variables declared in invocation_query.
+- Every table and procedure reference must use [{SCHEMA}].
+- Never use dbo., [dbo]., THIS., [THIS]., THIS_SCHEMA, TARGET_SCHEMA, YOUR_SCHEMA, SCHEMA_NAME, or bare unqualified object names.
+- input_parameters is metadata only. Inline literals in invocation_query or declare variables before using them.
+- Never write "@p = @p" unless invocation_query declares @p first.
+- setup_script may use DELETE, INSERT, and UPDATE only. Do not CREATE, ALTER, DROP, CREATE PROCEDURE, CREATE FUNCTION, or use GO.
+
+4. QUERY PATTERNS
+DML procedure:
+- invocation_query declares return/output variables and executes the procedure once.
+- validation_query SELECTs those variables plus database side effects.
+- INSERT/UPDATE success should select affected business columns, not only COUNT(*).
+- For DML success cases, derive validation_query from the INSERT/UPDATE/DELETE/MERGE statements in REFERENCE SQL.
+- For every INSERT/UPDATE target column that represents business behavior, validation_query must expose that target column.
+- This includes columns assigned from input parameters, constants required by the problem, values read from other tables, and calculated values.
+- Do not validate only row existence or only a subset of target columns when REFERENCE SQL writes more business columns.
+- DELETE success should return a count proving target/related rows are gone.
+- Failure/no-change validation must return exactly one row even when no target row exists. Prefer scalar subqueries:
+  SELECT @Result AS return_value,
+         (SELECT COUNT(*) FROM [{SCHEMA}].<target_table> WHERE <condition>) AS affected_count
+- Avoid CROSS APPLY, OUTER APPLY, INNER JOIN, or FROM clauses that can make failure validation return zero rows.
+
+OUTPUT parameter:
+- invocation_query declares output variables and passes them with OUTPUT.
+- validation_query SELECTs those same variables. Do not redeclare them.
+
+RESULT_SET from stored procedure:
+- Capture the result set in invocation_query with a declared table variable and INSERT EXEC.
+- validation_query SELECTs from that table variable with stable ORDER BY when order matters.
+
+PRINT_OUTPUT:
+- validation_query must be empty.
+- Do not create or query PRINT_LOG.
+
+5. SETUP SCRIPT: FOREIGN KEY AND IDENTITY RULES
+This is the most important section. setup_script must be executable before invocation_query starts.
+Do not only make procedure parameters valid; every row inserted by setup_script must satisfy FK, NOT NULL, and identity rules.
+
+Foreign key context may appear as:
+- compact form: "<col> <type> FK-><parent_table>.<parent_col>"
+- raw DDL form: "FOREIGN KEY (<col>) REFERENCES <parent_table>(<parent_col>)"
+Scan both forms.
+
+For every test case:
+1. DELETE in child-to-parent order.
+2. INSERT in parent-to-child order.
+3. For every setup INSERT, find all FKs where the inserted table is the child.
+4. If the inserted row supplies a FK value, the referenced parent row must already exist before that INSERT.
+5. Apply this to every setup row, including duplicate/no-change seed rows, not only values passed to invocation_query.
+6. For junction/detail/assignment tables with multiple FKs, insert every parent row on every FK edge first.
+7. If an inserted parent row also has FK columns, recursively insert its parents first.
+8. If the case is not explicitly testing a missing parent/FK condition, all FK-like input parameters used by invocation_query must have valid parent rows.
+9. If the case explicitly tests a missing parent/FK, call the procedure with the missing key, but do not insert invalid child rows that violate FK constraints during setup.
+10. For circular FKs or self-FKs, only use a setup state that can actually be inserted:
+    insert nullable back-reference columns as NULL first, insert the related row, then UPDATE the back-reference.
+    If all columns in the cycle are NOT NULL, pick a different scenario instead of creating impossible setup data.
+
+IDENTITY safety:
+- SQL Server IDENTITY values are not reset by DELETE and are not rolled back by transaction rollback.
+- Never assume a newly inserted identity row receives id = 1, id = 2, or any other guessed literal.
+- If a later child row, invocation argument, or validation condition needs an identity key, use one safe pattern consistently:
+  A. Explicit deterministic key: wrap only that table's INSERT with SET IDENTITY_INSERT [{SCHEMA}].<table> ON/OFF and insert a unique test id.
+  B. Generated key lookup: insert without the identity column, then capture/look up the actual generated id and use that same value in child INSERTs, invocation_query, and validation_query.
+- Never mix "INSERT parent without id" with "INSERT child (... parentId) VALUES (1)".
+- Never turn IDENTITY_INSERT ON for more than one table at the same time. Turn it OFF before enabling it for another table.
+
+Abstract setup examples; apply the pattern to the actual schema, do not copy table names:
+- Normal FK:
+  DELETE FROM [{SCHEMA}].Child;
+  DELETE FROM [{SCHEMA}].Parent;
+  INSERT INTO [{SCHEMA}].Parent (parentId, requiredCol) VALUES ('P1', 'ok');
+  INSERT INTO [{SCHEMA}].Child (childId, parentId, requiredCol) VALUES ('C1', 'P1', 'ok');
+- IDENTITY parent used by child/invocation:
+  SET IDENTITY_INSERT [{SCHEMA}].Parent ON;
+  INSERT INTO [{SCHEMA}].Parent (id, requiredCol) VALUES (101, 'ok');
+  SET IDENTITY_INSERT [{SCHEMA}].Parent OFF;
+  INSERT INTO [{SCHEMA}].Child (parentId, requiredCol) VALUES (101, 'ok');
+- Circular/self FK:
+  INSERT INTO [{SCHEMA}].Node (id, parentId, requiredCol) VALUES ('N1', NULL, 'ok');
+  INSERT INTO [{SCHEMA}].Node (id, parentId, requiredCol) VALUES ('N2', 'N1', 'ok');
+  UPDATE [{SCHEMA}].Node SET parentId = 'N2' WHERE id = 'N1';
+
+End-to-end abstract SIDE_EFFECT test case example; copy the structure, not table names:
+{
+  "case_id": "TC_01_SUCCESS",
+  "case_name": "Them chi tiet thanh cong",
+  "verification_type": "SIDE_EFFECT",
+  "match_type": "EXACT",
+  "score_weight": 0.2,
+  "description": "Valid parent rows exist, procedure inserts one detail row",
+  "setup_script": "DELETE FROM [{SCHEMA}].Detail WHERE detailId = 9001; DELETE FROM [{SCHEMA}].Child WHERE childId = 7001; DELETE FROM [{SCHEMA}].Parent WHERE parentId = 5001; SET IDENTITY_INSERT [{SCHEMA}].Parent ON; INSERT INTO [{SCHEMA}].Parent (parentId, requiredCol) VALUES (5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Parent OFF; SET IDENTITY_INSERT [{SCHEMA}].Child ON; INSERT INTO [{SCHEMA}].Child (childId, parentId, requiredCol) VALUES (7001, 5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Child OFF;",
+  "input_parameters": {},
+  "invocation_query": "DECLARE @Result INT; EXEC [{SCHEMA}].sp_AddDetail @ChildId = 7001, @Quantity = 3, @Result = @Result OUTPUT;",
+  "validation_query": "SELECT @Result AS return_value, childId, quantity FROM [{SCHEMA}].Detail WHERE childId = 7001 AND quantity = 3"
+}
+
+Required columns:
+- Include all required columns from DATABASE SPEC CONTEXT: primary keys, FK columns, NOT NULL columns without defaults, and nullable columns that REFERENCE SQL reads or validation checks.
+- Do not insert only a key if the procedure needs another column such as name, status, price, timestamp, role, or display value.
+- Do not invent tables or columns not present in DATABASE SPEC CONTEXT or clearly used by REFERENCE SQL.
+
+Failure case isolation:
+- Each failure case should isolate exactly one business rule.
+- If the case checks invalid quantity, invalid status, duplicate key, protected row, invalid time range, role mismatch, etc., all unrelated parent rows and preconditions must be valid.
+- Do not let the procedure return early or fail setup because of an unrelated missing FK/precondition.
+
+Pre-flight check before returning JSON:
+- For each test case, read setup_script top to bottom.
+- At every INSERT, ask: "Do all parent rows for this inserted row already exist at this point?"
+- If a FK points to an IDENTITY parent, ask: "Am I using the actual parent id, not guessing 1?"
+- If any answer is no, repair setup_script before returning JSON.
+
+6. COVERAGE
+For DML procedures, include:
+- at least one success SIDE_EFFECT case proving the actual inserted/updated/deleted data;
+- important failure/no-change cases derived from guards in REFERENCE SQL;
+- duplicate/protected/invalid-state cases when present;
+- missing parent/FK cases only when REFERENCE SQL explicitly checks existence or the question requires it;
+- boundary/null/empty cases only when REFERENCE SQL handles them deterministically.
+
+Return only the JSON, no commentary.

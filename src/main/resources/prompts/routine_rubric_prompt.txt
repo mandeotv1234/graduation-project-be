@@ -1,20 +1,37 @@
-Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
-Hãy tạo JSON rubric chấm loại ROUTINE (FUNCTION/STORED_PROCEDURE) theo mô hình test case.
+You are generating a SQL Server grading rubric for a FUNCTION or STORED_PROCEDURE question.
+Return only valid JSON. Do not use markdown.
 
-=== CÂU HỎI ===
+QUESTION:
 %s
 
-=== SQL ĐÁP ÁN MẪU (ROUTINE) ===
+REFERENCE SQL:
 %s
 
-=== LOẠI ROUTINE ===
+ROUTINE TYPE:
 %s
 
-=== TỔNG ĐIỂM ===
-%.2f điểm
+DATABASE SPEC CONTEXT:
+%s
 
-=== YÊU CẦU ĐẦU RA ===
-Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+TOTAL POINTS:
+%.2f
+
+================================================================================
+STEP 0 — Classify the routine (READ REFERENCE SQL CAREFULLY)
+================================================================================
+Look at the BODY of the user-facing routine in REFERENCE SQL and pick ONE class:
+
+(A) SCALAR_FUNCTION       — RETURNS <scalar type>, body has RETURN <expr>.
+(B) TABLE_VALUED_FUNCTION — RETURNS TABLE.
+(C) DML_PROCEDURE         — body contains INSERT, UPDATE, or DELETE on a table.
+(D) READONLY_PROCEDURE    — body has only SELECT / PRINT / RETURN status, no DML.
+
+This classification controls verification_type for every test case (STEP 2).
+DML_PROCEDURE in particular has STRICT rules — read STEP 2 carefully.
+
+================================================================================
+STEP 1 — Output JSON shape
+================================================================================
 {
   "question_id": "Q_AUTO_01",
   "total_points": %.2f,
@@ -25,61 +42,273 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
       "case_sensitive_names": false,
       "positive_only_scoring": false
     },
-    "routines": [
-      {
-        "expected_name": "<tên routine từ đáp án>",
-        "expected_type": "<FUNCTION|STORED_PROCEDURE>",
-        "expected_return_type": "<kiểu trả về nếu FUNCTION>",
-        "parameters": [
-          {
-            "name": "<tên tham số>",
-            "expected_type": "<kiểu dữ liệu>",
-            "expected_mode": "<IN|OUT|INOUT>"
-          }
-        ]
-      }
-    ],
-    "test_cases": [
-      {
-        "case_id": "TC_01",
-        "case_name": "Trường hợp thành công cơ bản",
-        "verification_type": "RETURN_VALUE",
-        "penalty_value": 0.5,
-        "description": "Kiểm tra routine trả về đúng với input hợp lệ",
-        "input_parameters": "@param1='value1', @param2=123",
-        "expected_result": "<giá trị kỳ vọng hoặc mô tả kết quả>",
-        "setup_script": "-- SQL để tạo dữ liệu test nếu cần\nINSERT INTO table VALUES (...)"
-      },
-      {
-        "case_id": "TC_02", 
-        "case_name": "Trường hợp biên/exception",
-        "verification_type": "RETURN_VALUE",
-        "penalty_value": 0.3,
-        "description": "Kiểm tra xử lý input biên hoặc null",
-        "input_parameters": "@param1=NULL, @param2=0",
-        "expected_result": "<giá trị kỳ vọng khi input biên>",
-        "setup_script": ""
-      }
-    ]
+    "routines": [ <see STEP 1.a> ],
+    "test_cases": [ <see STEP 1.b — generate 3..6> ]
   }
 }
 
-=== QUY TẮC BẮT BUỘC ===
-- Tạo ít nhất 2-3 test cases chất lượng cao.
-- verification_type phải là một trong: RETURN_VALUE, OUT_PARAMETER, RESULT_SET, SIDE_EFFECT, PRINT_OUTPUT
-- Phân tích SQL đáp án để xác định:
-  + Tên routine chính xác
-  + Kiểu trả về (nếu FUNCTION)
-  + Danh sách tham số với kiểu và mode (IN/OUT/INOUT)
-- setup_script PHẢI có "DROP TABLE IF EXISTS table_name;" trước mỗi CREATE TABLE để đảm bảo sạch sẽ, sau đó mới CREATE TABLE và INSERT. Ví dụ: "DROP TABLE IF EXISTS TuyenXe; CREATE TABLE TuyenXe (...); INSERT INTO TuyenXe ..."
-- input_parameters format: @param1='value', @param2=123 (cách nhau bởi dấu phẩy)
-- expected_result: mô tả kết quả mong đợi (có thể là giá trị trả về, output param, hoặc mô tả side effect)
-- case_name phải là tiếng Việt, dễ hiểu
-- Tổng penalty_value của các test case nên bao phủ total_points (nếu sinh viên fail hết thì 0 điểm)
+STEP 1.a — routines[]
+List ONLY the routine(s) the QUESTION explicitly asks the student to create.
+DO NOT list helper functions/procedures that REFERENCE SQL uses internally
+as implementation detail. The student is free to inline helpers, use a CTE,
+or take a different approach. Each entry:
+  {
+    "expected_name": "<routine name>",
+    "expected_type": "FUNCTION" or "STORED_PROCEDURE",
+    "expected_return_type": "<scalar type for FUNCTION, null for SP>",
+    "parameters": [
+      { "name": "<@p for SP, p for FN>", "expected_type": "<sql type>", "expected_mode": "IN|OUT|INOUT" }
+    ]
+  }
 
-=== LOẠI VERIFICATION ===
-- RETURN_VALUE: Kiểm tra giá trị trả về của FUNCTION (dùng SELECT dbo.fn_name(...))
-- OUT_PARAMETER: Kiểm tra giá trị tham số OUTPUT sau khi chạy SP
-- RESULT_SET: Kiểm tra dữ liệu trả về từ SELECT trong SP
-- SIDE_EFFECT: Kiểm tra thay đổi dữ liệu (INSERT/UPDATE/DELETE) sau khi chạy SP
-- PRINT_OUTPUT: Kiểm tra output từ PRINT statement
+STEP 1.b — test_cases[] entry shape:
+{
+  "case_id": "TC_NN",
+  "case_name": "<short Vietnamese display name>",
+  "verification_type": "<chosen in STEP 2>",
+  "match_type": "EXACT" or "CONTAINS",
+  "score_weight": <number; weights across TCs should sum ~= 1.0>,
+  "description": "<what behavior this case checks>",
+  "setup_script": "<DELETE+INSERT for test data only; never CREATE/ALTER/DROP/GO>",
+  "input_parameters": {},
+  "invocation_query": "<see STEP 3>",
+  "validation_query": "<see STEP 3>"
+}
+
+================================================================================
+STEP 2 — Choose verification_type per test case (HARD RULES)
+================================================================================
+Routine class (from STEP 0) determines allowed verification_types.
+
+If SCALAR_FUNCTION:
+  • Always RETURN_VALUE.
+
+If TABLE_VALUED_FUNCTION:
+  • Always RESULT_SET.
+
+If DML_PROCEDURE — apply per scenario:
+  • SUCCESS scenario (the path that actually performs INSERT/UPDATE/DELETE
+    and reaches RETURN 1):
+      verification_type = "SIDE_EFFECT"   <-- MANDATORY
+      Do NOT use RETURN_VALUE here. RETURN_VALUE alone is insufficient because
+      a student who writes "RETURN 1" without doing the INSERT/UPDATE/DELETE
+      would still pass. SIDE_EFFECT verifies the row actually landed in the
+      table AND the return code together.
+
+  • FAILURE scenario where the SP PRINTs an error message and returns 0:
+      verification_type = "PRINT_OUTPUT"
+      match_type        = "CONTAINS" (default)
+
+  • FAILURE scenario that silently returns 0 without PRINT:
+      verification_type = "SIDE_EFFECT"
+      validation_query  = "SELECT COUNT(*) FROM [{SCHEMA}].<table> WHERE <key>=..."
+      (verifies nothing was inserted/updated/deleted)
+
+If READONLY_PROCEDURE:
+  • Status return (RETURN 1/0) → RETURN_VALUE.
+  • SELECT result set          → RESULT_SET.
+  • PRINT message              → PRINT_OUTPUT (CONTAINS).
+
+================================================================================
+STEP 3 — Write invocation_query and validation_query
+================================================================================
+The engine wraps every TC in a single batch:
+  BEGIN TRY; BEGIN TRAN; <setup>; <invocation>; SELECT NULL AS marker; <validation>; ROLLBACK; END TRY ...
+So `validation_query` runs INSIDE the same transaction as `invocation_query`
+and CAN see uncommitted side-effects, AND can read variables declared by
+invocation_query (e.g. @rc).
+
+────────────────────────────────────────────────────────────────────────────────
+3.A  DML_PROCEDURE SUCCESS — verification_type = SIDE_EFFECT
+────────────────────────────────────────────────────────────────────────────────
+GOOD pattern (REQUIRED):
+  invocation_query:
+    "DECLARE @rc INT;
+     EXEC @rc = [{SCHEMA}].<sp_name> @p1 = N'X', @p2 = 123;"
+
+  validation_query — SELECT @rc AND the affected columns IN ONE SELECT:
+    "SELECT @rc AS return_value, col1, col2, col3, col4
+       FROM [{SCHEMA}].<affected_table>
+      WHERE <key_col> = N'X'
+      ORDER BY <pk_col>"
+
+CONCRETE EXAMPLE — SP_ThemChuyenXe inserts into ChuyenXe:
+  invocation_query:
+    "DECLARE @rc INT;
+     EXEC @rc = [{SCHEMA}].SP_ThemChuyenXe_MSSV
+          @MaTuyen = N'TUYEN01', @MaXe = N'XE001', @BatDau = '2023-10-27 10:00:00';"
+  validation_query:
+    "SELECT @rc AS return_value, MaChuyen, TuyenXe, MaXe, BatDau
+       FROM [{SCHEMA}].ChuyenXe
+      WHERE MaXe = N'XE001' AND TuyenXe = N'TUYEN01'
+      ORDER BY MaChuyen"
+
+WRONG pattern (DO NOT generate this for DML success):
+  verification_type = "RETURN_VALUE"
+  invocation_query  = "DECLARE @rc INT; EXEC @rc = [{SCHEMA}].SP_X ...; SELECT @rc AS return_value;"
+  validation_query  = "SELECT @rc AS return_value"
+Reason: passes when student returns 1 without doing the INSERT.
+
+────────────────────────────────────────────────────────────────────────────────
+3.B  DML_PROCEDURE FAILURE that PRINTs — verification_type = PRINT_OUTPUT
+────────────────────────────────────────────────────────────────────────────────
+  invocation_query: "EXEC [{SCHEMA}].<sp_name> @p = N'invalid';"
+  validation_query: ""
+  match_type      : "CONTAINS"
+  Pick a short distinctive keyword for the engine to look for in PRINT
+  output, e.g. "khong ton tai", "it nhat 2 gio". Avoid full Vietnamese
+  sentences with diacritics — they break under encoding mismatch.
+
+────────────────────────────────────────────────────────────────────────────────
+3.C  DML_PROCEDURE FAILURE silent — verification_type = SIDE_EFFECT (count = 0)
+────────────────────────────────────────────────────────────────────────────────
+  invocation_query: "EXEC [{SCHEMA}].<sp_name> @p = N'invalid';"
+  validation_query: "SELECT COUNT(*) FROM [{SCHEMA}].<table> WHERE <key> = N'invalid'"
+
+────────────────────────────────────────────────────────────────────────────────
+3.D  SCALAR_FUNCTION — verification_type = RETURN_VALUE
+────────────────────────────────────────────────────────────────────────────────
+  invocation_query: ""
+  validation_query: "SELECT [{SCHEMA}].<fn_name>(<literal_args>)"
+
+────────────────────────────────────────────────────────────────────────────────
+3.E  TABLE_VALUED_FUNCTION — verification_type = RESULT_SET
+────────────────────────────────────────────────────────────────────────────────
+  invocation_query: ""
+  validation_query: "SELECT col1, col2 FROM [{SCHEMA}].<fn_name>(<args>) ORDER BY col1"
+
+────────────────────────────────────────────────────────────────────────────────
+3.F  READONLY_PROCEDURE returning RETURN 1/0 — verification_type = RETURN_VALUE
+────────────────────────────────────────────────────────────────────────────────
+  invocation_query: "DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp_name> @p = ...;"
+  validation_query: "SELECT @rc AS return_value"
+
+================================================================================
+STEP 4 — BLOCKING CHECKLIST: schema qualifier + FK setup
+================================================================================
+Two checks every test case MUST pass before STEP 5. Both apply to ANY routine,
+not just any specific domain — patterns below use abstract placeholders.
+
+────────────────────────────────────────────────────────────────────────────────
+4.A  SCHEMA QUALIFIER — every object reference uses [{SCHEMA}].
+────────────────────────────────────────────────────────────────────────────────
+Every table and routine reference in setup_script / invocation_query /
+validation_query MUST be prefixed with the literal placeholder [{SCHEMA}].
+The engine substitutes {SCHEMA} with a per-user database schema at runtime.
+It is NEVER dbo. The REFERENCE SQL of the question may itself use dbo. —
+IGNORE that and emit [{SCHEMA}]. in your output.
+
+Forbidden prefixes:
+  dbo.   [dbo].   THIS.   [THIS].   THIS_SCHEMA.   TARGET_SCHEMA.
+  YOUR_SCHEMA.   SCHEMA_NAME.   bare unqualified names.
+
+GOOD pattern:
+  EXEC @rc = [{SCHEMA}].<sp_name> @p1 = N'X';
+  INSERT INTO [{SCHEMA}].<table> (...) VALUES (...);
+  SELECT col FROM [{SCHEMA}].<table> WHERE ...;
+
+WRONG pattern:
+  EXEC @rc = [dbo].<sp_name> @p1 = N'X';   -- runtime: "Could not find stored procedure 'dbo.<sp_name>'"
+  INSERT INTO dbo.<table> (...) VALUES (...);
+  EXEC <sp_name> @p1 = N'X';               -- unqualified
+
+────────────────────────────────────────────────────────────────────────────────
+4.B  FK CHECKLIST — insert parents before children
+────────────────────────────────────────────────────────────────────────────────
+Before writing each setup_script:
+  Step 1. List every "INSERT INTO [{SCHEMA}].<child>" statement you plan.
+  Step 2. For each INSERT, scan every column. Any column declared as a FK
+          in DATABASE SPEC CONTEXT (REFERENCES <parent>) requires a row in
+          <parent> with the matching key value to exist FIRST.
+  Step 3. Add an "INSERT INTO [{SCHEMA}].<parent>" statement ABOVE the child
+          insert with that key value. Recurse: parent of parent.
+  Step 4. DELETE order is the reverse — delete children BEFORE parents to
+          avoid FK violations on cleanup.
+
+GOOD pattern (abstract — applies regardless of domain):
+  -- delete order: child first, then parent
+  DELETE FROM [{SCHEMA}].<grandchild>;
+  DELETE FROM [{SCHEMA}].<child>;
+  DELETE FROM [{SCHEMA}].<parent>;
+  -- insert order: parent first, then child
+  INSERT INTO [{SCHEMA}].<parent>     (<pk>, ...)                 VALUES ('P1', ...);
+  INSERT INTO [{SCHEMA}].<child>      (<pk>, <fk_to_parent>, ...) VALUES ('C1', 'P1', ...);
+  INSERT INTO [{SCHEMA}].<grandchild> (<pk>, <fk_to_child>, ...)  VALUES ('G1', 'C1', ...);
+
+WRONG pattern:
+  DELETE FROM [{SCHEMA}].<child>;
+  -- (no INSERT for <parent>)
+  INSERT INTO [{SCHEMA}].<child> (<pk>, <fk_to_parent>, ...) VALUES ('C1', 'P1', ...);
+Reason: even if base seed data contained <parent>.pk='P1' before, your test
+case must be self-contained. Other tests may have deleted it. Always
+re-INSERT every parent row your test case relies on.
+
+When a <child> table has MULTIPLE FK columns (e.g. one to <parent_a>, one to
+<parent_b>), BOTH parents must be inserted. Check every FK column, not just
+the obvious one.
+
+────────────────────────────────────────────────────────────────────────────────
+4.C  CIRCULAR FK — two tables referencing each other
+────────────────────────────────────────────────────────────────────────────────
+If <table_a> has a FK column <fk_to_b> referencing <table_b>.<pk_b>, AND
+<table_b> ALSO has a FK column <fk_to_a> referencing <table_a>.<pk_a>, you
+CANNOT insert either side first without violating the FK on the other side.
+This is a circular FK. Detect it by scanning the DDL: any pair of tables that
+each declare REFERENCES to the other forms a cycle.
+
+GOOD pattern (abstract — applies whenever two tables reference each other):
+  -- clean both sides (order does not matter for cleanup of empty rows)
+  DELETE FROM [{SCHEMA}].<table_a>;
+  DELETE FROM [{SCHEMA}].<table_b>;
+  -- step 1: insert one side with its back-reference FK = NULL
+  INSERT INTO [{SCHEMA}].<table_b> (<pk_b>, <fk_to_a>, ...) VALUES ('B1', NULL, ...);
+  -- step 2: insert the other side normally (its FK now resolves)
+  INSERT INTO [{SCHEMA}].<table_a> (<pk_a>, <fk_to_b>, ...) VALUES ('A1', 'B1', ...);
+  -- step 3: patch the back-reference now that the partner row exists
+  UPDATE [{SCHEMA}].<table_b> SET <fk_to_a> = 'A1' WHERE <pk_b> = 'B1';
+
+WRONG pattern:
+  INSERT INTO [{SCHEMA}].<table_b> (<pk_b>, <fk_to_a>, ...) VALUES ('B1', 'A1', ...);
+  -- ❌ <table_a>.<pk_a>='A1' does not exist yet → FK violation
+  INSERT INTO [{SCHEMA}].<table_a> (<pk_a>, <fk_to_b>, ...) VALUES ('A1', 'B1', ...);
+
+Reason: when two tables reference each other, NEITHER side can be inserted
+first without breaking the other side's FK. The only safe path is to start
+one side with its back-reference column = NULL, then UPDATE that column once
+the partner row exists.
+
+Pre-condition: at least ONE of the two back-reference FK columns MUST be
+NULLABLE in DATABASE SPEC CONTEXT. Verify in the DDL (look for NOT NULL on
+each FK column). If BOTH are NOT NULL, the scenario is impossible to set up
+in isolation — choose a different test scenario.
+
+================================================================================
+STEP 5 — Other constraints (ALWAYS apply)
+================================================================================
+- The engine derives expected values by running REFERENCE SQL on a sandbox
+  schema. NEVER include expected_result, expected_value, or expected_output
+  in the JSON.
+- setup_script content rules (in addition to STEP 4):
+  • DELETE/INSERT/UPDATE only against tables already in DATABASE SPEC CONTEXT.
+  • Never CREATE TABLE / ALTER TABLE / DROP TABLE / CREATE FUNCTION /
+    CREATE PROCEDURE. Never use GO.
+  • Idempotent: DELETE before INSERT for the rows you insert (spec DDL may
+    already contain seed rows with the same keys).
+  • Self-contained: after your DELETEs, INSERT every row the routine (and
+    its internal queries) will read. Do not rely on the base dataset.
+- Do not invent tables or columns not present in DATABASE SPEC CONTEXT or
+  clearly used by REFERENCE SQL.
+- match_type defaults:
+  • RETURN_VALUE / OUT_PARAMETER / RESULT_SET / SIDE_EFFECT → "EXACT"
+  • PRINT_OUTPUT → "CONTAINS" with a short keyword.
+- score_weight values across all TCs should sum approximately to 1.0.
+- case_name must be short Vietnamese text for UI display.
+- input_parameters is metadata only; the engine does NOT convert it into SQL
+  variables. Always inline literal values into invocation_query.
+- For SP invocation, never write "@p = @p" unless invocation_query first
+  declared the variable ("DECLARE @p ... = N'...'; EXEC ... @p = @p").
+
+Generate 3 to 6 high-quality test cases covering: success, invalid inputs,
+boundary cases, null/empty cases when relevant, and side effects.
+
+Return only the JSON, no commentary.

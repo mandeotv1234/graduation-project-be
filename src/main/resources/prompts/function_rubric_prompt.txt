@@ -1,0 +1,88 @@
+You are generating a SQL Server grading rubric for a FUNCTION question.
+Return only valid JSON. Do not use markdown.
+
+QUESTION:
+%s
+
+REFERENCE SQL:
+%s
+
+ROUTINE TYPE:
+%s
+
+DATABASE SPEC CONTEXT:
+%s
+
+TOTAL POINTS:
+%.2f
+
+STEP 1 - Output JSON shape
+{
+  "question_id": "Q_AUTO_01",
+  "total_points": %.2f,
+  "question_category": "ROUTINE",
+  "grading_payload": {
+    "grading_settings": {
+      "syntax_error_action": "FAIL_ALL",
+      "print_output_compare_mode": "LENIENT"
+    },
+    "routines": [ <function metadata> ],
+    "test_cases": [ <generate 3..6 cases> ]
+  }
+}
+
+routines[] must list only the function(s) the QUESTION explicitly asks the student to create.
+Do not list helper routines used internally by the reference solution.
+Each routine entry:
+{
+  "expected_name": "<function name>",
+  "expected_type": "FUNCTION",
+  "expected_return_type": "<scalar sql type, TABLE for table-valued function>",
+  "parameters": [
+    { "name": "<parameter name without @ if reference uses that style>", "expected_type": "<sql type>", "expected_mode": "IN" }
+  ]
+}
+
+Each test_cases[] entry:
+{
+  "case_id": "TC_NN",
+  "case_name": "<short Vietnamese display name>",
+  "verification_type": "RETURN_VALUE|RESULT_SET",
+  "match_type": "EXACT",
+  "score_weight": <number; weights should sum ~= 1.0>,
+  "description": "<behavior checked>",
+  "setup_script": "<test data setup only>",
+  "input_parameters": {},
+  "invocation_query": "",
+  "validation_query": "<SELECT that calls the function>"
+}
+
+STEP 2 - Choose verification_type
+- Scalar function: use RETURN_VALUE.
+- Table-valued function: use RESULT_SET.
+- Do not use SIDE_EFFECT, PRINT_OUTPUT, or OUT_PARAMETER for function questions.
+
+STEP 3 - Write validation_query
+Scalar function:
+"SELECT [{SCHEMA}].<fn_name>(<literal_args>)"
+
+Table-valued function:
+"SELECT col1, col2
+   FROM [{SCHEMA}].<fn_name>(<literal_args>)
+  ORDER BY <stable_col>"
+
+Use literal arguments directly. input_parameters is metadata only and the engine does not convert it into SQL variables.
+
+STEP 4 - Setup and schema rules
+- Every table and function reference in setup_script and validation_query must use the literal placeholder [{SCHEMA}].
+- Never use dbo., [dbo]., THIS., [THIS]., THIS_SCHEMA, TARGET_SCHEMA, YOUR_SCHEMA, SCHEMA_NAME, or bare unqualified object names.
+- If the function reads tables, setup_script must be self-contained: DELETE exact test keys, INSERT all required parent rows, then INSERT child rows.
+- When INSERTing setup rows, include all columns required by DATABASE SPEC CONTEXT: primary key columns, foreign key columns needed for relationships, NOT NULL columns without defaults, and any nullable columns the function reads or returns. Do not insert only the key if the function needs another column such as a name, status, price, or timestamp.
+- For foreign keys, insert parent rows before child rows. Delete child rows before parent rows.
+- setup_script may use DELETE and INSERT for test data. Use UPDATE only when a special state is necessary and the setup remains self-contained.
+- setup_script must never CREATE, ALTER, DROP, CREATE PROCEDURE, CREATE FUNCTION, or use GO.
+- Do not invent tables or columns not present in DATABASE SPEC CONTEXT or clearly used by REFERENCE SQL.
+- Do not include expected_result, expected_value, or expected_output. The engine derives expected values by running REFERENCE SQL.
+
+Generate 3 to 6 high-quality test cases covering normal inputs, boundary cases, null/empty cases when relevant, and table-read scenarios when the function depends on database data.
+Return only the JSON, no commentary.

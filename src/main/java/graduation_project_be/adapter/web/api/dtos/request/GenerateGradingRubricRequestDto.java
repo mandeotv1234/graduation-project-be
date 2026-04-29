@@ -9,6 +9,7 @@ public record GenerateGradingRubricRequestDto(
         String questionContent,
         Double totalPoints,
         String questionType,
+        String schemaContext,
         List<ContextQueryDto> contextQueries) {
 
     public record ContextQueryDto(
@@ -32,6 +33,7 @@ public record GenerateGradingRubricRequestDto(
                 questionContent == null ? "" : questionContent,
                 totalPoints == null ? 1.0 : totalPoints,
                 questionType == null || questionType.isBlank() ? "CREATE_TABLE" : questionType,
+                schemaContext == null ? "" : schemaContext,
                 context);
     }
 }

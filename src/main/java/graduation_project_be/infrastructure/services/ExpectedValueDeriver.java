@@ -118,6 +118,15 @@ public class ExpectedValueDeriver {
      * immediately released. Instead the whole TC runs as one batch on one
      * connection.
      */
+    /**
+     * Marker column emitted right before validation_query so that any rows
+     * produced by setup_script or invocation_query (e.g. SP body with embedded
+     * SELECT) can be filtered out before serialization. MUST match the constant
+     * used by GradeExamUsecase so that derived and graded values are produced
+     * by the same logic.
+     */
+    private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+
     private String deriveOneTestCase(String sandboxSchema, TestCase tc) {
         ValidationQueryBuilder.Built built = validationQueryBuilder.build(tc, sandboxSchema, sandboxSchema);
 
@@ -131,6 +140,7 @@ public class ExpectedValueDeriver {
             batch.append("  ").append(built.invocationSql()).append(";\n");
         }
         if (built.validationSql() != null && !built.validationSql().isBlank()) {
+            batch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
             batch.append("  ").append(built.validationSql()).append(";\n");
         }
         batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
@@ -140,7 +150,13 @@ public class ExpectedValueDeriver {
         batch.append("  THROW;\n");
         batch.append("END CATCH;");
 
-        SqlExecutionResult execResult = examSchemaService.executeAdminSql(batch.toString());
+        // Run as the sandbox's schema user, not as admin. The sandbox holds the
+        // teacher's correctQuery — running as the schema user mirrors how
+        // student grading executes (same EXECUTE AS USER context), so derived
+        // expected_value reflects the same permission scope as the actual run.
+        // Also gets query timeout, preventing teacher-side infinite loops from
+        // blocking question creation.
+        SqlExecutionResult execResult = examSchemaService.executeSqlBatchAsSchemaUser(sandboxSchema, batch.toString());
 
         // Capture per verification_type. MUST match the format used by
         // GradeExamUsecase.serializeResultForCompare so EXACT compare works.
@@ -150,7 +166,32 @@ public class ExpectedValueDeriver {
                     : new ArrayList<>();
             return String.join("\n", prints).trim();
         }
-        return serializeResult(execResult, built.type());
+        return serializeResult(dropRowsBeforeValidationMarker(execResult), built.type());
+    }
+
+    /** See note on the engine-side equivalent in GradeExamUsecase. */
+    private SqlExecutionResult dropRowsBeforeValidationMarker(SqlExecutionResult execResult) {
+        if (execResult == null || execResult.getResultSet() == null) {
+            return execResult;
+        }
+        List<Map<String, Object>> rows = execResult.getResultSet();
+        int markerIdx = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).containsKey(VALIDATION_MARKER_COLUMN)) {
+                markerIdx = i;
+                break;
+            }
+        }
+        if (markerIdx < 0) {
+            return execResult;
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>(rows.subList(markerIdx + 1, rows.size()));
+        return SqlExecutionResult.builder()
+                .resultSet(filtered)
+                .rowCount(filtered.size())
+                .statusMessage(execResult.getStatusMessage())
+                .printMessages(execResult.getPrintMessages())
+                .build();
     }
 
     /**

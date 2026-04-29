@@ -548,6 +548,143 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     /**
+     * Multi-statement batch executor used by per-test-case grading.
+     *
+     * <p>Differs from {@link #executeSql} in two ways:
+     * <ul>
+     *   <li>Does NOT call {@code validateStudentSql} — grading batches contain
+     *       {@code BEGIN TRY / BEGIN TRAN / DECLARE / THROW} which the keyword
+     *       blocklist would reject (e.g. THROW is not in the allowed-starters
+     *       list). The batch is built by trusted server-side code, not student
+     *       input, so input validation is unnecessary.</li>
+     *   <li>Statement context is impersonated to the schema's DB user (same as
+     *       executeSql) so that any student-defined routine called inside the
+     *       batch runs with that user's restricted permissions, NOT the admin
+     *       connection's permissions. This preserves cross-schema isolation
+     *       (the student's SP cannot read other students' schemas).</li>
+     * </ul>
+     *
+     * <p>Has the same hard timeout as {@link #executeSql} so that a runaway
+     * student routine (infinite loop, deadlock, WAITFOR) cannot hang the
+     * grading worker.
+     */
+    @Override
+    public SqlExecutionResult executeSqlBatchAsSchemaUser(String schemaName, String batchSql) {
+        String userName = schemaName + "_user";
+        ensureSchemaAndUser(schemaName);
+
+        try {
+            return jdbcTemplate.execute((Connection conn) -> {
+                List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
+
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("EXECUTE AS USER = '" + userName + "'");
+                }
+
+                List<String> printMessages = new ArrayList<>();
+                try {
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                        stmt.setMaxRows(1000);
+
+                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+
+                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return stmt.execute(batchSql);
+                            } catch (Exception e) {
+                                throw new CompletionException(e);
+                            }
+                        });
+
+                        boolean isResultSet;
+                        try {
+                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        } catch (TimeoutException e) {
+                            try {
+                                stmt.cancel();
+                            } catch (Exception ignore) {
+                            }
+                            throw new RuntimeException(
+                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                        } catch (Exception e) {
+                            Throwable cause = e.getCause() != null ? e.getCause() : e;
+                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                        }
+
+                        while (true) {
+                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                stmt.cancel();
+                                throw new RuntimeException("Batch processing exceeded hard timeout of "
+                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                            }
+
+                            if (isResultSet) {
+                                try (ResultSet rs = stmt.getResultSet()) {
+                                    if (rs != null) {
+                                        ResultSetMetaData meta = rs.getMetaData();
+                                        int colCount = meta.getColumnCount();
+                                        while (rs.next()) {
+                                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                                stmt.cancel();
+                                                throw new RuntimeException(
+                                                        "Result fetch exceeded hard timeout of "
+                                                                + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                            }
+                                            Map<String, Object> row = new LinkedHashMap<>();
+                                            for (int i = 1; i <= colCount; i++) {
+                                                row.put(meta.getColumnLabel(i), rs.getObject(i));
+                                            }
+                                            results.add(row);
+                                        }
+                                    }
+                                }
+                            } else {
+                                int updateCount = stmt.getUpdateCount();
+                                if (updateCount == -1) {
+                                    break;
+                                }
+                                totalUpdateCount += updateCount;
+                                hasUpdateCount = true;
+                            }
+                            isResultSet = stmt.getMoreResults();
+                        }
+
+                        printMessages.addAll(collectPrintMessages(stmt));
+                    }
+
+                    String statusMessage = null;
+                    if (results.isEmpty()) {
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Batch executed successfully.";
+                        }
+                    }
+
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .printMessages(printMessages)
+                            .build();
+                } finally {
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.execute("REVERT");
+                    } catch (Exception e) {
+                        log.warn("REVERT failed for schema [{}]: {}", schemaName, e.getMessage());
+                    }
+                }
+            });
+        } catch (Exception e) {
+            log.error("Batch SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Walks the SQLWarning chain attached to a Statement and collects messages.
      * MSSQL JDBC driver delivers each T-SQL {@code PRINT} statement (and
      * {@code RAISERROR ... WITH SEVERITY 0..10}) as one SQLWarning entry.

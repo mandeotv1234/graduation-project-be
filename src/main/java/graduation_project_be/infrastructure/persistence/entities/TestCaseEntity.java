@@ -26,7 +26,11 @@ public class TestCaseEntity {
     @Column(name = "question_id", nullable = false)
     private Long questionId;
 
-    @Column(name = "validation_query", nullable = false, columnDefinition = "TEXT")
+    // Nullable because PRINT_OUTPUT verification type captures actual output
+    // from SQLWarning chain (not a result set), so the test case may legitimately
+    // have no validation_query — only setup_script + invocation_query that emits
+    // PRINT messages. See P1-1 fix in CODE_REVIEW.
+    @Column(name = "validation_query", columnDefinition = "TEXT")
     private String validationQuery;
 
     @Column(name = "expected_value", nullable = false, columnDefinition = "TEXT")

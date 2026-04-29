@@ -46,3 +46,13 @@ databaseChangeLog:
       changes:
         - sql:
             sql: UPDATE test_cases SET match_type = 'EXACT' WHERE match_type IS NULL
+
+  - changeSet:
+      id: "3003260003"
+      author: system
+      comment: "P1-1: Allow validation_query to be NULL for PRINT_OUTPUT verification type (where capture is via SQLWarning chain, not result set)"
+      changes:
+        - dropNotNullConstraint:
+            tableName: test_cases
+            columnName: validation_query
+            columnDataType: TEXT

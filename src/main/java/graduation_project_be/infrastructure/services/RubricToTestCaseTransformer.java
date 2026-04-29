@@ -113,15 +113,31 @@ public class RubricToTestCaseTransformer {
     }
 
     private TestCase buildOne(Long questionId, JsonNode tc, int orderIndex) {
+        VerificationType vType = parseVerificationType(textOrNull(tc, "verification_type"));
+        String validationQuery = textOrNull(tc, "validation_query");
+
+        // For non-PRINT_OUTPUT types, validation_query is REQUIRED — it's the
+        // SQL the engine runs to capture actual output. If AI omitted it,
+        // grading would either fail at runtime or compare empty strings, so
+        // bail early with a clear error instead of silently accepting bad data.
+        // PRINT_OUTPUT is exempt: actual output comes from PRINT messages,
+        // captured regardless of validation_query.
+        if (validationQuery == null && vType != VerificationType.PRINT_OUTPUT) {
+            throw new IllegalArgumentException(String.format(
+                    "Q%d TC%d (%s): validation_query is required for verification_type=%s. "
+                            + "AI must supply the SQL that reads the actual outcome.",
+                    questionId, orderIndex, textOrNull(tc, "case_name"), vType));
+        }
+
         return TestCase.builder()
                 .questionId(questionId)
                 .orderIndex(orderIndex)
                 .caseName(textOrNull(tc, "case_name"))
-                .verificationType(parseVerificationType(textOrNull(tc, "verification_type")))
+                .verificationType(vType)
                 .matchType(parseMatchType(textOrNull(tc, "match_type")))
                 .setupScript(textOrNull(tc, "setup_script"))
                 .invocationQuery(textOrNull(tc, "invocation_query"))
-                .validationQuery(textOrNull(tc, "validation_query"))
+                .validationQuery(validationQuery)
                 .inputParameters(jsonOrNull(tc.get("input_parameters")))
                 // Raw weight from Gemini; normalized later.
                 .scoreWeight(parseWeight(tc))

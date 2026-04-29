@@ -2834,10 +2834,17 @@ public class GradeExamUsecase {
      * Trigger TC's) do not leak to the next TC.
      *
      * <p>Note on connection: ROLLBACK must run on the same connection as BEGIN
-     * TRAN. We achieve that by sending the whole script as ONE batch to
-     * executeAdminSql (a single jdbcTemplate.execute call uses one connection).
-     * The validation_query's result set is read by the engine BEFORE the
-     * ROLLBACK statement clears it — which is the standard MSSQL pattern.
+     * TRAN. We achieve that by sending the whole script as ONE batch via
+     * executeSqlBatchAsSchemaUser (a single jdbcTemplate.execute call uses one
+     * connection). The validation_query's result set is read by the engine
+     * BEFORE the ROLLBACK statement clears it — standard MSSQL pattern.
+     *
+     * <p>Note on impersonation (P0-2): the batch runs under EXECUTE AS USER for
+     * the student's schema-scoped DB user, NOT under the admin connection. This
+     * is what stops a malicious or buggy student SP from reading other
+     * students' schemas. executeSqlBatchAsSchemaUser also enforces
+     * QUERY_TIMEOUT_SECONDS (P0-3) so an infinite loop / WAITFOR cannot hang
+     * the grading worker.
      */
     private TestCaseRunResult runOneTestCase(String schemaName, String teacherSchemaName, TestCase tc) {
         VerificationType type = tc.getVerificationType() != null
@@ -2861,6 +2868,12 @@ public class GradeExamUsecase {
             batch.append("  ").append(invocation).append(";\n");
         }
         if (validation != null && !validation.isBlank()) {
+            // P1-2: emit a marker result set right before validation_query.
+            // If invocation_query unintentionally produced result sets (e.g. an
+            // SP whose body has SELECT statements), executeSqlBatchAsSchemaUser
+            // would concatenate them together with validation rows. The marker
+            // lets us drop everything before validation when serializing.
+            batch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
             batch.append("  ").append(validation).append(";\n");
         }
         batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
@@ -2870,7 +2883,10 @@ public class GradeExamUsecase {
         batch.append("  THROW;\n");
         batch.append("END CATCH;");
 
-        SqlExecutionResult execResult = examSchemaService.executeAdminSql(batch.toString());
+        // Run as the student's schema-scoped DB user (NOT admin) so that any
+        // student-defined routine called inside the batch is restricted to its
+        // own schema's permissions. Also enforces query timeout.
+        SqlExecutionResult execResult = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
 
         // Capture per verification_type — must match ExpectedValueDeriver.serializeResult
         // exactly so EXACT compare works.
@@ -2881,9 +2897,42 @@ public class GradeExamUsecase {
                     : new ArrayList<>();
             actual = String.join("\n", prints).trim();
         } else {
-            actual = serializeResultForCompare(execResult);
+            actual = serializeResultForCompare(dropRowsBeforeValidationMarker(execResult));
         }
         return new TestCaseRunResult(actual);
+    }
+
+    /** Column name used to mark the start of validation_query's result set. */
+    private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+
+    /**
+     * Returns a copy of {@code execResult} with all rows up to AND including the
+     * marker row removed. If no marker row is present (e.g. test case has no
+     * validation_query, or marker was added by a different layer), returns the
+     * original result unchanged.
+     */
+    private SqlExecutionResult dropRowsBeforeValidationMarker(SqlExecutionResult execResult) {
+        if (execResult == null || execResult.getResultSet() == null) {
+            return execResult;
+        }
+        List<Map<String, Object>> rows = execResult.getResultSet();
+        int markerIdx = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).containsKey(VALIDATION_MARKER_COLUMN)) {
+                markerIdx = i;
+                break;
+            }
+        }
+        if (markerIdx < 0) {
+            return execResult;
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>(rows.subList(markerIdx + 1, rows.size()));
+        return SqlExecutionResult.builder()
+                .resultSet(filtered)
+                .rowCount(filtered.size())
+                .statusMessage(execResult.getStatusMessage())
+                .printMessages(execResult.getPrintMessages())
+                .build();
     }
 
     /**
@@ -3224,8 +3273,16 @@ public class GradeExamUsecase {
 
         if (hasTestCases) {
             testCasesPassed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
+            // gradeByTestCases sets scoreEarned as sum of normalized scoreWeights
+            // (range 0..1). Multiply by maxTestCaseScore (= totalPoints * testCaseWeight)
+            // to get the absolute points contribution. Same formula as gradeRoutineAlgorithmic.
+            // BUG FIX (P0-1): previous code did scoreEarned * testCaseWeight which
+            // missed the totalPoints factor, capping trigger TC contribution at 0.8
+            // regardless of points (e.g. 10-point trigger with 100% TC pass yielded
+            // 0.8 instead of 8).
             if (submission != null && submission.getScoreEarned() != null) {
-                earnedTestCaseScore = submission.getScoreEarned().multiply(testCaseWeight);
+                BigDecimal maxTestCaseScore = totalPoints.multiply(testCaseWeight);
+                earnedTestCaseScore = maxTestCaseScore.multiply(submission.getScoreEarned());
             }
         }
 

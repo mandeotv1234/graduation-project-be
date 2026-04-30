@@ -3,6 +3,7 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
@@ -15,11 +16,14 @@ import graduation_project_be.application.usecases.response.ReportViolationRespon
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamDraft;
 import graduation_project_be.domain.models.ExamViolation;
+import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -33,6 +37,7 @@ public class ReportViolationUsecase {
     private final ExamResultRepository examResultRepository;
     private final ExamRepository examRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
+    private final ClassRepository classRepository;
     private final CurrentUserService currentUserService;
     private final ViolationNotificationService violationNotificationService;
     private final SubmitExamUsecase submitExamUsecase;
@@ -90,21 +95,29 @@ public class ReportViolationUsecase {
             autoSubmitted = true;
             log.warn("Student {} ({}) reached {} violations for exam {} — auto-submitting exam",
                     studentId, studentName, violationCount, request.examId());
+
+            // Persist/send the final violation before the submission notification
+            // so the "NỘP BÀI" notification remains the latest event.
+            notifyTeachers(request, exam, studentId, studentName, currentAttempt, violationCount, autoSubmitted);
             try {
                 autoSubmitExam(request.examId(), studentId);
             } catch (Exception e) {
                 log.error("Auto-submit failed for student {} exam {}: {}",
                         studentId, request.examId(), e.getMessage());
             }
+        } else {
+            notifyTeachers(request, exam, studentId, studentName, currentAttempt, violationCount, autoSubmitted);
         }
 
-        // Notify teacher via WebSocket
-        violationNotificationService.notifyTeacher(
-                request.examId(), exam.getCreatorId(), studentId,
-                studentName, request.violationType(), request.description(),
-                violationCount, autoSubmitted);
-
         return ReportViolationResponse.fromModel(saved, violationCount, autoSubmitted);
+    }
+
+    private void notifyTeachers(ReportViolationRequest request, Exam exam, Long studentId, String studentName,
+                                int currentAttempt, long violationCount, boolean autoSubmitted) {
+        violationNotificationService.notifyTeacher(
+                request.examId(), resolveTeacherIds(exam), studentId,
+                studentName, request.violationType(), request.description(),
+                currentAttempt, violationCount, autoSubmitted);
     }
 
     private void autoSubmitExam(Long examId, Long studentId) {
@@ -120,5 +133,21 @@ public class ReportViolationUsecase {
         // Auto-submit with currently saved answers -> SubmitExamUsecase saves submissions
         // and enqueues grading. Session cleanup is handled by grading worker.
         submitExamUsecase.executeAsSystem(new SubmitExamRequest(examId, answers, null, null), studentId, true);
+    }
+
+    private List<Long> resolveTeacherIds(Exam exam) {
+        List<Long> teacherIds = new ArrayList<>(classRepository.findTeachersByClassId(exam.getClassId())
+                .stream()
+                .map(TeacherClass::getTeacherId)
+                .toList());
+
+        if (exam.getCreatorId() != null) {
+            teacherIds.add(exam.getCreatorId());
+        }
+
+        return teacherIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 }

@@ -202,7 +202,7 @@ public class SubmitExamUsecase {
 
         // 9a. Save notification to DB WITHIN the same transaction
         //     so that /unread-count API always sees it after commit.
-        saveSubmissionNotifications(exam, studentId, studentName, teacherIds);
+        saveSubmissionNotifications(exam, studentId, studentName, teacherIds, attemptNumber);
 
         // 9b. Enqueue grading job and send WebSocket AFTER DB commit
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -210,7 +210,7 @@ public class SubmitExamUsecase {
             public void afterCommit() {
                 gradingQueueService.enqueue(examId, studentId, attemptNumber);
                 log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
-                sendSubmissionWebSocket(exam, studentId, studentName, teacherIds);
+                sendSubmissionWebSocket(exam, studentId, studentName, teacherIds, attemptNumber);
             }
         });
 
@@ -253,12 +253,12 @@ public class SubmitExamUsecase {
      * Save submission notifications to DB — runs inside the main @Transactional
      * so the records commit atomically with the exam submission.
      */
-    private void saveSubmissionNotifications(Exam exam, Long studentId, String studentName, List<Long> teacherIds) {
+    private void saveSubmissionNotifications(Exam exam, Long studentId, String studentName, List<Long> teacherIds, int attemptNumber) {
         if (teacherIds == null || teacherIds.isEmpty()) {
             return;
         }
 
-        String description = "Đã nộp bài. Đang chấm điểm.";
+        String description = String.format("Đã nộp bài lần %d. Đang chấm điểm.", attemptNumber);
         List<TeacherNotification> notifications = teacherIds.stream()
                 .distinct()
                 .map(teacherId -> TeacherNotification.builder()
@@ -284,11 +284,12 @@ public class SubmitExamUsecase {
      * Send WebSocket notification to teachers — runs in afterCommit()
      * so teachers only see it after DB has committed.
      */
-    private void sendSubmissionWebSocket(Exam exam, Long studentId, String studentName, List<Long> teacherIds) {
+    private void sendSubmissionWebSocket(Exam exam, Long studentId, String studentName, List<Long> teacherIds, int attemptNumber) {
         if (teacherIds == null || teacherIds.isEmpty()) {
             return;
         }
 
+        String message = String.format("Đã nộp bài lần %d. Đang chấm điểm.", attemptNumber);
         messagingTemplate.convertAndSend(
                 "/topic/teacher/grading-results",
                 Map.of(
@@ -297,10 +298,11 @@ public class SubmitExamUsecase {
                         "teacherIds", teacherIds,
                         "studentId", studentId,
                         "studentName", studentName,
+                        "attemptNumber", attemptNumber,
                         "totalScore", BigDecimal.ZERO,
                         "maxScore", BigDecimal.ZERO,
                         "status", "SUBMITTED",
-                        "message", "Đã nộp bài. Đang chấm điểm."));
+                        "message", message));
     }
 
     private List<Long> resolveTeacherIds(Exam exam) {

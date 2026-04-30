@@ -35,7 +35,7 @@ public class TeacherNotificationRepositoryImpl implements TeacherNotificationRep
     @Override
     public PaginatedResult<TeacherNotification> findByTeacherId(Long teacherId, PaginationParams params) {
         Pageable pageable = PageRequest.of(params.getPage(), params.getSize());
-        Page<TeacherNotificationEntity> page = jpaRepository.findByTeacherIdOrderByCreatedAtDesc(teacherId, pageable);
+        Page<TeacherNotificationEntity> page = jpaRepository.findByTeacherIdOrderByCreatedAtDescIdDesc(teacherId, pageable);
 
         List<TeacherNotification> data = page.getContent().stream()
                 .map(TeacherNotificationEntity::toModel)

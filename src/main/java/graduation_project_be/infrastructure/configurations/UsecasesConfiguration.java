@@ -403,13 +403,14 @@ public class UsecasesConfiguration {
             ExamResultRepository examResultRepository,
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
+            ClassRepository classRepository,
             CurrentUserService currentUserService,
             ViolationNotificationService violationNotificationService,
             SubmitExamUsecase submitExamUsecase,
             ExamDraftRepository examDraftRepository) {
         return new ReportViolationUsecase(
                 examViolationRepository, examResultRepository, examRepository,
-                classEnrollmentRepository, currentUserService,
+                classEnrollmentRepository, classRepository, currentUserService,
                 violationNotificationService, submitExamUsecase, examDraftRepository);
     }
 

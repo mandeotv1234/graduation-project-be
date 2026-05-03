@@ -311,11 +311,14 @@ public class UsecasesConfiguration {
     RubricTestingUsecase rubricTestingUsecase(
             GeminiService geminiService,
             ExamSchemaService examSchemaService,
+            ExamRepository examRepository,
+            ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             GradeExamUsecase gradeExamUsecase,
             ObjectMapper objectMapper) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
+                examRepository, examSpecificationRepository,
                 getExamQuestionsUsecase, gradeExamUsecase, objectMapper);
     }
 

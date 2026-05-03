@@ -1,26 +1,22 @@
-Bạn là chuyên gia chấm điểm SQL cho hệ thống thi thực hành CSDL.
-Hãy tạo JSON rubric chấm loại ROUTINE (FUNCTION/STORED_PROCEDURE) theo mô hình test case.
+You are generating a SQL Server grading rubric for a FUNCTION or STORED_PROCEDURE question.
+Return only valid JSON. Do not use markdown.
 
-=== CÂU HỎI ===
+QUESTION:
 %s
 
-=== SQL ĐÁP ÁN MẪU (ROUTINE) ===
+REFERENCE SQL:
 %s
 
-=== LOẠI ROUTINE ===
+ROUTINE TYPE:
 %s
 
-=== TỔNG ĐIỂM ===
-%.2f điểm
+DATABASE SPEC CONTEXT:
+%s
 
-=== NGUYÊN TẮC QUAN TRỌNG (BẮT BUỘC ĐỌC) ===
-KHÔNG đoán giá trị `expected_result`. Engine sẽ tự chạy đáp án mẫu trong sandbox
-và lấy kết quả thực tế làm `expected_value` chính thức. Bạn CHỈ sinh "kịch bản":
-setup_script + invocation_query + validation_query + verification_type. Mọi field
-mô tả "kết quả kỳ vọng" sẽ bị bỏ qua nếu bạn vẫn đặt vào.
+TOTAL POINTS:
+%.2f
 
-=== YÊU CẦU ĐẦU RA ===
-Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
+Return this shape exactly:
 {
   "question_id": "Q_AUTO_01",
   "total_points": %.2f,
@@ -33,13 +29,13 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
     },
     "routines": [
       {
-        "expected_name": "<tên routine từ đáp án>",
+        "expected_name": "<routine name from reference SQL>",
         "expected_type": "<FUNCTION|STORED_PROCEDURE>",
-        "expected_return_type": "<kiểu trả về nếu FUNCTION>",
+        "expected_return_type": "<return type for FUNCTION, null for STORED_PROCEDURE>",
         "parameters": [
           {
-            "name": "<tên tham số>",
-            "expected_type": "<kiểu dữ liệu>",
+            "name": "<parameter name including @ for procedures>",
+            "expected_type": "<SQL Server data type>",
             "expected_mode": "<IN|OUT|INOUT>"
           }
         ]
@@ -48,80 +44,54 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
     "test_cases": [
       {
         "case_id": "TC_01",
-        "case_name": "Trường hợp thành công cơ bản",
+        "case_name": "Vietnamese short display name",
         "verification_type": "RETURN_VALUE",
         "match_type": "EXACT",
         "score_weight": 0.5,
-        "description": "Kiểm tra routine trả về đúng với input hợp lệ",
-        "setup_script": "-- SQL chuẩn bị data — chạy TRƯỚC invocation. Có thể rỗng nếu không cần.\nINSERT INTO [{SCHEMA}].TableName VALUES (...);",
-        "input_parameters": {"param1": "value1", "param2": 123},
-        "invocation_query": "-- BẮT BUỘC với SP/Trigger SIDE_EFFECT. Function thì để rỗng.\nEXEC [{SCHEMA}].<routine_name> @param1='value1', @param2=123",
-        "validation_query": "-- BẮT BUỘC. Engine tự chạy với routine mẫu để derive expected.\nSELECT [{SCHEMA}].<fn_name>(...)"
-      },
-      {
-        "case_id": "TC_02",
-        "case_name": "Trường hợp biên/null",
-        "verification_type": "RETURN_VALUE",
-        "match_type": "EXACT",
-        "score_weight": 0.3,
-        "description": "Kiểm tra xử lý input biên hoặc null",
+        "description": "What behavior this case checks",
         "setup_script": "",
-        "input_parameters": {"param1": null, "param2": 0},
+        "input_parameters": {"param": "value"},
         "invocation_query": "",
-        "validation_query": "SELECT [{SCHEMA}].<fn_name>(NULL, 0)"
+        "validation_query": "SELECT [{SCHEMA}].<function_name>(...)"
       }
     ]
   }
 }
 
-=== QUY TẮC BẮT BUỘC ===
-- Tạo ít nhất 2-3 test cases chất lượng cao, mỗi cái cover một kịch bản khác nhau
-  (success path / boundary / NULL / exception ...).
-- verification_type phải là một trong: RETURN_VALUE, OUT_PARAMETER, RESULT_SET,
-  SIDE_EFFECT, PRINT_OUTPUT (xem mô tả dưới).
-- match_type: "EXACT" (mặc định, so khớp chuỗi sau trim) hoặc "CONTAINS" (actual
-  chứa expected — dùng khi format string có thể khác nhau, ví dụ PRINT_OUTPUT).
-- score_weight là số 0..1. Engine sẽ chuẩn hoá tổng các weight về 1.0 rồi nhân
-  ngược với total_points của câu. Càng quan trọng càng cao.
-- Phân tích SQL đáp án để xác định:
-  + Tên routine chính xác
-  + Kiểu trả về (nếu FUNCTION)
-  + Danh sách tham số với kiểu và mode (IN/OUT/INOUT)
-- setup_script: nếu cần dữ liệu test, BẮT BUỘC bắt đầu bằng "DROP TABLE IF EXISTS
-  <tên>;" trước mỗi CREATE TABLE để chạy lại được nhiều lần. Setup này được engine
-  bao trong transaction và rollback sau mỗi test case nên không cần dọn cuối.
-- input_parameters: JSON object dạng {"tên_param": <value>, ...}. Engine dùng để
-  thay vào template invocation/validation. KHÔNG dùng định dạng "@p1='x',@p2=1".
-- invocation_query: chỉ bắt buộc cho SP với verification_type = SIDE_EFFECT,
-  PRINT_OUTPUT, OUT_PARAMETER. Function (RETURN_VALUE/RESULT_SET) bỏ trống vì
-  validation_query đã gọi trực tiếp.
-- validation_query: BẮT BUỘC. Là SQL "đọc kết quả" — engine sẽ chạy nó vào schema
-  của giáo viên để lấy expected, và vào schema của học sinh để lấy actual.
-- KHÔNG bao giờ sinh trường "expected_result" / "expected_value". Engine derive,
-  không tin trường này nếu bạn đặt nó.
-- case_name phải là tiếng Việt, ngắn gọn, hiển thị cho học sinh khi báo lỗi.
+Hard rules:
+- Generate 3 to 6 high-quality test cases covering success, invalid inputs, boundary cases, null/empty cases when relevant, and side effects.
+- The engine derives expected values by running REFERENCE SQL. Never add expected_result, expected_value, expected_output, or any manually guessed expected field.
+- The exam specification DDL is already loaded before every test. setup_script must not CREATE TABLE, ALTER TABLE, DROP TABLE, CREATE FUNCTION, CREATE PROCEDURE, or use GO.
+- setup_script is only for test data. Use DELETE/INSERT/UPDATE against existing tables from DATABASE SPEC CONTEXT. Seed every row needed by the routine and helper functions.
+- setup_script must be idempotent: before inserting test rows, DELETE the exact keys you will insert because the specification DDL may already contain seed data.
+- Before writing setup_script, read DATABASE SPEC CONTEXT and build a foreign-key checklist. For every inserted child row, insert the referenced parent row in the same setup_script first.
+- If setup_script inserts ChuyenXe and its TuyenXe column has values such as 'TUYEN01', 'TUYEN02', then setup_script MUST also insert matching rows into [{SCHEMA}].TuyenXe(MaTuyen, ...) before inserting ChuyenXe. This is mandatory even if the procedure only reads ChuyenXe and Xe.
+- If setup_script inserts rows into a table with foreign keys, seed parent/master rows first and delete child/detail rows before parent/master rows. Example order: DELETE ChuyenXe, then TuyenXe/Xe; INSERT TuyenXe and Xe, then ChuyenXe.
+- Do not rely on existing parent rows from the base dataset. Each test case must be self-contained after its DELETE statements.
+- Use [{SCHEMA}].ObjectName for every table, function, and procedure reference. Never use dbo., THIS, TARGET_SCHEMA, YOUR_SCHEMA, or unqualified routine names.
+- Do not include schema creation logic. Do not invent tables or columns not present in DATABASE SPEC CONTEXT or clearly used by the reference SQL.
+- verification_type must be one of RETURN_VALUE, OUT_PARAMETER, RESULT_SET, SIDE_EFFECT, PRINT_OUTPUT.
+- match_type must be EXACT or CONTAINS. Prefer EXACT unless comparing free-form PRINT text.
+- Prefer score_weight values that sum to 1.0 across all test cases.
+- case_name must be short Vietnamese text for UI display.
 
-=== QUY TẮC SCHEMA QUAN TRỌNG ===
-- BẮT BUỘC dùng placeholder {SCHEMA} trong setup_script / invocation_query /
-  validation_query khi tham chiếu đến bảng hoặc routine. KHÔNG dùng "dbo." prefix.
-  Engine sẽ thay {SCHEMA} bằng tên schema thực tế (của giáo viên khi derive
-  expected, của học sinh khi chấm) trước khi chạy.
-- Ví dụ ĐÚNG:   "SELECT [{SCHEMA}].fn_TongTien(1)"
-- Ví dụ SAI:    "SELECT dbo.fn_TongTien(1)"  ← engine sẽ tìm dbo.fn_TongTien không thấy
-- Ví dụ SAI:    "SELECT fn_TongTien(1)"      ← không có schema, ambiguous
+Function rules:
+- Scalar function RETURN_VALUE: invocation_query should usually be empty, validation_query calls the function, for example "SELECT [{SCHEMA}].fn_Name(1)".
+- Table-valued function RESULT_SET: validation_query should SELECT deterministic columns with ORDER BY when order matters.
 
-=== LOẠI VERIFICATION ===
-- RETURN_VALUE: Function scalar. validation_query = "SELECT [{SCHEMA}].<fn>(args)".
-- RESULT_SET: Function trả TABLE hoặc SP có SELECT. validation_query trả nhiều
-  cột/dòng. Compare row-by-row. Ví dụ: "SELECT * FROM [{SCHEMA}].<fn>(args)" hoặc
-  "EXEC [{SCHEMA}].<sp_name>".
-- OUT_PARAMETER: SP với OUTPUT param. invocation_query phải có pattern
-  "DECLARE @out <type>; EXEC [{SCHEMA}].<sp> @in=..., @out=@out OUTPUT;".
-  validation_query = "SELECT @out;" (variable scope across batch).
-- SIDE_EFFECT: SP/Trigger thay đổi dữ liệu. invocation_query thực hiện thao tác
-  ("EXEC [{SCHEMA}].<sp> ..." hoặc "INSERT INTO [{SCHEMA}].<tbl> ..."),
-  validation_query SELECT từ bảng bị ảnh hưởng để check ("SELECT COUNT(*) FROM
-  [{SCHEMA}].<audit_tbl> WHERE ...").
-- PRINT_OUTPUT: SP/Function dùng PRINT. invocation_query = "EXEC [{SCHEMA}].<sp>".
-  Engine capture PRINT messages tự động qua SQLWarning chain (không qua result set).
-  validation_query có thể để rỗng — engine sẽ so khớp printMessages với expected.
+Stored procedure rules:
+- SQL Server stored procedures cannot be queried like tables/functions. Never write "SELECT RETURN_VALUE FROM [{SCHEMA}].<sp>".
+- invocation_query must be executable as-is after {SCHEMA} replacement. input_parameters is metadata only; it is not converted into SQL variables by the engine.
+- Use concrete literal argument values in invocation_query, for example "EXEC [{SCHEMA}].SP_Name @MaXe = N'XE001'".
+- Never write "@MaXe = @MaXe" unless invocation_query declares and assigns @MaXe first, for example "DECLARE @MaXe VARCHAR(10) = 'XE001'; EXEC [{SCHEMA}].SP_Name @MaXe = @MaXe".
+- For a procedure that uses RETURN 1 / RETURN 0, use RETURN_VALUE with this same-batch pattern:
+  invocation_query = "DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp_name> @p1='...', @p2=123; SELECT @rc AS return_value"
+  validation_query = "SELECT @rc AS return_value"
+- Never write "SELECT return_value FROM @rc". @rc is a scalar variable.
+- Prefer RETURN_VALUE for stored procedures that return status with RETURN 1 / RETURN 0. Use PRINT_OUTPUT only when the question explicitly requires grading the printed message.
+- Prefer SIDE_EFFECT for procedures that INSERT/UPDATE/DELETE:
+  invocation_query = "EXEC [{SCHEMA}].<sp_name> ..."
+  validation_query = "SELECT COUNT(*) FROM [{SCHEMA}].<affected_table> WHERE ..."
+- PRINT_OUTPUT must have validation_query = "". Do not query PRINT_LOG; no PRINT_LOG table exists. The engine captures SQL Server PRINT messages directly.
+- If using a table variable to capture a result set, declare it in invocation_query before INSERT EXEC, then validation_query may SELECT from that same variable.
+- If the reference procedure calls helper functions, setup_script must seed the tables those helpers read.

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -234,7 +235,8 @@ public class GeminiServiceImpl implements GeminiService {
             String questionContent,
             double totalPoints,
             String questionType,
-            String priorQuestionContext) {
+            String priorQuestionContext,
+            String schemaContext) {
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Gemini API key is missing. Cannot generate rubric.");
             return null;
@@ -252,7 +254,7 @@ public class GeminiServiceImpl implements GeminiService {
         } else if ("SELECT_QUERY".equalsIgnoreCase(questionType)) {
             basePrompt = buildSelectRubricPrompt(correctQuery, questionContent, totalPoints, priorQuestionContext);
         } else if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
-            basePrompt = buildRoutineRubricPrompt(correctQuery, questionContent, totalPoints, questionType);
+            basePrompt = buildRoutineRubricPrompt(correctQuery, questionContent, totalPoints, questionType, schemaContext);
         } else if ("TRIGGER".equalsIgnoreCase(questionType)) {
             basePrompt = buildTriggerRubricPrompt(correctQuery, questionContent, totalPoints);
         } else {
@@ -311,12 +313,34 @@ public class GeminiServiceImpl implements GeminiService {
             }
 
             if ("FUNCTION".equalsIgnoreCase(questionType) || "STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
-                if (rubricJson == null) {
-                    return null;
+                String prompt = basePrompt;
+                String latestJson = null;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    latestJson = callGeminiForJson(client, prompt);
+                    if (latestJson == null) {
+                        return null;
+                    }
+
+                    JsonNode rubricNode = objectMapper.readTree(latestJson);
+                    List<String> issues = validateRoutineRubricHeuristics(questionType, rubricNode);
+                    if (issues.isEmpty()) {
+                        logGeneratedRubric(questionType, latestJson);
+                        logRoutineRubricDiagnostics(questionType, latestJson);
+                        return latestJson;
+                    }
+
+                    if (attempt == 2) {
+                        log.warn("ROUTINE rubric still has issues after retries: {}", issues);
+                        logGeneratedRubric(questionType, latestJson);
+                        logRoutineRubricDiagnostics(questionType, latestJson);
+                        return latestJson;
+                    }
+
+                    prompt = basePrompt + "\n\n=== REQUIRED FIXES FOR ROUTINE RUBRIC ===\n"
+                            + String.join("\n", issues)
+                            + "\nReturn corrected JSON only. Do not use markdown.";
                 }
-                logGeneratedRubric(questionType, rubricJson);
-                return rubricJson;
+                return latestJson;
             }
 
             if ("TRIGGER".equalsIgnoreCase(questionType)) {
@@ -410,6 +434,178 @@ public class GeminiServiceImpl implements GeminiService {
             log.warn("Gemini generated rubric for questionType={} but pretty logging failed. Raw rubric: {}",
                     questionType, rubricJson);
         }
+    }
+
+    private void logRoutineRubricDiagnostics(String questionType, String rubricJson) {
+        if (rubricJson == null || rubricJson.isBlank()) {
+            return;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(rubricJson);
+            JsonNode payload = root.path("grading_payload");
+            JsonNode routines = payload.path("routines");
+            JsonNode testCases = payload.path("test_cases");
+
+            log.info("[ROUTINE_RUBRIC_RAW][{}] {}", questionType, rubricJson);
+            log.info("[ROUTINE_RUBRIC_SUMMARY][{}] routines={}, testCases={}",
+                    questionType,
+                    routines.isArray() ? routines.size() : 0,
+                    testCases.isArray() ? testCases.size() : 0);
+
+            if (!testCases.isArray()) {
+                log.warn("[ROUTINE_RUBRIC_INVALID][{}] grading_payload.test_cases is missing or not an array",
+                        questionType);
+                return;
+            }
+
+            for (int i = 0; i < testCases.size(); i++) {
+                JsonNode tc = testCases.get(i);
+                String caseName = tc.path("case_name").asText("TC" + (i + 1));
+                String setup = tc.path("setup_script").asText("");
+                String invocation = tc.path("invocation_query").asText("");
+                String validation = tc.path("validation_query").asText("");
+                String combinedSql = setup + "\n" + invocation + "\n" + validation;
+
+                log.info("[ROUTINE_RUBRIC_TC][{}][{}] caseName='{}', verificationType='{}', matchType='{}', scoreWeight='{}'",
+                        questionType,
+                        i + 1,
+                        caseName,
+                        tc.path("verification_type").asText(""),
+                        tc.path("match_type").asText(""),
+                        tc.path("score_weight").asText(""));
+
+                if (validation.isBlank()
+                        && !"PRINT_OUTPUT".equalsIgnoreCase(tc.path("verification_type").asText(""))) {
+                    log.warn("[ROUTINE_RUBRIC_TC_INVALID][{}][{}] validation_query is blank for caseName='{}'",
+                            questionType, i + 1, caseName);
+                }
+
+                if (combinedSql.matches("(?is).*\\bTHIS\\s*\\..*")
+                        || combinedSql.matches("(?is).*\\[\\s*THIS\\s*\\].*")
+                        || combinedSql.matches("(?is).*\\bdbo\\s*\\..*")) {
+                    log.warn("[ROUTINE_RUBRIC_TC_SCHEMA_WARNING][{}][{}] caseName='{}' may contain invalid schema placeholder. setup='{}' invocation='{}' validation='{}'",
+                            questionType,
+                            i + 1,
+                            caseName,
+                            truncateForLog(setup, 500),
+                            truncateForLog(invocation, 500),
+                            truncateForLog(validation, 500));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[ROUTINE_RUBRIC_DIAGNOSTICS_FAILED][{}] {}", questionType, e.getMessage());
+        }
+    }
+
+    private List<String> validateRoutineRubricHeuristics(String questionType, JsonNode rubricNode) {
+        List<String> issues = new ArrayList<>();
+        JsonNode testCases = rubricNode.path("grading_payload").path("test_cases");
+
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            issues.add("- grading_payload.test_cases must be a non-empty array.");
+            return issues;
+        }
+
+        for (int i = 0; i < testCases.size(); i++) {
+            JsonNode tc = testCases.get(i);
+            String label = "TC" + (i + 1) + " (" + tc.path("case_name").asText("unnamed") + ")";
+            String verificationType = tc.path("verification_type").asText("");
+            String setup = tc.path("setup_script").asText("");
+            String invocation = tc.path("invocation_query").asText("");
+            String validation = tc.path("validation_query").asText("");
+            String combined = setup + "\n" + invocation + "\n" + validation;
+
+            if (!"PRINT_OUTPUT".equalsIgnoreCase(verificationType) && validation.isBlank()) {
+                issues.add("- " + label + ": validation_query is required unless verification_type is PRINT_OUTPUT.");
+            }
+
+            if ("PRINT_OUTPUT".equalsIgnoreCase(verificationType) && !validation.isBlank()) {
+                issues.add("- " + label + ": PRINT_OUTPUT must leave validation_query empty. "
+                        + "The engine captures SQL Server PRINT messages directly; do not query PRINT_LOG.");
+            }
+
+            if (combined.matches("(?is).*\\bPRINT_LOG\\b.*")) {
+                issues.add("- " + label + ": do not use PRINT_LOG. No such table is provided; PRINT_OUTPUT is captured by the engine.");
+            }
+
+            if (combined.matches("(?is).*\\bdbo\\s*\\..*")) {
+                issues.add("- " + label + ": do not use dbo.; use [{SCHEMA}].ObjectName everywhere.");
+            }
+
+            if (combined.matches("(?is).*\\bTHIS\\s*\\..*") || combined.matches("(?is).*\\[\\s*THIS\\s*\\].*")) {
+                issues.add("- " + label + ": do not use THIS as schema placeholder; use [{SCHEMA}] only.");
+            }
+
+            if (invocation.matches("(?is).*@([A-Za-z0-9_]+)\\s*=\\s*@\\1\\b.*")
+                    && !invocation.matches("(?is).*\\bDECLARE\\s+@\\w+\\b.*")) {
+                issues.add("- " + label + ": invocation_query uses an undeclared variable as an argument value "
+                        + "(for example @MaXe = @MaXe). Use a literal value from input_parameters instead, "
+                        + "such as @MaXe = 'XE001', or declare the variable first.");
+            }
+
+            if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {
+                issues.add("- " + label + ": setup_script must not CREATE/ALTER/DROP base tables. "
+                        + "The exam specification DDL is already loaded; only seed rows with DELETE/INSERT/UPDATE.");
+            }
+
+            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\b.*")
+                    && !setup.matches("(?is).*\\bDELETE\\s+FROM\\b.*")) {
+                issues.add("- " + label + ": setup_script inserts test rows but does not delete those keys first. "
+                        + "Make setup idempotent because the specification DDL may already contain seed data.");
+            }
+
+            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[?\\{SCHEMA\\}\\]?\\.\\[?ChuyenXe\\]?.*")
+                    || setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[[^\\]]+\\]\\.\\[?ChuyenXe\\]?.*")) {
+                if (setup.matches("(?is).*\\bTuyenXe\\b.*")
+                        && !setup.matches("(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?TuyenXe\\]?.*")) {
+                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
+                            + "parent TuyenXe rows first. ChuyenXe.TuyenXe has a foreign key to TuyenXe.MaTuyen.");
+                }
+                if (setup.matches("(?is).*\\bMaXe\\b.*")
+                        && !setup.matches("(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?Xe\\]?.*")) {
+                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
+                            + "parent Xe rows first. ChuyenXe.MaXe has a foreign key to Xe.MaXe.");
+                }
+            }
+
+            if ("STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
+                if (validation.matches("(?is).*@result_table.*")
+                        && !(invocation + "\n" + validation).matches("(?is).*DECLARE\\s+@result_table\\s+TABLE\\s*\\(.*")) {
+                    issues.add("- " + label + ": validation_query references @result_table but the test case does not "
+                            + "declare it. If using @result_table, put DECLARE @result_table TABLE (...) and INSERT EXEC "
+                            + "in invocation_query before validation_query SELECTs from it.");
+                }
+
+                if (validation.matches("(?is).*SELECT\\s+return_value\\s+FROM\\s+@\\w+.*")) {
+                    issues.add("- " + label + ": invalid validation_query. @rc is a scalar variable, not a table. "
+                            + "Use SELECT @rc AS return_value, never SELECT return_value FROM @rc.");
+                }
+
+                if (validation.matches("(?is).*SELECT\\s+RETURN_VALUE\\s+FROM\\s+.*")) {
+                    issues.add("- " + label + ": invalid SQL Server stored procedure validation_query. "
+                            + "Never use SELECT RETURN_VALUE FROM <stored_procedure>. "
+                            + "Use DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value, "
+                            + "or use SIDE_EFFECT validation_query that SELECTs from affected tables.");
+                }
+
+                if ("RETURN_VALUE".equalsIgnoreCase(verificationType)
+                        && !invocation.matches("(?is).*EXEC\\s+@\\w+\\s*=.*")
+                        && !invocation.matches("(?is).*SELECT\\s+@\\w+\\s+AS\\s+return_value.*")) {
+                    issues.add("- " + label + ": STORED_PROCEDURE RETURN_VALUE must capture return code in invocation_query, "
+                            + "for example DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value.");
+                }
+            }
+        }
+
+        return issues;
+    }
+
+    private String truncateForLog(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength) + "...";
     }
 
     private List<String> validateSelectRubricHeuristics(JsonNode rubricNode) {
@@ -1185,11 +1381,15 @@ public class GeminiServiceImpl implements GeminiService {
             String correctQuery,
             String questionContent,
             double totalPoints,
-            String routineType) {
+            String routineType,
+            String schemaContext) {
         return String.format(routineRubricPromptTemplate,
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
                 routineType,
+                schemaContext != null && !schemaContext.isBlank()
+                        ? truncateForLog(schemaContext, 6000)
+                        : "No schema context was provided.",
                 totalPoints,
                 totalPoints);
     }

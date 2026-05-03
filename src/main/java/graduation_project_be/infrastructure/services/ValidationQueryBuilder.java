@@ -152,7 +152,7 @@ public class ValidationQueryBuilder {
         if (teacherSchema != null) {
             result = result.replace(TEACHER_SCHEMA_PLACEHOLDER, teacherSchema);
         }
-        return result;
+        return result.replaceAll("(?i)SELECT\\s+return_value\\s+FROM\\s+@(\\w+)", "SELECT @$1 AS return_value");
     }
 
     private static String blankToNull(String s) {

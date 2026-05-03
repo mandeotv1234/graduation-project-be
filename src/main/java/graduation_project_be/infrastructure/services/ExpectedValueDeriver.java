@@ -74,7 +74,7 @@ public class ExpectedValueDeriver {
 
             // 2. Apply teacher's correctQuery — fail-fast if this throws
             try {
-                examSchemaService.executeSql(sandboxSchema, correctQuery);
+                executeSqlScriptBatches(sandboxSchema, correctQuery);
             } catch (Exception e) {
                 throw new DerivationException(
                         "Đáp án mẫu (correctQuery) không chạy được trên schema mẫu: " + e.getMessage(), e);
@@ -105,6 +105,56 @@ public class ExpectedValueDeriver {
         }
 
         return new DerivationResult(errors);
+    }
+
+    private void executeSqlScriptBatches(String schemaName, String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return;
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    examSchemaService.executeSql(schemaName, normalizeDboReferences(executable, schemaName));
+                }
+            }
+        }
+    }
+
+    private String normalizeDboReferences(String sql, String schemaName) {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        return sql.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        if (prefix.isBlank()) {
+            return List.of(routine);
+        }
+        return List.of(prefix, routine);
     }
 
     /**

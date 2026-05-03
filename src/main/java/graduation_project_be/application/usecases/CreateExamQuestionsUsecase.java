@@ -133,7 +133,7 @@ public class CreateExamQuestionsUsecase {
 
             String rubricJson = q.getGradingRubric();
             if (rubricJson == null || rubricJson.isBlank()) {
-                rubricJson = generateRubricViaAi(q);
+                rubricJson = generateRubricViaAi(q, specification);
                 // Persist back so the rubric is visible from /generate-rubric callers
                 // and from regrade flows.
                 if (rubricJson != null) {
@@ -160,7 +160,7 @@ public class CreateExamQuestionsUsecase {
                 || type == QuestionType.TRIGGER;
     }
 
-    private String generateRubricViaAi(ExamQuestion q) {
+    private String generateRubricViaAi(ExamQuestion q, ExamSpecification specification) {
         try {
             log.info("Calling Gemini.generateGradingRubric for Q{} ({})", q.getId(), q.getQuestionType());
             return geminiService.generateGradingRubric(
@@ -168,7 +168,8 @@ public class CreateExamQuestionsUsecase {
                     q.getContent(),
                     q.getPoints() != null ? q.getPoints().doubleValue() : 0d,
                     q.getQuestionType().name(),
-                    null);
+                    null,
+                    specification != null ? specification.getDdlScript() : null);
         } catch (Exception e) {
             log.error("Gemini.generateGradingRubric failed for Q{}: {}", q.getId(), e.getMessage());
             return null;

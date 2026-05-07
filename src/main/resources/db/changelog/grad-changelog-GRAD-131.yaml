@@ -1,0 +1,98 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2704260501
+      author: manhuynh
+      comment: "GRAD-131: Add feedbacks table for student exam feedback"
+      changes:
+        - createTable:
+            tableName: feedbacks
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ui_ux_rating
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: system_reliability_rating
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nps_score
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: feature_requests
+                  type: TEXT
+              - column:
+                  name: general_feedback
+                  type: TEXT
+              - column:
+                  name: created_at
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: feedbacks
+            baseColumnNames: student_id
+            constraintName: fk_feedback_student
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: feedbacks
+            baseColumnNames: exam_id
+            constraintName: fk_feedback_exam
+            referencedTableName: exams
+            referencedColumnNames: id
+            onDelete: CASCADE
+
+  - changeSet:
+      id: 0705262300
+      author: manhuynh
+      comment: "GRAD-131: Seed default admin account"
+      preConditions:
+        - onFail: MARK_RAN
+          sqlCheck:
+            expectedResult: 0
+            sql: "SELECT COUNT(*) FROM users WHERE email = 'admin@fit.hcmus.edu.vn'"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: admin@fit.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2a$12$YDQKt3YVzTnhQA2L.bZ4lehBOdugcGEqtuTVMpIZRyxhzmC6QWULe"
+              - column:
+                  name: full_name
+                  value: "Admin"
+              - column:
+                  name: role
+                  value: ADMIN
+              - column:
+                  name: is_active
+                  value: true
+              - column:
+                  name: created_at
+                  valueDate: now()

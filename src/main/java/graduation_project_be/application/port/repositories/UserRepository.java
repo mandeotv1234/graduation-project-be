@@ -1,6 +1,7 @@
 package graduation_project_be.application.port.repositories;
 
 
+import graduation_project_be.domain.models.PaginatedResult;
 import graduation_project_be.domain.models.User;
 
 import java.util.List;
@@ -14,4 +15,5 @@ public interface UserRepository {
     Optional<User> findById(Long id);
     List<User> findByIdIn(List<Long> ids, int limit, int offset);
     List<User> findAllById(List<Long> ids);
+    PaginatedResult<User> findAll(int page, int size);
 }

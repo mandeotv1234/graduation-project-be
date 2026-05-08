@@ -793,6 +793,32 @@ public class UsecasesConfiguration {
                 deviceConflictNotificationService);
     }
 
+    // ===== FEEDBACK USECASES =====
+
+    @Bean
+    SubmitFeedbackUsecase submitFeedbackUsecase(FeedbackRepository feedbackRepository) {
+        return new SubmitFeedbackUsecase(feedbackRepository);
+    }
+
+    @Bean
+    GetFeedbacksUsecase getFeedbacksUsecase(
+            FeedbackRepository feedbackRepository,
+            UserRepository userRepository) {
+        return new GetFeedbacksUsecase(feedbackRepository, userRepository);
+    }
+
+    // ===== ADMIN USER USECASES =====
+
+    @Bean
+    GetUsersUsecase getUsersUsecase(UserRepository userRepository) {
+        return new GetUsersUsecase(userRepository);
+    }
+
+    @Bean
+    UpdateUserRoleUsecase updateUserRoleUsecase(UserRepository userRepository) {
+        return new UpdateUserRoleUsecase(userRepository);
+    }
+
     @Bean
     RemindStudentUsecase remindStudentUsecase(
             ExamRepository examRepository,

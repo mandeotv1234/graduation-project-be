@@ -1,11 +1,14 @@
 package graduation_project_be.infrastructure.persistence.repositories;
 
 import graduation_project_be.application.port.repositories.UserRepository;
+import graduation_project_be.domain.models.PaginatedResult;
 import graduation_project_be.domain.models.User;
 
 import graduation_project_be.infrastructure.persistence.entities.UserEntity;
 import graduation_project_be.infrastructure.persistence.repositories.jpa.UserJpaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.domain.PageRequest;
 
@@ -59,5 +62,15 @@ public class UserRepositoryImpl implements UserRepository {
         return userJpaRepository.findAllById(ids).stream()
                 .map(UserEntity::toModel)
                 .toList();
+    }
+
+    @Override
+    public PaginatedResult<User> findAll(int page, int size) {
+        Page<UserEntity> entityPage = userJpaRepository.findAll(
+                PageRequest.of(page, size, Sort.by("createdAt").descending()));
+        List<User> users = entityPage.getContent().stream()
+                .map(UserEntity::toModel)
+                .toList();
+        return PaginatedResult.of(users, page, size, entityPage.getTotalElements());
     }
 }

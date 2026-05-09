@@ -277,15 +277,19 @@ public class UsecasesConfiguration {
             ExamSubmissionRepository examSubmissionRepository,
             ExamResultRepository examResultRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
+            ClassRepository classRepository,
+            UserRepository userRepository,
             CurrentUserService currentUserService,
             ExamSessionService examSessionService,
             GradingQueueService gradingQueueService,
             ExamDraftRepository examDraftRepository,
+            TeacherNotificationRepository teacherNotificationRepository,
             SimpMessagingTemplate simpMessagingTemplate) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, classEnrollmentRepository, currentUserService,
-                examSessionService, gradingQueueService, examDraftRepository, simpMessagingTemplate);
+                examResultRepository, classEnrollmentRepository, classRepository, userRepository, currentUserService,
+                examSessionService, gradingQueueService, examDraftRepository, teacherNotificationRepository,
+                simpMessagingTemplate);
     }
 
     @Bean
@@ -295,6 +299,7 @@ public class UsecasesConfiguration {
             ExamSubmissionRepository examSubmissionRepository,
             ExamResultRepository examResultRepository,
             ExamSpecificationRepository examSpecificationRepository,
+            ClassRepository classRepository,
             ExamSchemaService examSchemaService,
             ExamSessionService examSessionService,
             GradingNotificationService gradingNotificationService,
@@ -303,7 +308,7 @@ public class UsecasesConfiguration {
             ObjectMapper objectMapper) {
         return new GradeExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
-                examResultRepository, examSpecificationRepository,
+                examResultRepository, examSpecificationRepository, classRepository,
                 examSchemaService, examSessionService, gradingNotificationService, userRepository, testCaseRepository, objectMapper);
     }
 
@@ -401,13 +406,14 @@ public class UsecasesConfiguration {
             ExamResultRepository examResultRepository,
             ExamRepository examRepository,
             ClassEnrollmentRepository classEnrollmentRepository,
+            ClassRepository classRepository,
             CurrentUserService currentUserService,
             ViolationNotificationService violationNotificationService,
             SubmitExamUsecase submitExamUsecase,
             ExamDraftRepository examDraftRepository) {
         return new ReportViolationUsecase(
                 examViolationRepository, examResultRepository, examRepository,
-                classEnrollmentRepository, currentUserService,
+                classEnrollmentRepository, classRepository, currentUserService,
                 violationNotificationService, submitExamUsecase, examDraftRepository);
     }
 

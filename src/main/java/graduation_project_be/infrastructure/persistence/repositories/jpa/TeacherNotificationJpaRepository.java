@@ -10,7 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface TeacherNotificationJpaRepository extends JpaRepository<TeacherNotificationEntity, Long> {
 
-    Page<TeacherNotificationEntity> findByTeacherIdOrderByCreatedAtDesc(Long teacherId, Pageable pageable);
+    Page<TeacherNotificationEntity> findByTeacherIdOrderByCreatedAtDescIdDesc(Long teacherId, Pageable pageable);
 
     @Query("SELECT COUNT(n) FROM TeacherNotificationEntity n WHERE n.teacherId = :teacherId AND n.isRead = false")
     long countUnreadByTeacherId(@Param("teacherId") Long teacherId);

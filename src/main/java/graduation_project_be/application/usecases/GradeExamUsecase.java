@@ -19,6 +19,7 @@ import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.SpecDataset;
+import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.enums.GradingStatus;
@@ -53,6 +54,7 @@ public class GradeExamUsecase {
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamResultRepository examResultRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
+    private final ClassRepository classRepository;
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
     private final GradingNotificationService gradingNotificationService;
@@ -465,8 +467,9 @@ public class GradeExamUsecase {
             // 12. Notify teacher via WebSocket
             User student = userRepository.findById(studentId).orElse(null);
             String studentName = (student != null) ? student.getFullName() : "Unknown";
+            List<Long> teacherIds = resolveTeacherIds(exam);
             gradingNotificationService.notifyTeacherGradingCompleted(
-                    examId, exam.getTitle(), studentId, studentName, totalScore, maxScore);
+                    examId, exam.getTitle(), teacherIds, studentId, studentName, totalScore, maxScore);
 
         } catch (Exception e) {
             log.error("Grading FAILED: exam={}, student={}, attempt={}: {}",
@@ -479,6 +482,22 @@ public class GradeExamUsecase {
             // Notify student about failure
             gradingNotificationService.notifyGradingFailed(examId, studentId, e.getMessage());
         }
+    }
+
+    private List<Long> resolveTeacherIds(Exam exam) {
+        List<Long> teacherIds = new ArrayList<>(classRepository.findTeachersByClassId(exam.getClassId())
+                .stream()
+                .map(TeacherClass::getTeacherId)
+                .toList());
+
+        if (exam.getCreatorId() != null) {
+            teacherIds.add(exam.getCreatorId());
+        }
+
+        return teacherIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     // ========== Grading Logic (extracted from old SubmitExamUsecase) ==========

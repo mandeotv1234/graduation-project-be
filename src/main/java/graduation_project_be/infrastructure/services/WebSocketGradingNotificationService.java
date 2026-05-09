@@ -9,6 +9,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -76,13 +77,14 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
     }
 
     @Override
-    public void notifyTeacherGradingCompleted(Long examId, String examName, Long studentId,
+    public void notifyTeacherGradingCompleted(Long examId, String examName, List<Long> teacherIds, Long studentId,
                                               String studentName, BigDecimal totalScore, BigDecimal maxScore) {
         String examDestination = String.format("/topic/teacher/exam/%d/grading-result", examId);
 
         Map<String, Object> payload = Map.of(
                 "examId", examId,
                 "examName", examName != null ? examName : ("Exam " + examId),
+                "teacherIds", teacherIds != null ? teacherIds : List.of(),
                 "studentId", studentId,
                 "studentName", studentName != null ? studentName : "Unknown Student",
                 "totalScore", totalScore,

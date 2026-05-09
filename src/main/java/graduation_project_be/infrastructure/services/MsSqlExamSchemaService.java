@@ -3,6 +3,7 @@ package graduation_project_be.infrastructure.services;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -128,8 +129,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 String fk = rs.getString("fk_name");
                                 String table = rs.getString("table_name");
                                 try (Statement drop = conn.createStatement()) {
-                                    drop.execute("ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
-                                            + "]");
+                                    drop.execute(
+                                            "ALTER TABLE [" + schemaName + "].[" + table + "] DROP CONSTRAINT [" + fk
+                                                    + "]");
                                 }
                             }
                         }
@@ -137,7 +139,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         // 3. Drop all tables
                         try (Statement stmt = conn.createStatement();
                                 ResultSet rs = stmt.executeQuery(
-                                        "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName + "')")) {
+                                        "SELECT name FROM sys.tables WHERE schema_id = SCHEMA_ID('" + schemaName
+                                                + "')")) {
                             while (rs.next()) {
                                 String table = rs.getString("name");
                                 try (Statement drop = conn.createStatement()) {
@@ -439,6 +442,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     stmt.execute("EXECUTE AS USER = '" + userName + "'");
                 }
 
+                List<String> printMessages = new ArrayList<>();
                 try {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
@@ -509,6 +513,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             // Advance to next result (only call ONCE per iteration!)
                             isResultSet = stmt.getMoreResults();
                         }
+
+                        // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
+                        // the Statement is closed by try-with-resources.
+                        printMessages.addAll(collectPrintMessages(stmt));
                     }
 
                     String statusMessage = null;
@@ -524,6 +532,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             .resultSet(results)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
+                            .printMessages(printMessages)
                             .build();
                 } finally {
                     // Always revert context back to original user
@@ -536,6 +545,171 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
             throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Multi-statement batch executor used by per-test-case grading.
+     *
+     * <p>Differs from {@link #executeSql} in two ways:
+     * <ul>
+     *   <li>Does NOT call {@code validateStudentSql} — grading batches contain
+     *       {@code BEGIN TRY / BEGIN TRAN / DECLARE / THROW} which the keyword
+     *       blocklist would reject (e.g. THROW is not in the allowed-starters
+     *       list). The batch is built by trusted server-side code, not student
+     *       input, so input validation is unnecessary.</li>
+     *   <li>Statement context is impersonated to the schema's DB user (same as
+     *       executeSql) so that any student-defined routine called inside the
+     *       batch runs with that user's restricted permissions, NOT the admin
+     *       connection's permissions. This preserves cross-schema isolation
+     *       (the student's SP cannot read other students' schemas).</li>
+     * </ul>
+     *
+     * <p>Has the same hard timeout as {@link #executeSql} so that a runaway
+     * student routine (infinite loop, deadlock, WAITFOR) cannot hang the
+     * grading worker.
+     */
+    @Override
+    public SqlExecutionResult executeSqlBatchAsSchemaUser(String schemaName, String batchSql) {
+        String userName = schemaName + "_user";
+        ensureSchemaAndUser(schemaName);
+
+        try {
+            return jdbcTemplate.execute((Connection conn) -> {
+                List<Map<String, Object>> results = new ArrayList<>();
+                int totalUpdateCount = 0;
+                boolean hasUpdateCount = false;
+
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("EXECUTE AS USER = '" + userName + "'");
+                }
+
+                List<String> printMessages = new ArrayList<>();
+                try {
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                        stmt.setMaxRows(1000);
+
+                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+
+                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return stmt.execute(batchSql);
+                            } catch (Exception e) {
+                                throw new CompletionException(e);
+                            }
+                        });
+
+                        boolean isResultSet;
+                        try {
+                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        } catch (TimeoutException e) {
+                            try {
+                                stmt.cancel();
+                            } catch (Exception ignore) {
+                            }
+                            throw new RuntimeException(
+                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                        } catch (Exception e) {
+                            Throwable cause = e.getCause() != null ? e.getCause() : e;
+                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                        }
+
+                        while (true) {
+                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                stmt.cancel();
+                                throw new RuntimeException("Batch processing exceeded hard timeout of "
+                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                            }
+
+                            if (isResultSet) {
+                                try (ResultSet rs = stmt.getResultSet()) {
+                                    if (rs != null) {
+                                        ResultSetMetaData meta = rs.getMetaData();
+                                        int colCount = meta.getColumnCount();
+                                        while (rs.next()) {
+                                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                                stmt.cancel();
+                                                throw new RuntimeException(
+                                                        "Result fetch exceeded hard timeout of "
+                                                                + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                            }
+                                            Map<String, Object> row = new LinkedHashMap<>();
+                                            for (int i = 1; i <= colCount; i++) {
+                                                row.put(meta.getColumnLabel(i), rs.getObject(i));
+                                            }
+                                            results.add(row);
+                                        }
+                                    }
+                                }
+                            } else {
+                                int updateCount = stmt.getUpdateCount();
+                                if (updateCount == -1) {
+                                    break;
+                                }
+                                totalUpdateCount += updateCount;
+                                hasUpdateCount = true;
+                            }
+                            isResultSet = stmt.getMoreResults();
+                        }
+
+                        printMessages.addAll(collectPrintMessages(stmt));
+                    }
+
+                    String statusMessage = null;
+                    if (results.isEmpty()) {
+                        if (hasUpdateCount && totalUpdateCount >= 0) {
+                            statusMessage = "(" + totalUpdateCount + " row(s) affected)";
+                        } else {
+                            statusMessage = "Batch executed successfully.";
+                        }
+                    }
+
+                    return SqlExecutionResult.builder()
+                            .resultSet(results)
+                            .rowCount(results.size())
+                            .statusMessage(statusMessage)
+                            .printMessages(printMessages)
+                            .build();
+                } finally {
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.execute("REVERT");
+                    } catch (Exception e) {
+                        log.warn("REVERT failed for schema [{}]: {}", schemaName, e.getMessage());
+                    }
+                }
+            });
+        } catch (Exception e) {
+            log.error("Batch SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Walks the SQLWarning chain attached to a Statement and collects messages.
+     * MSSQL JDBC driver delivers each T-SQL {@code PRINT} statement (and
+     * {@code RAISERROR ... WITH SEVERITY 0..10}) as one SQLWarning entry.
+     * Higher severity is delivered as a SQLException, which we don't capture here.
+     *
+     * <p>Used by gradeByTestCases when verification_type = PRINT_OUTPUT.
+     * Returns an empty list if there are no warnings or if reading them throws
+     * (we never want to break grading because of warning-extraction bugs).
+     */
+    private List<String> collectPrintMessages(Statement stmt) {
+        List<String> messages = new ArrayList<>();
+        try {
+            SQLWarning w = stmt.getWarnings();
+            while (w != null) {
+                String msg = w.getMessage();
+                if (msg != null && !msg.isBlank()) {
+                    messages.add(msg);
+                }
+                w = w.getNextWarning();
+            }
+            stmt.clearWarnings();
+        } catch (Exception e) {
+            log.warn("Failed to collect PRINT messages from statement: {}", e.getMessage());
+        }
+        return messages;
     }
 
     /**
@@ -559,12 +733,13 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String firstToken = upper.split(" ")[0];
         List<String> allowedStarters = List.of(
                 "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE",
-                "EXEC", "EXECUTE", "DECLARE", "WITH", "SET", "MERGE", "BEGIN", "IF", "WHILE"
-        );
-        
+                "EXEC", "EXECUTE", "DECLARE", "WITH", "SET", "MERGE", "BEGIN", "IF", "WHILE");
+
         boolean isValidStart = allowedStarters.stream().anyMatch(firstToken::equals);
         if (!isValidStart) {
-            throw new IllegalArgumentException("Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '" + firstToken + "', hệ thống không tìm thấy lệnh này).");
+            throw new IllegalArgumentException(
+                    "Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '"
+                            + firstToken + "', hệ thống không tìm thấy lệnh này).");
         }
 
         String[] blockedPatterns = {
@@ -645,6 +820,9 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         isResultSet = stmt.getMoreResults();
                     }
 
+                    // Capture PRINT output before the Statement closes.
+                    List<String> printMessages = collectPrintMessages(stmt);
+
                     String statusMessage = null;
                     if (results.isEmpty()) {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
@@ -658,6 +836,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             .resultSet(results)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
+                            .printMessages(printMessages)
                             .build();
                 }
             });

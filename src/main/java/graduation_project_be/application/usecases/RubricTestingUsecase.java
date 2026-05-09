@@ -2,23 +2,33 @@ package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
+import graduation_project_be.application.usecases.request.TestGradeRoutineRequest;
+import graduation_project_be.application.usecases.request.TestGradeTriggerRequest;
 import graduation_project_be.application.usecases.request.TestGradeSelectRequest;
 import graduation_project_be.application.usecases.response.BuildCreateTablesResponse;
 import graduation_project_be.application.usecases.response.BuildInsertTablesResponse;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.application.usecases.response.ExecuteSelectTestCaseResponse;
 import graduation_project_be.application.usecases.response.RubricTestGradeResponse;
+import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
+import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TableMetadata;
+import graduation_project_be.domain.models.TriggerMetadata;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -37,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @RequiredArgsConstructor
 public class RubricTestingUsecase {
 
@@ -51,11 +62,18 @@ public class RubricTestingUsecase {
 
     private final GeminiService geminiService;
     private final ExamSchemaService examSchemaService;
+    private final ExamRepository examRepository;
+    private final ExamSpecificationRepository examSpecificationRepository;
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
     private final GradeExamUsecase gradeExamUsecase;
     private final ObjectMapper objectMapper;
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
+        String sc = request.schemaContext();
+        boolean hasForeignKey = sc != null && sc.toUpperCase(java.util.Locale.ROOT).contains("FOREIGN KEY");
+        boolean hasReferences = sc != null && sc.toUpperCase(java.util.Locale.ROOT).contains("REFERENCES");
+        log.info("[generateGradingRubric] schemaContext length={} containsFOREIGN_KEY={} containsREFERENCES={}\n--- BEGIN schemaContext ---\n{}\n--- END schemaContext ---",
+                sc != null ? sc.length() : 0, hasForeignKey, hasReferences, sc);
         String priorQuestionContext = "";
         try {
             List<GenerateGradingRubricRequest.ContextQuery> contextQueries = request.contextQueries();
@@ -90,7 +108,8 @@ public class RubricTestingUsecase {
                 request.questionContent(),
                 request.totalPoints(),
                 request.questionType(),
-                priorQuestionContext);
+                priorQuestionContext,
+                request.schemaContext());
     }
 
     public RubricTestGradeResponse testGradeInsert(TestGradeInsertRequest request) {
@@ -947,6 +966,213 @@ public class RubricTestingUsecase {
         }
     }
 
+    public RubricTestGradeResponse testGradeRoutine(TestGradeRoutineRequest request) {
+        String correctQuery = request.correctQuery();
+        String studentQuery = request.studentQuery();
+        String gradingRubric = request.gradingRubric();
+        double totalPoints = request.totalPoints();
+
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String teacherSchema = "test_grade_teacher_" + suffix;
+        String studentSchema = "test_grade_student_" + suffix;
+        String ddlScript = getExamDdlScript(request.examId());
+
+        try {
+            examSchemaService.resetSchema(teacherSchema, false);
+            loadDdlIfPresent(teacherSchema, ddlScript);
+            executeSetupThenRoutine(examSchemaService, teacherSchema, "", correctQuery);
+
+            examSchemaService.resetSchema(studentSchema, false);
+            loadDdlIfPresent(studentSchema, ddlScript);
+            try {
+                executeSetupThenRoutine(examSchemaService, studentSchema, "", studentQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+            }
+
+            return executeRoutineRubricGrading(
+                    studentSchema, teacherSchema, gradingRubric, totalPoints);
+
+        } catch (Exception e) {
+            System.err.println("[DEBUG] testGradeRoutine error: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Lỗi chấm thử Routine: " + e.getMessage(), e);
+        } finally {
+            try {
+                examSchemaService.dropSchema(teacherSchema);
+            } catch (Exception ignore) {
+            }
+            try {
+                examSchemaService.dropSchema(studentSchema);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    private String getExamDdlScript(Long examId) {
+        if (examId == null) {
+            return "";
+        }
+        try {
+            return examRepository.findById(examId)
+                    .map(Exam::getSpecificationId)
+                    .flatMap(examSpecificationRepository::findById)
+                    .map(ExamSpecification::getDdlScript)
+                    .orElse("");
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private void loadDdlIfPresent(String schemaName, String ddlScript) {
+        if (ddlScript != null && !ddlScript.isBlank()) {
+            examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        } 
+    }
+
+    public RubricTestGradeResponse testGradeTrigger(TestGradeTriggerRequest request) {
+        String correctQuery = request.correctQuery();
+        String studentQuery = request.studentQuery();
+        String gradingRubric = request.gradingRubric();
+        double totalPoints = request.totalPoints();
+
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String teacherSchema = "test_grade_teacher_" + suffix;
+        String studentSchema = "test_grade_student_" + suffix;
+        String ddlScript = getExamDdlScript(request.examId());
+
+        try {
+            String setupScript = extractSetupScriptFromRubric(gradingRubric);
+
+            examSchemaService.resetSchema(teacherSchema, false);
+            loadDdlIfPresent(teacherSchema, ddlScript);
+            executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+
+            examSchemaService.resetSchema(studentSchema, false);
+            loadDdlIfPresent(studentSchema, ddlScript);
+            try {
+                executeSetupThenRoutine(examSchemaService, studentSchema, setupScript, studentQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+            }
+
+            return executeTriggerRubricGrading(
+                    studentSchema, teacherSchema, gradingRubric, totalPoints, ddlScript, correctQuery, studentQuery);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi chấm thử Trigger: " + e.getMessage(), e);
+        } finally {
+            try {
+                examSchemaService.dropSchema(teacherSchema);
+            } catch (Exception ignore) {
+            }
+            try {
+                examSchemaService.dropSchema(studentSchema);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    private void executeSetupThenRoutine(ExamSchemaService service, String schemaName,
+            String setupScript, String routineSql) {
+        try {
+            executeSqlScriptBatches(service, schemaName, setupScript);
+            executeSqlScriptBatches(service, schemaName, routineSql);
+        } catch (Exception e) {
+            throw e;
+        }
+    }
+
+    private void executeSqlScriptBatches(ExamSchemaService service, String schemaName, String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return;
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    service.executeSql(schemaName, normalizeDboReferences(executable, schemaName));
+                }
+            }
+        }
+    }
+
+    private String normalizeDboReferences(String sql, String schemaName) {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        // First, replace {SCHEMA} placeholder with schemaName (without brackets)
+        String normalized = sql.replace("{SCHEMA}", schemaName);
+        // Then replace dbo. with [schemaName].
+        normalized = normalized.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+        return normalized;
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        Matcher matcher = Pattern.compile(
+                "(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        if (prefix.isBlank()) {
+            return List.of(routine);
+        }
+        return List.of(prefix, routine);
+    }
+
+    private String extractSetupScriptFromRubric(String gradingRubricJson) {
+        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode testCases = rubric.path("grading_payload").path("test_cases");
+            if (testCases.isArray() && testCases.size() > 0) {
+                StringBuilder setupBuilder = new StringBuilder();
+                for (JsonNode tc : testCases) {
+                    String setupScript = tc.path("setup_script").asText("");
+                    if (!setupScript.isBlank()) {
+                        setupScript = setupScript.replace("\\n", "\n").replace("\\t", "\t");
+                        setupBuilder.append(setupScript).append("\n");
+                    }
+                }
+                return setupBuilder.toString();
+            }
+        } catch (Exception e) {
+            return "";
+        }
+        return "";
+    }
+
     private void setAllConstraintsEnabled(String schemaName, boolean enabled) {
         String safeSchema = safeIdentifier(schemaName, "schemaName");
         List<Map<String, Object>> tables = examSchemaService.executeAdminSql(
@@ -1244,8 +1470,10 @@ public class RubricTestingUsecase {
     }
 
     /**
-     * Checks column-level (structural) violations ONCE and returns the total deduction.
-     * These rules apply to the query's column structure, which is the same across all test cases.
+     * Checks column-level (structural) violations ONCE and returns the total
+     * deduction.
+     * These rules apply to the query's column structure, which is the same across
+     * all test cases.
      */
     private BigDecimal calculateSelectStructuralDeduction(
             List<String> expectedColumns,
@@ -1291,12 +1519,14 @@ public class RubricTestingUsecase {
         }
 
         // No structural issues
-        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0 && columnOrderViolations == 0) {
+        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0
+                && columnOrderViolations == 0) {
             return BigDecimal.ZERO;
         }
 
         // Build structural rule checks:
-        // - COLUMN/NOT_EQUAL: column exists at same position but has different name (e.g., missing alias)
+        // - COLUMN/NOT_EQUAL: column exists at same position but has different name
+        // (e.g., missing alias)
         // - COLUMN/IS_MISSING: column is truly missing (student has fewer columns)
         // - COLUMN/IS_EXTRA: student has extra columns
         // - COLUMN_ORDER/OUT_OF_ORDER: columns are reordered
@@ -1327,7 +1557,8 @@ public class RubricTestingUsecase {
         boolean anyViolation = false;
 
         for (SelectRuleApplication app : structuralApps) {
-            if (!app.violationPresent()) continue;
+            if (!app.violationPresent())
+                continue;
             anyViolation = true;
             if (app.deduction().compareTo(BigDecimal.ZERO) > 0) {
                 totalStructuralDeduction += app.deduction().doubleValue();
@@ -1341,7 +1572,8 @@ public class RubricTestingUsecase {
             return BigDecimal.ZERO;
         }
 
-        // If violations exist but no rules matched (totalDeduction=0 with rule not found),
+        // If violations exist but no rules matched (totalDeduction=0 with rule not
+        // found),
         // still report the issue as info so teacher can see it
         if (totalStructuralDeduction <= 0) {
             String unmatchedMsg = "Ph\u00e1t hi\u1ec7n kh\u00e1c bi\u1ec7t c\u1ed9t k\u1ebft qu\u1ea3";
@@ -1368,7 +1600,8 @@ public class RubricTestingUsecase {
         details.add(Map.of(
                 "type", "warning",
                 "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + issueBuilder.toString().trim()
-                        + " \u2192 Tr\u1eeb " + rounded + " \u0111i\u1ec3m (\u00e1p d\u1ee5ng 1 l\u1ea7n cho to\u00e0n b\u00e0i)",
+                        + " \u2192 Tr\u1eeb " + rounded
+                        + " \u0111i\u1ec3m (\u00e1p d\u1ee5ng 1 l\u1ea7n cho to\u00e0n b\u00e0i)",
                 "points", -rounded.doubleValue()));
 
         return rounded;
@@ -1470,8 +1703,8 @@ public class RubricTestingUsecase {
                 applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
                         caseMaxPenalty, 0.0,
                         "sai thứ tự " + rowOrderViolations + " dòng"));
-                // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
-                // once in calculateSelectStructuralDeduction, not per test case.
+        // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
+        // once in calculateSelectStructuralDeduction, not per test case.
 
         double totalCaseDeduction = 0d;
         int matchedRuleCount = 0;
@@ -2631,5 +2864,902 @@ public class RubricTestingUsecase {
             throw new IllegalArgumentException("Invalid SQL identifier for " + fieldName);
         }
         return identifier;
+    }
+
+    /**
+     * Parses the {@code routines[]} array from the AI rubric into RoutineMetadata.
+     * Returns an empty list when the rubric omits routines or any entry is
+     * malformed — caller falls back to teacher schema metadata in that case.
+     *
+     * <p>Why parse from rubric, not teacher schema: the rubric is the
+     * authoritative answer for "which routines the QUESTION requires", and
+     * intentionally excludes helper FN/SP that the reference SQL uses
+     * internally as implementation detail.
+     */
+    /**
+     * Normalize routine type from rubric to match what
+     * INFORMATION_SCHEMA.ROUTINES.ROUTINE_TYPE returns ("PROCEDURE" / "FUNCTION").
+     * AI thường trả "STORED_PROCEDURE" theo enum domain — quy về "PROCEDURE"
+     * để khớp với metadata extract từ MSSQL, tránh log "Sai loại routine" oan.
+     */
+    private static String normalizeRoutineType(String raw) {
+        if (raw == null) return null;
+        String upper = raw.trim().toUpperCase(Locale.ROOT);
+        if ("STORED_PROCEDURE".equals(upper) || "SQL_STORED_PROCEDURE".equals(upper)) {
+            return "PROCEDURE";
+        }
+        if ("SCALAR_FUNCTION".equals(upper) || "TABLE_VALUED_FUNCTION".equals(upper)
+                || "SQL_SCALAR_FUNCTION".equals(upper) || "SQL_TABLE_VALUED_FUNCTION".equals(upper)) {
+            return "FUNCTION";
+        }
+        return upper;
+    }
+
+    private boolean isStoredProcedureRubric(JsonNode rubric, List<RoutineMetadata> expectedRoutines) {
+        String category = rubric.path("question_category").asText("");
+        if ("STORED_PROCEDURE".equalsIgnoreCase(category)) {
+            return true;
+        }
+        if ("FUNCTION".equalsIgnoreCase(category)) {
+            return false;
+        }
+        return expectedRoutines != null
+                && !expectedRoutines.isEmpty()
+                && expectedRoutines.stream()
+                        .allMatch(r -> "PROCEDURE".equalsIgnoreCase(normalizeRoutineType(r.getRoutineType())));
+    }
+
+    private List<RoutineMetadata> parseExpectedRoutinesFromRubric(JsonNode routinesNode) {
+        if (routinesNode == null || !routinesNode.isArray() || routinesNode.isEmpty()) {
+            return List.of();
+        }
+        List<RoutineMetadata> result = new ArrayList<>();
+        for (JsonNode r : routinesNode) {
+            String name = r.path("expected_name").asText("").trim();
+            if (name.isBlank()) continue;
+            String type = r.path("expected_type").asText("").trim();
+            String returnType = r.path("expected_return_type").asText("").trim();
+
+            List<RoutineMetadata.ParameterMetadata> params = new ArrayList<>();
+            JsonNode pNode = r.path("parameters");
+            if (pNode.isArray()) {
+                for (JsonNode p : pNode) {
+                    params.add(RoutineMetadata.ParameterMetadata.builder()
+                            .parameterName(p.path("name").asText("").trim())
+                            .dataType(p.path("expected_type").asText("").trim())
+                            .parameterMode(p.path("expected_mode").asText("IN").trim())
+                            .build());
+                }
+            }
+
+            result.add(RoutineMetadata.builder()
+                    .routineName(name)
+                    .routineType(type)
+                    .dataType(returnType.isBlank() ? null : returnType)
+                    .parameters(params)
+                    .build());
+        }
+        return result;
+    }
+
+    private RubricTestGradeResponse executeRoutineRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            String gradingRubricJson,
+            double totalPoints) {
+
+        List<Map<String, Object>> details = new ArrayList<>();
+
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode gradingPayload = rubric.path("grading_payload");
+            JsonNode routines = gradingPayload.path("routines");
+            JsonNode testCases = gradingPayload.path("test_cases");
+            JsonNode gradingSettings = gradingPayload.path("grading_settings");
+
+            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
+            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
+            String printOutputCompareMode = gradingSettings.path("print_output_compare_mode").asText("LENIENT");
+
+            // Source of truth for "what routines the question requires" is the AI
+            // rubric, not the teacher schema. Teacher's correctQuery may contain
+            // helper FN/SP as implementation detail (e.g. an FN_NextId helper
+            // called from inside the main SP); the student is free to inline /
+            // CTE / take a different approach. Penalizing — or even reporting
+            // success on — those helpers misleads the teacher about what the
+            // grader actually checks.
+            // See md/GRAD-141_SP_GRADING_GAPS.md §2 LỖ HỔNG 1.
+            List<RoutineMetadata> expectedRoutines = parseExpectedRoutinesFromRubric(routines);
+            if (expectedRoutines.isEmpty()) {
+                // Legacy questions whose rubric omits routines[] fall back to
+                // teacher schema metadata to preserve old behavior.
+                expectedRoutines = examSchemaService.extractRoutineMetadata(teacherSchema);
+            }
+            List<RoutineMetadata> actualRoutines = examSchemaService.extractRoutineMetadata(studentSchema);
+
+            double earnedPoints = 0;
+            boolean allPassed = true;
+
+            if (expectedRoutines.isEmpty()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Không tìm thấy routine trong đáp án chuẩn",
+                        "points", 0));
+                return RubricTestGradeResponse.of(0, totalPoints, false, details);
+            }
+
+            boolean hasTestCases = testCases.isArray() && testCases.size() > 0;
+            boolean metadataDiagnosticOnly = hasTestCases
+                    && isStoredProcedureRubric(rubric, expectedRoutines);
+            double metadataMaxPoints = metadataDiagnosticOnly ? 0 : (hasTestCases ? totalPoints * 0.20 : totalPoints);
+            double testCaseMaxPoints = metadataDiagnosticOnly ? totalPoints : (hasTestCases ? totalPoints * 0.80 : 0);
+            double perRoutineWeight = metadataMaxPoints / expectedRoutines.size();
+
+            for (RoutineMetadata expected : expectedRoutines) {
+                RoutineMetadata actual = actualRoutines.stream()
+                        .filter(r -> caseSensitiveNames
+                                ? r.getRoutineName().equals(expected.getRoutineName())
+                                : r.getRoutineName().equalsIgnoreCase(expected.getRoutineName()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (actual == null) {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Thiếu %s %s", expected.getRoutineType(), expected.getRoutineName()),
+                            "points", 0));
+                    if (!metadataDiagnosticOnly) {
+                        allPassed = false;
+                    }
+                    continue;
+                }
+
+                double routineScore = perRoutineWeight;
+
+                if (!normalizeRoutineType(expected.getRoutineType())
+                        .equalsIgnoreCase(normalizeRoutineType(actual.getRoutineType()))) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", String.format("Sai loại routine %s (kỳ vọng: %s, thực tế: %s)",
+                                    expected.getRoutineName(), expected.getRoutineType(), actual.getRoutineType()),
+                            "points", (int) (-perRoutineWeight * 0.3)));
+                    routineScore *= 0.7;
+                    if (!metadataDiagnosticOnly) {
+                        allPassed = false;
+                    }
+                }
+
+                if (expected.getParameters().size() != actual.getParameters().size()) {
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", String.format("Sai số lượng tham số ở %s (kỳ vọng: %d, thực tế: %d)",
+                                    expected.getRoutineName(), expected.getParameters().size(),
+                                    actual.getParameters().size()),
+                            "points", (int) (-perRoutineWeight * 0.2)));
+                    routineScore *= 0.8;
+                    if (!metadataDiagnosticOnly) {
+                        allPassed = false;
+                    }
+                }
+
+                earnedPoints += routineScore;
+                details.add(Map.of(
+                        "type", "success",
+                        "message", String.format("%s %s: đúng", expected.getRoutineType(), expected.getRoutineName()),
+                        "points", (int) routineScore));
+            }
+
+            if (hasTestCases) {
+                RoutineTestCaseGrade routineTcGrade = executeRoutineTestCases(
+                        studentSchema,
+                        teacherSchema,
+                        testCases,
+                        testCaseMaxPoints,
+                        printOutputCompareMode,
+                        details);
+                earnedPoints += routineTcGrade.earnedPoints();
+                allPassed = metadataDiagnosticOnly
+                        ? routineTcGrade.allPassed()
+                        : allPassed && routineTcGrade.allPassed();
+
+                /*
+                double testCaseWeight = totalPoints * 0.3;
+                double perTestCase = testCaseWeight / testCases.size();
+
+                for (JsonNode tc : List.<JsonNode>of()) {
+                    String caseName = tc.path("case_name").asText("Unnamed");
+                    double penaltyValue = tc.path("penalty_value").asDouble(0.5);
+
+                    details.add(Map.of(
+                            "type", "info",
+                            "message", String.format("Test case '%s': chưa thực thi (cần triển khai thêm)", caseName),
+                            "points", 0));
+                }
+                */
+            }
+
+            double finalScore = Math.min(earnedPoints, totalPoints);
+            if (positiveOnlyScoring && finalScore < 0) {
+                finalScore = 0;
+            }
+
+            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+
+        } catch (Exception e) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "Lỗi phân tích rubric: " + e.getMessage(),
+                    "points", 0));
+            return RubricTestGradeResponse.of(0, totalPoints, false, details);
+        }
+    }
+
+    private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+
+    private RoutineTestCaseGrade executeRoutineTestCases(
+            String studentSchema,
+            String teacherSchema,
+            JsonNode testCases,
+            double maxPoints,
+            String printOutputCompareMode,
+            List<Map<String, Object>> details) {
+        double totalWeight = 0;
+        for (JsonNode tc : testCases) {
+            totalWeight += Math.abs(readTestCaseWeight(tc));
+        }
+        if (totalWeight <= 0) {
+            totalWeight = testCases.size();
+        }
+
+        double earned = 0;
+        boolean allPassed = true;
+
+        for (int i = 0; i < testCases.size(); i++) {
+            JsonNode tc = testCases.get(i);
+            String caseName = textOrDefault(tc, "case_name", "TC" + (i + 1));
+            double normalizedWeight = Math.abs(readTestCaseWeight(tc));
+            if (normalizedWeight <= 0) {
+                normalizedWeight = 1;
+            }
+            double casePoints = maxPoints * (normalizedWeight / totalWeight);
+
+            try {
+                String expected = runRoutineTestCase(teacherSchema, teacherSchema, tc);
+                String actual = runRoutineTestCase(studentSchema, teacherSchema, tc);
+                boolean passed = compareRoutineTestCase(
+                        actual,
+                        expected,
+                        textOrDefault(tc, "match_type", "EXACT"),
+                        textOrDefault(tc, "verification_type", "RETURN_VALUE"),
+                        printOutputCompareMode);
+
+                if (passed) {
+                    earned += casePoints;
+                    details.add(Map.of(
+                            "type", "success",
+                            "message", String.format("Test case '%s': đúng", caseName),
+                            "points", roundTo2(casePoints)));
+                } else {
+                    allPassed = false;
+                    details.add(Map.of(
+                            "type", "error",
+                            "message", String.format("Test case '%s': expected='%s', actual='%s'",
+                                    caseName, truncateForDetail(expected), truncateForDetail(actual)),
+                            "points", 0));
+                }
+            } catch (RoutineTestCaseExecutionException e) {
+                allPassed = false;
+                details.add(Map.of(
+                        "type", "error",
+                        "message", String.format("Test case '%s': lỗi thực thi: %s | SQL: %s",
+                                caseName,
+                                e.getMessage(),
+                                truncateForDetail(e.sql())),
+                        "points", 0));
+            } catch (Exception e) {
+                allPassed = false;
+                details.add(Map.of(
+                        "type", "error",
+                        "message", String.format("Test case '%s': lỗi thực thi: %s", caseName, e.getMessage()),
+                        "points", 0));
+            }
+        }
+
+        return new RoutineTestCaseGrade(earned, allPassed);
+    }
+
+    private String runRoutineTestCase(String targetSchema, String teacherSchema, JsonNode tc) {
+        String setup = resolveRoutineSql(textOrNull(tc, "setup_script"), targetSchema, teacherSchema);
+        String invocation = resolveRoutineSql(textOrNull(tc, "invocation_query"), targetSchema, teacherSchema);
+        String validation = resolveRoutineSql(textOrNull(tc, "validation_query"), targetSchema, teacherSchema);
+        String verificationType = textOrDefault(tc, "verification_type", "RETURN_VALUE").toUpperCase(Locale.ROOT);
+        boolean printOutput = "PRINT_OUTPUT".equals(verificationType);
+
+        if (!printOutput && (validation == null || validation.isBlank())) {
+            throw new IllegalArgumentException("validation_query là bắt buộc cho verification_type=" + verificationType);
+        }
+
+        StringBuilder batch = new StringBuilder();
+        batch.append("BEGIN TRY\n");
+        batch.append("  BEGIN TRANSACTION;\n");
+        appendSqlStatement(batch, setup);
+        appendSqlStatement(batch, invocation);
+        if (!printOutput && validation != null && !validation.isBlank()) {
+            batch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
+            appendSqlStatement(batch, validation);
+        }
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append("END TRY\n");
+        batch.append("BEGIN CATCH\n");
+        batch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+        batch.append("  THROW;\n");
+        batch.append("END CATCH;");
+
+        String batchSql = batch.toString();
+        SqlExecutionResult result;
+        try {
+            result = examSchemaService.executeSqlBatchAsSchemaUser(targetSchema, batchSql);
+        } catch (Exception e) {
+            throw new RoutineTestCaseExecutionException(e.getMessage(), batchSql, e);
+        }
+        if (printOutput) {
+            List<String> prints = result != null && result.getPrintMessages() != null
+                    ? result.getPrintMessages()
+                    : List.of();
+            return String.join("\n", prints).trim();
+        }
+        return serializeRoutineResult(dropRowsBeforeValidationMarker(result));
+    }
+
+    private void appendSqlStatement(StringBuilder batch, String sql) {
+        if (sql == null || sql.isBlank()) {
+            return;
+        }
+        batch.append("  ").append(sql).append(";\n");
+    }
+
+    private SqlExecutionResult dropRowsBeforeValidationMarker(SqlExecutionResult result) {
+        if (result == null || result.getResultSet() == null) {
+            return result;
+        }
+        List<Map<String, Object>> rows = result.getResultSet();
+        int markerIndex = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).containsKey(VALIDATION_MARKER_COLUMN)) {
+                markerIndex = i;
+                break;
+            }
+        }
+        if (markerIndex < 0) {
+            return result;
+        }
+        List<Map<String, Object>> filtered = new ArrayList<>(rows.subList(markerIndex + 1, rows.size()));
+        return SqlExecutionResult.builder()
+                .resultSet(filtered)
+                .rowCount(filtered.size())
+                .statusMessage(result.getStatusMessage())
+                .printMessages(result.getPrintMessages())
+                .build();
+    }
+
+    private String serializeRoutineResult(SqlExecutionResult result) {
+        if (result == null || result.getResultSet() == null || result.getResultSet().isEmpty()) {
+            return "";
+        }
+        List<Map<String, Object>> rows = result.getResultSet();
+        if (rows.size() == 1 && rows.get(0).size() == 1) {
+            Object value = rows.get(0).values().iterator().next();
+            return value == null ? "null" : value.toString().trim();
+        }
+
+        List<String> rowStrings = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            StringBuilder sb = new StringBuilder();
+            boolean first = true;
+            for (Object value : row.values()) {
+                if (!first) {
+                    sb.append("|");
+                }
+                sb.append(value == null ? "null" : value.toString().trim());
+                first = false;
+            }
+            rowStrings.add(sb.toString());
+        }
+        Collections.sort(rowStrings);
+        return String.join("\n", rowStrings);
+    }
+
+    private boolean compareRoutineTestCase(
+            String actual,
+            String expected,
+            String matchType,
+            String verificationType,
+            String printOutputCompareMode) {
+        String normalizedActual = actual == null ? "" : actual.trim();
+        String normalizedExpected = expected == null ? "" : expected.trim();
+        if ("PRINT_OUTPUT".equalsIgnoreCase(verificationType)
+                && "LENIENT".equalsIgnoreCase(printOutputCompareMode)) {
+            normalizedActual = normalizePrintOutputForCompare(normalizedActual);
+            normalizedExpected = normalizePrintOutputForCompare(normalizedExpected);
+        }
+        if ("CONTAINS".equalsIgnoreCase(matchType)) {
+            return normalizedActual.toLowerCase(Locale.ROOT)
+                    .contains(normalizedExpected.toLowerCase(Locale.ROOT));
+        }
+        return normalizedActual.equalsIgnoreCase(normalizedExpected);
+    }
+
+    private String normalizePrintOutputForCompare(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        return normalized.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String resolveRoutineSql(String sql, String targetSchema, String teacherSchema) {
+        if (sql == null) {
+            return null;
+        }
+        String resolved = sql
+                .replace("{SCHEMA}", targetSchema)
+                .replace("{TEACHER_SCHEMA}", teacherSchema)
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .trim();
+        resolved = resolved.replaceAll("(?i)SELECT\\s+return_value\\s+FROM\\s+@(\\w+)", "SELECT @$1 AS return_value");
+        return normalizeAiSchemaPlaceholders(resolved, targetSchema, teacherSchema);
+    }
+
+    private String normalizeAiSchemaPlaceholders(String sql, String targetSchema, String teacherSchema) {
+        if (sql == null || sql.isBlank()) {
+            return sql;
+        }
+        // [dbo] / dbo. is a recurring AI mistake — REFERENCE SQL of the question
+        // may use dbo, but the grading engine runs every batch inside a per-user
+        // schema (test_grade_teacher_*, student schema, ...), never dbo. Hardcoded
+        // dbo causes "Could not find stored procedure 'dbo.xxx'" at runtime.
+        // Coerce to targetSchema. This is safe because no question in this system
+        // ever intentionally targets dbo objects.
+        return sql
+                .replaceAll("(?i)\\[(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\]", "[" + targetSchema + "]")
+                .replaceAll("(?i)\\b(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\s*\\.", "[" + targetSchema + "].")
+                .replaceAll("(?i)\\[(TEACHER|TEACHER_SCHEMA)\\]", "[" + teacherSchema + "]")
+                .replaceAll("(?i)\\b(TEACHER|TEACHER_SCHEMA)\\s*\\.", "[" + teacherSchema + "].")
+                .replaceAll("(?i)\\[dbo\\]\\s*\\.", "[" + targetSchema + "].")
+                .replaceAll("(?i)\\bdbo\\s*\\.", "[" + targetSchema + "].");
+    }
+
+    private double readTestCaseWeight(JsonNode tc) {
+        if (tc.has("score_weight") && tc.get("score_weight").isNumber()) {
+            return tc.get("score_weight").asDouble();
+        }
+        if (tc.has("penalty_value") && tc.get("penalty_value").isNumber()) {
+            return tc.get("penalty_value").asDouble();
+        }
+        return 1;
+    }
+
+    private String textOrNull(JsonNode node, String field) {
+        if (node == null || node.get(field) == null || node.get(field).isNull()) {
+            return null;
+        }
+        String value = node.get(field).isTextual() ? node.get(field).asText() : node.get(field).toString();
+        return value.isBlank() ? null : value;
+    }
+
+    private String textOrDefault(JsonNode node, String field, String defaultValue) {
+        String value = textOrNull(node, field);
+        return value == null ? defaultValue : value;
+    }
+
+    private String truncateForDetail(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= 160 ? value : value.substring(0, 160) + "...";
+    }
+
+    private record RoutineTestCaseGrade(double earnedPoints, boolean allPassed) {
+    }
+
+    private static class RoutineTestCaseExecutionException extends RuntimeException {
+        private final String sql;
+
+        RoutineTestCaseExecutionException(String message, String sql, Throwable cause) {
+            super(message, cause);
+            this.sql = sql;
+        }
+
+        String sql() {
+            return sql;
+        }
+    }
+
+    private RubricTestGradeResponse executeTriggerRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            String gradingRubricJson,
+            double totalPoints,
+            String ddlScript,
+            String correctQuery,
+            String studentQuery) {
+
+        List<Map<String, Object>> details = new ArrayList<>();
+
+        try {
+            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
+            JsonNode gradingPayload = rubric.path("grading_payload");
+            JsonNode triggersConfig = gradingPayload.path("triggers");
+            JsonNode testCases = gradingPayload.path("test_cases");
+            JsonNode gradingSettings = gradingPayload.path("grading_settings");
+
+            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
+            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
+
+            List<TriggerMetadata> expectedTriggers = examSchemaService
+                    .extractTriggerMetadata(teacherSchema);
+            List<TriggerMetadata> actualTriggers = examSchemaService
+                    .extractTriggerMetadata(studentSchema);
+
+            // Start with full points, then deduct for errors
+            double earnedPoints = totalPoints;
+            boolean allPassed = true;
+
+            if (expectedTriggers.isEmpty()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Không tìm thấy trigger trong đáp án chuẩn",
+                        "points", 0));
+                return RubricTestGradeResponse.of(0, totalPoints, false, details);
+            }
+
+            // Build trigger config map for easy lookup
+            Map<String, JsonNode> triggerConfigMap = new LinkedHashMap<>();
+            if (triggersConfig.isArray()) {
+                for (JsonNode tc : triggersConfig) {
+                    String expectedName = tc.path("expected_name").asText("");
+                    if (!expectedName.isBlank()) {
+                        triggerConfigMap.put(expectedName.toLowerCase(), tc);
+                    }
+                }
+            }
+
+            // Check each trigger metadata
+            for (TriggerMetadata expected : expectedTriggers) {
+                String triggerNameKey = caseSensitiveNames 
+                    ? expected.getTriggerName() 
+                    : expected.getTriggerName().toLowerCase();
+                
+                JsonNode triggerConfig = triggerConfigMap.get(triggerNameKey);
+                
+                // Use rubric config if available, otherwise use default weights
+                double existencePoints = triggerConfig != null 
+                    ? triggerConfig.path("existence_points").asDouble(0.3) 
+                    : 0.3;
+                double tablePoints = triggerConfig != null 
+                    ? triggerConfig.path("table_points").asDouble(0.2) 
+                    : 0.2;
+                double eventPoints = triggerConfig != null 
+                    ? triggerConfig.path("event_points").asDouble(0.3) 
+                    : 0.3;
+                double timingPoints = triggerConfig != null 
+                    ? triggerConfig.path("timing_points").asDouble(0.2) 
+                    : 0.2;
+
+                TriggerMetadata actual = actualTriggers.stream()
+                        .filter(t -> caseSensitiveNames
+                                ? t.getTriggerName().equals(expected.getTriggerName())
+                                : t.getTriggerName().equalsIgnoreCase(expected.getTriggerName()))
+                        .findFirst()
+                        .orElse(null);
+
+                // Check existence
+                if (actual == null) {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Thiếu Trigger %s", expected.getTriggerName()),
+                            "points", -existencePoints));
+                    if (!positiveOnlyScoring) {
+                        earnedPoints -= existencePoints;
+                    }
+                    allPassed = false;
+                    continue;
+                }
+
+                details.add(Map.of(
+                        "type", "success",
+                        "message", String.format("Trigger %s: tồn tại", expected.getTriggerName()),
+                        "points", 0));
+
+                // Check table
+                if (expected.getTableName().equalsIgnoreCase(actual.getTableName())) {
+                    details.add(Map.of(
+                            "type", "success",
+                            "message", String.format("Trigger %s: đúng bảng %s", 
+                                expected.getTriggerName(), expected.getTableName()),
+                            "points", 0));
+                } else {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message", String.format("Trigger %s: gắn sai bảng (kỳ vọng: %s, thực tế: %s)",
+                                    expected.getTriggerName(), expected.getTableName(), actual.getTableName()),
+                            "points", -tablePoints));
+                    if (!positiveOnlyScoring) {
+                        earnedPoints -= tablePoints;
+                    }
+                    allPassed = false;
+                }
+
+                // Check events
+                if (expected.isInsert() == actual.isInsert() 
+                    && expected.isUpdate() == actual.isUpdate()
+                    && expected.isDelete() == actual.isDelete()) {
+                    details.add(Map.of(
+                            "type", "success",
+                            "message", String.format("Trigger %s: đúng sự kiện", expected.getTriggerName()),
+                            "points", 0));
+                } else {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Trigger %s: sai Event (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
+                            "points", -eventPoints));
+                    if (!positiveOnlyScoring) {
+                        earnedPoints -= eventPoints;
+                    }
+                    allPassed = false;
+                }
+
+                // Check timing
+                if (expected.isAfter() == actual.isAfter()) {
+                    details.add(Map.of(
+                            "type", "success",
+                            "message",
+                            String.format("Trigger %s: đúng Timing", expected.getTriggerName()),
+                            "points", 0));
+                } else {
+                    details.add(Map.of(
+                            "type", "error",
+                            "message",
+                            String.format("Trigger %s: sai Timing (AFTER/INSTEAD OF)", expected.getTriggerName()),
+                            "points", -timingPoints));
+                    if (!positiveOnlyScoring) {
+                        earnedPoints -= timingPoints;
+                    }
+                    allPassed = false;
+                }
+            }
+
+            // Execute test cases if defined
+            if (testCases.isArray() && testCases.size() > 0) {
+                for (JsonNode tc : testCases) {
+                    String caseId = tc.path("case_id").asText("");
+                    String caseName = tc.path("case_name").asText("Unnamed");
+                    String setupScript = tc.path("setup_script").asText("");
+                    
+                    // Support both old and new structure
+                    String invocationQuery = tc.path("invocation_query").asText("");
+                    if (invocationQuery.isBlank()) {
+                        invocationQuery = tc.path("trigger_sql").asText(""); // fallback to old structure
+                    }
+                    
+                    String validationQuery = tc.path("validation_query").asText("");
+                    if (validationQuery.isBlank()) {
+                        validationQuery = tc.path("expected_result").asText(""); // fallback to old structure
+                    }
+                    
+                    String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
+                    
+                    // Support both score_weight (new) and penalty_value (old)
+                    double scoreWeight = tc.path("score_weight").asDouble(-1);
+                    if (scoreWeight < 0) {
+                        scoreWeight = tc.path("penalty_value").asDouble(0.2);
+                    }
+
+                    if (invocationQuery.isBlank()) {
+                        details.add(Map.of(
+                                "type", "info",
+                                "message", String.format("Test case '%s': bỏ qua (thiếu invocation_query/trigger_sql)", caseName),
+                                "points", 0));
+                        continue;
+                    }
+
+                    try {
+                        // Reset both schemas before each test case
+                        examSchemaService.resetSchema(teacherSchema, false);
+                        loadDdlIfPresent(teacherSchema, ddlScript);
+                        examSchemaService.resetSchema(studentSchema, false);
+                        loadDdlIfPresent(studentSchema, ddlScript);
+
+                        // Re-create triggers
+                        if (!correctQuery.isBlank()) {
+                            executeSqlScriptBatches(examSchemaService, teacherSchema, correctQuery);
+                        }
+                        if (!studentQuery.isBlank()) {
+                            executeSqlScriptBatches(examSchemaService, studentSchema, studentQuery);
+                        }
+
+                        // Execute setup script on both schemas
+                        if (!setupScript.isBlank()) {
+                            String normalizedSetup = normalizeDboReferences(setupScript, teacherSchema);
+                            executeSqlScriptBatches(examSchemaService, teacherSchema, normalizedSetup);
+                            
+                            normalizedSetup = normalizeDboReferences(setupScript, studentSchema);
+                            executeSqlScriptBatches(examSchemaService, studentSchema, normalizedSetup);
+                        }
+
+                        // Execute invocation query on teacher schema (expected behavior)
+                        String normalizedInvocationTeacher = normalizeDboReferences(invocationQuery, teacherSchema);
+                        boolean teacherInvocationFailed = false;
+                        String teacherInvocationError = null;
+                        try {
+                            examSchemaService.executeSql(teacherSchema, normalizedInvocationTeacher);
+                        } catch (Exception e) {
+                            teacherInvocationFailed = true;
+                            teacherInvocationError = e.getMessage();
+                        }
+
+                        // Execute invocation query on student schema
+                        String normalizedInvocationStudent = normalizeDboReferences(invocationQuery, studentSchema);
+                        boolean studentInvocationFailed = false;
+                        String studentInvocationError = null;
+                        try {
+                            examSchemaService.executeSql(studentSchema, normalizedInvocationStudent);
+                        } catch (Exception e) {
+                            studentInvocationFailed = true;
+                            studentInvocationError = e.getMessage();
+                        }
+
+                        // Check if both failed with "transaction ended in trigger" (ROLLBACK trigger)
+                        boolean isRollbackTrigger = teacherInvocationError != null 
+                            && teacherInvocationError.toLowerCase().contains("transaction ended in the trigger");
+                        boolean studentAlsoRollback = studentInvocationError != null 
+                            && studentInvocationError.toLowerCase().contains("transaction ended in the trigger");
+
+                        // If validation_query is empty, we only check execution status (for validation triggers)
+                        if (validationQuery.isBlank()) {
+                            // For validation triggers (ROLLBACK), check if both succeeded or both failed the same way
+                            if (teacherInvocationFailed == studentInvocationFailed) {
+                                if (isRollbackTrigger && studentAlsoRollback) {
+                                    details.add(Map.of(
+                                            "type", "success",
+                                            "message", String.format("Test case '%s': PASS (trigger correctly rejected transaction)", caseName),
+                                            "points", 0));
+                                } else if (!teacherInvocationFailed && !studentInvocationFailed) {
+                                    details.add(Map.of(
+                                            "type", "success",
+                                            "message", String.format("Test case '%s': PASS (trigger correctly accepted transaction)", caseName),
+                                            "points", 0));
+                                } else {
+                                    details.add(Map.of(
+                                            "type", "success",
+                                            "message", String.format("Test case '%s': PASS", caseName),
+                                            "points", 0));
+                                }
+                            } else {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message", String.format("Test case '%s': FAIL (execution status mismatch)", caseName),
+                                        "points", -scoreWeight));
+                                if (!positiveOnlyScoring) {
+                                    earnedPoints -= scoreWeight;
+                                }
+                                allPassed = false;
+                            }
+                            continue;
+                        }
+
+                        // For SIDE_EFFECT, execute validation query if provided
+                        if (validationQuery.isBlank()) {
+                            details.add(Map.of(
+                                    "type", "info",
+                                    "message", String.format("Test case '%s': bỏ qua (thiếu validation_query)", caseName),
+                                    "points", 0));
+                            continue;
+                        }
+
+                        // Execute validation query on both schemas
+                        String normalizedValidationTeacher = normalizeDboReferences(validationQuery, teacherSchema);
+                        SqlExecutionResult expectedResultExec = examSchemaService.executeSql(teacherSchema, normalizedValidationTeacher);
+                        List<Map<String, Object>> expectedRows = expectedResultExec.getResultSet();
+
+                        String normalizedValidationStudent = normalizeDboReferences(validationQuery, studentSchema);
+                        SqlExecutionResult actualResultExec = examSchemaService.executeSql(studentSchema, normalizedValidationStudent);
+                        List<Map<String, Object>> actualRows = actualResultExec.getResultSet();
+
+                        // Compare results
+                        boolean testPassed = compareQueryResults(actualRows, expectedRows);
+
+                        if (testPassed) {
+                            details.add(Map.of(
+                                    "type", "success",
+                                    "message", String.format("Test case '%s': PASS", caseName),
+                                    "points", 0));
+                        } else {
+                            details.add(Map.of(
+                                    "type", "error",
+                                    "message", String.format("Test case '%s': FAIL (kết quả không khớp)", caseName),
+                                    "points", -scoreWeight));
+                            if (!positiveOnlyScoring) {
+                                earnedPoints -= scoreWeight;
+                            }
+                            allPassed = false;
+                        }
+                    } catch (Exception e) {
+                        details.add(Map.of(
+                                "type", "error",
+                                "message", String.format("Test case '%s': ERROR - %s", caseName, e.getMessage()),
+                                "points", -scoreWeight));
+                        if (!positiveOnlyScoring) {
+                            earnedPoints -= scoreWeight;
+                        }
+                        allPassed = false;
+                    }
+                }
+            }
+
+            // Ensure final score is not negative
+            double finalScore = Math.max(0, Math.min(earnedPoints, totalPoints));
+
+            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+
+        } catch (Exception e) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "Lỗi phân tích rubric: " + e.getMessage(),
+                    "points", 0));
+            return RubricTestGradeResponse.of(0, totalPoints, false, details);
+        }
+    }
+
+    private boolean compareQueryResults(List<Map<String, Object>> actual, List<Map<String, Object>> expected) {
+        if (actual == null || expected == null) {
+            return actual == expected;
+        }
+        
+        if (actual.size() != expected.size()) {
+            return false;
+        }
+
+        for (int i = 0; i < actual.size(); i++) {
+            Map<String, Object> actualRow = actual.get(i);
+            Map<String, Object> expectedRow = expected.get(i);
+
+            if (actualRow.size() != expectedRow.size()) {
+                return false;
+            }
+
+            for (String key : expectedRow.keySet()) {
+                Object expectedValue = expectedRow.get(key);
+                Object actualValue = actualRow.get(key);
+
+                if (!Objects.equals(normalizeValue(expectedValue), normalizeValue(actualValue))) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private Object normalizeValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String) {
+            return ((String) value).trim();
+        }
+        if (value instanceof BigDecimal) {
+            return ((BigDecimal) value).stripTrailingZeros();
+        }
+        return value;
     }
 }

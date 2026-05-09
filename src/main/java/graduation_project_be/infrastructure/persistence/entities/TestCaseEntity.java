@@ -1,6 +1,8 @@
 package graduation_project_be.infrastructure.persistence.entities;
 
 import graduation_project_be.domain.models.TestCase;
+import graduation_project_be.domain.models.enums.MatchType;
+import graduation_project_be.domain.models.enums.VerificationType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,7 +26,11 @@ public class TestCaseEntity {
     @Column(name = "question_id", nullable = false)
     private Long questionId;
 
-    @Column(name = "validation_query", nullable = false, columnDefinition = "TEXT")
+    // Nullable because PRINT_OUTPUT verification type captures actual output
+    // from SQLWarning chain (not a result set), so the test case may legitimately
+    // have no validation_query — only setup_script + invocation_query that emits
+    // PRINT messages. See P1-1 fix in CODE_REVIEW.
+    @Column(name = "validation_query", columnDefinition = "TEXT")
     private String validationQuery;
 
     @Column(name = "expected_value", nullable = false, columnDefinition = "TEXT")
@@ -36,6 +42,28 @@ public class TestCaseEntity {
     @Column(name = "order_index")
     private Integer orderIndex;
 
+    // ---- Added in T04 (see liquibase changelog T15) ----
+
+    @Column(name = "case_name", columnDefinition = "TEXT")
+    private String caseName;
+
+    @Column(name = "setup_script", columnDefinition = "TEXT")
+    private String setupScript;
+
+    @Column(name = "invocation_query", columnDefinition = "TEXT")
+    private String invocationQuery;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "verification_type", length = 32)
+    private VerificationType verificationType;
+
+    @Column(name = "input_parameters", columnDefinition = "TEXT")
+    private String inputParameters;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "match_type", length = 16)
+    private MatchType matchType;
+
     public TestCase toModel() {
         return TestCase.builder()
                 .id(id)
@@ -44,6 +72,12 @@ public class TestCaseEntity {
                 .expectedValue(expectedValue)
                 .scoreWeight(scoreWeight)
                 .orderIndex(orderIndex)
+                .caseName(caseName)
+                .setupScript(setupScript)
+                .invocationQuery(invocationQuery)
+                .verificationType(verificationType)
+                .inputParameters(inputParameters)
+                .matchType(matchType)
                 .build();
     }
 
@@ -55,6 +89,12 @@ public class TestCaseEntity {
                 .expectedValue(model.getExpectedValue())
                 .scoreWeight(model.getScoreWeight())
                 .orderIndex(model.getOrderIndex())
+                .caseName(model.getCaseName())
+                .setupScript(model.getSetupScript())
+                .invocationQuery(model.getInvocationQuery())
+                .verificationType(model.getVerificationType())
+                .inputParameters(model.getInputParameters())
+                .matchType(model.getMatchType())
                 .build();
     }
 }

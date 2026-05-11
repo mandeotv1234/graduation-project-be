@@ -45,7 +45,6 @@ OUTPUT JSON SHAPE:
         "score_weight": <number; all weights sum to 1.0 within 0.01>,
         "description": "<behavior checked>",
         "setup_script": "<test data setup only>",
-        "input_parameters": {},
         "invocation_query": "<declare variables and execute the procedure once>",
         "validation_query": "<select actual outcome for comparison>"
       }
@@ -84,7 +83,8 @@ Variables declared in invocation_query are visible in validation_query.
 - Do not redeclare variables in validation_query. Reuse variables declared in invocation_query.
 - Every table and procedure reference must use [{SCHEMA}].
 - Never use dbo., [dbo]., THIS., [THIS]., THIS_SCHEMA, TARGET_SCHEMA, YOUR_SCHEMA, SCHEMA_NAME, or bare unqualified object names.
-- input_parameters is metadata only. Inline literals in invocation_query or declare variables before using them.
+- Do not include input_parameters in any test case. It is not used for execution.
+- Put every procedure argument directly in invocation_query, either as a literal value or as a variable declared earlier in invocation_query.
 - Never write "@p = @p" unless invocation_query declares @p first.
 - setup_script may use DELETE, INSERT, and UPDATE only. Do not CREATE, ALTER, DROP, CREATE PROCEDURE, CREATE FUNCTION, or use GO.
 
@@ -172,7 +172,6 @@ End-to-end abstract SIDE_EFFECT test case example; copy the structure, not table
   "score_weight": 0.2,
   "description": "Valid parent rows exist, procedure inserts one detail row",
   "setup_script": "DELETE FROM [{SCHEMA}].Detail WHERE detailId = 9001; DELETE FROM [{SCHEMA}].Child WHERE childId = 7001; DELETE FROM [{SCHEMA}].Parent WHERE parentId = 5001; SET IDENTITY_INSERT [{SCHEMA}].Parent ON; INSERT INTO [{SCHEMA}].Parent (parentId, requiredCol) VALUES (5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Parent OFF; SET IDENTITY_INSERT [{SCHEMA}].Child ON; INSERT INTO [{SCHEMA}].Child (childId, parentId, requiredCol) VALUES (7001, 5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Child OFF;",
-  "input_parameters": {},
   "invocation_query": "DECLARE @Result INT; EXEC [{SCHEMA}].sp_AddDetail @ChildId = 7001, @Quantity = 3, @Result = @Result OUTPUT;",
   "validation_query": "SELECT @Result AS return_value, childId, quantity FROM [{SCHEMA}].Detail WHERE childId = 7001 AND quantity = 3"
 }

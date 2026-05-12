@@ -689,8 +689,8 @@ public class GeminiServiceImpl implements GeminiService {
             if (invocation.matches("(?is).*@([A-Za-z0-9_]+)\\s*=\\s*@\\1\\b.*")
                     && !invocation.matches("(?is).*\\bDECLARE\\s+@\\w+\\b.*")) {
                 issues.add("- " + label + ": invocation_query uses an undeclared variable as an argument value "
-                        + "(for example @MaXe = @MaXe). Use a literal value from input_parameters instead, "
-                        + "such as @MaXe = 'XE001', or declare the variable first.");
+                        + "(for example @MaXe = @MaXe). Use a literal value directly, "
+                        + "such as @MaXe = 'XE001', or declare the variable first in invocation_query.");
             }
 
             if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {

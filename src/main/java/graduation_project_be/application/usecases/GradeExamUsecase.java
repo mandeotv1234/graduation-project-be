@@ -3048,7 +3048,8 @@ public class GradeExamUsecase {
         graduation_project_be.domain.models.enums.MatchType match = tc.getMatchType() != null
                 ? tc.getMatchType()
                 : graduation_project_be.domain.models.enums.MatchType.EXACT;
-        if (match == graduation_project_be.domain.models.enums.MatchType.CONTAINS) {
+        if (tc.getVerificationType() == VerificationType.PRINT_OUTPUT
+                && match == graduation_project_be.domain.models.enums.MatchType.CONTAINS) {
             return actual.toLowerCase().contains(expected.toLowerCase());
         }
         // EXACT (default)

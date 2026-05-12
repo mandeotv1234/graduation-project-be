@@ -3283,7 +3283,8 @@ public class RubricTestingUsecase {
             normalizedActual = normalizePrintOutputForCompare(normalizedActual);
             normalizedExpected = normalizePrintOutputForCompare(normalizedExpected);
         }
-        if ("CONTAINS".equalsIgnoreCase(matchType)) {
+        if ("PRINT_OUTPUT".equalsIgnoreCase(verificationType)
+                && "CONTAINS".equalsIgnoreCase(matchType)) {
             return normalizedActual.toLowerCase(Locale.ROOT)
                     .contains(normalizedExpected.toLowerCase(Locale.ROOT));
         }

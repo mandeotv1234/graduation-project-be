@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1205260001
+      author: manhuynh
+      comment: "GRAD-148: Seed teacher account for Luong Vi Minh"
+      preConditions:
+        - onFail: MARK_RAN
+          sqlCheck:
+            expectedResult: 0
+            sql: "SELECT COUNT(*) FROM users WHERE email = 'lvminh@fit.hcmus.edu.vn'"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: lvminh@fit.hcmus.edu.vn
+              - column:
+                  name: password
+                  value: "$2a$12$xQIC6Q./8tcEOj4ZxhxpCel9nl2HphNsEscjcYxTGLcA0q8Wlc3sO"
+              - column:
+                  name: full_name
+                  value: "Lương Vĩ Minh"
+              - column:
+                  name: role
+                  value: TEACHER
+              - column:
+                  name: is_active
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueDate: now()
+      rollback:
+        - delete:
+            tableName: users
+            where: email = 'lvminh@fit.hcmus.edu.vn'

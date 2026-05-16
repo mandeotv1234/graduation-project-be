@@ -3588,32 +3588,91 @@ public class RubricTestingUsecase {
                             executeSqlScriptBatches(examSchemaService, studentSchema, studentQuery);
                         }
 
-                        // Execute setup script on both schemas
-                        if (!setupScript.isBlank()) {
-                            String normalizedSetup = normalizeDboReferences(setupScript, teacherSchema);
-                            executeSqlScriptBatches(examSchemaService, teacherSchema, normalizedSetup);
-                            
-                            normalizedSetup = normalizeDboReferences(setupScript, studentSchema);
-                            executeSqlScriptBatches(examSchemaService, studentSchema, normalizedSetup);
-                        }
+                        // For EXECUTION_STATUS verification, we only check if invocation succeeds/fails
+                        // For SIDE_EFFECT verification, we also need to check validation_query results
+                        boolean checkSideEffect = !validationQuery.isBlank() && 
+                                                 "SIDE_EFFECT".equalsIgnoreCase(verificationType);
 
-                        // Execute invocation query on teacher schema (expected behavior)
+                        // Build batch SQL that wraps setup + invocation + validation in a single transaction
+                        // This ensures FK constraint state from setup persists during invocation
+                        String normalizedSetupTeacher = setupScript.isBlank() ? "" : normalizeDboReferences(setupScript, teacherSchema);
                         String normalizedInvocationTeacher = normalizeDboReferences(invocationQuery, teacherSchema);
+                        String normalizedValidationTeacher = checkSideEffect ? normalizeDboReferences(validationQuery, teacherSchema) : "";
+                        
+                        String normalizedSetupStudent = setupScript.isBlank() ? "" : normalizeDboReferences(setupScript, studentSchema);
+                        String normalizedInvocationStudent = normalizeDboReferences(invocationQuery, studentSchema);
+                        String normalizedValidationStudent = checkSideEffect ? normalizeDboReferences(validationQuery, studentSchema) : "";
+
+                        // Execute setup + invocation + validation in single transaction on teacher schema
+                        StringBuilder teacherBatch = new StringBuilder();
+                        teacherBatch.append("BEGIN TRY\n");
+                        teacherBatch.append("  BEGIN TRANSACTION;\n");
+                        
+                        // Auto-disable FK constraints for ALL tables to avoid false negatives
+                        // Trigger logic should be tested independently of FK constraints
+                        // Use dynamic SQL to disable FK for all tables in the schema
+                        teacherBatch.append("  DECLARE @disableFkSql NVARCHAR(MAX) = '';\n");
+                        teacherBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [").append(teacherSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
+                        teacherBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(teacherSchema).append("');\n");
+                        teacherBatch.append("  IF @disableFkSql <> '' EXEC sp_executesql @disableFkSql;\n");
+                        
+                        if (!normalizedSetupTeacher.isBlank()) {
+                            teacherBatch.append("  ").append(normalizedSetupTeacher).append(";\n");
+                        }
+                        teacherBatch.append("  ").append(normalizedInvocationTeacher).append(";\n");
+                        if (checkSideEffect) {
+                            teacherBatch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
+                            teacherBatch.append("  ").append(normalizedValidationTeacher).append(";\n");
+                        }
+                        teacherBatch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+                        teacherBatch.append("END TRY\n");
+                        teacherBatch.append("BEGIN CATCH\n");
+                        teacherBatch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+                        teacherBatch.append("  THROW;\n");
+                        teacherBatch.append("END CATCH;");
+
                         boolean teacherInvocationFailed = false;
                         String teacherInvocationError = null;
+                        SqlExecutionResult teacherResult = null;
                         try {
-                            examSchemaService.executeSql(teacherSchema, normalizedInvocationTeacher);
+                            teacherResult = examSchemaService.executeSqlBatchAsSchemaUser(teacherSchema, teacherBatch.toString());
                         } catch (Exception e) {
                             teacherInvocationFailed = true;
                             teacherInvocationError = e.getMessage();
                         }
 
-                        // Execute invocation query on student schema
-                        String normalizedInvocationStudent = normalizeDboReferences(invocationQuery, studentSchema);
+                        // Execute setup + invocation + validation in single transaction on student schema
+                        StringBuilder studentBatch = new StringBuilder();
+                        studentBatch.append("BEGIN TRY\n");
+                        studentBatch.append("  BEGIN TRANSACTION;\n");
+                        
+                        // Auto-disable FK constraints for ALL tables to avoid false negatives
+                        // Use dynamic SQL to disable FK for all tables in the schema
+                        studentBatch.append("  DECLARE @disableFkSql NVARCHAR(MAX) = '';\n");
+                        studentBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [").append(studentSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
+                        studentBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(studentSchema).append("');\n");
+                        studentBatch.append("  IF @disableFkSql <> '' EXEC sp_executesql @disableFkSql;\n");
+                        
+                        if (!normalizedSetupStudent.isBlank()) {
+                            studentBatch.append("  ").append(normalizedSetupStudent).append(";\n");
+                        }
+                        studentBatch.append("  ").append(normalizedInvocationStudent).append(";\n");
+                        if (checkSideEffect) {
+                            studentBatch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
+                            studentBatch.append("  ").append(normalizedValidationStudent).append(";\n");
+                        }
+                        studentBatch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+                        studentBatch.append("END TRY\n");
+                        studentBatch.append("BEGIN CATCH\n");
+                        studentBatch.append("  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n");
+                        studentBatch.append("  THROW;\n");
+                        studentBatch.append("END CATCH;");
+
                         boolean studentInvocationFailed = false;
                         String studentInvocationError = null;
+                        SqlExecutionResult studentResult = null;
                         try {
-                            examSchemaService.executeSql(studentSchema, normalizedInvocationStudent);
+                            studentResult = examSchemaService.executeSqlBatchAsSchemaUser(studentSchema, studentBatch.toString());
                         } catch (Exception e) {
                             studentInvocationFailed = true;
                             studentInvocationError = e.getMessage();
@@ -3658,41 +3717,38 @@ public class RubricTestingUsecase {
                             continue;
                         }
 
-                        // For SIDE_EFFECT, execute validation query if provided
-                        if (validationQuery.isBlank()) {
-                            details.add(Map.of(
-                                    "type", "info",
-                                    "message", String.format("Test case '%s': bỏ qua (thiếu validation_query)", caseName),
-                                    "points", 0));
-                            continue;
-                        }
+                        // For SIDE_EFFECT verification, compare validation query results
+                        // Results were already captured in the batch execution above
+                        if (checkSideEffect) {
+                            // Extract validation results from batch execution (after VALIDATION_MARKER_COLUMN)
+                            SqlExecutionResult teacherFiltered = dropRowsBeforeValidationMarker(teacherResult);
+                            SqlExecutionResult studentFiltered = dropRowsBeforeValidationMarker(studentResult);
+                            
+                            List<Map<String, Object>> expectedRows = teacherFiltered != null && teacherFiltered.getResultSet() != null 
+                                ? teacherFiltered.getResultSet() 
+                                : new ArrayList<>();
+                            List<Map<String, Object>> actualRows = studentFiltered != null && studentFiltered.getResultSet() != null 
+                                ? studentFiltered.getResultSet() 
+                                : new ArrayList<>();
 
-                        // Execute validation query on both schemas
-                        String normalizedValidationTeacher = normalizeDboReferences(validationQuery, teacherSchema);
-                        SqlExecutionResult expectedResultExec = examSchemaService.executeSql(teacherSchema, normalizedValidationTeacher);
-                        List<Map<String, Object>> expectedRows = expectedResultExec.getResultSet();
+                            // Compare results
+                            boolean testPassed = compareQueryResults(actualRows, expectedRows);
 
-                        String normalizedValidationStudent = normalizeDboReferences(validationQuery, studentSchema);
-                        SqlExecutionResult actualResultExec = examSchemaService.executeSql(studentSchema, normalizedValidationStudent);
-                        List<Map<String, Object>> actualRows = actualResultExec.getResultSet();
-
-                        // Compare results
-                        boolean testPassed = compareQueryResults(actualRows, expectedRows);
-
-                        if (testPassed) {
-                            details.add(Map.of(
-                                    "type", "success",
-                                    "message", String.format("Test case '%s': PASS", caseName),
-                                    "points", 0));
-                        } else {
-                            details.add(Map.of(
-                                    "type", "error",
-                                    "message", String.format("Test case '%s': FAIL (kết quả không khớp)", caseName),
-                                    "points", -scoreWeight));
-                            if (!positiveOnlyScoring) {
-                                earnedPoints -= scoreWeight;
+                            if (testPassed) {
+                                details.add(Map.of(
+                                        "type", "success",
+                                        "message", String.format("Test case '%s': PASS", caseName),
+                                        "points", 0));
+                            } else {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message", String.format("Test case '%s': FAIL (kết quả không khớp)", caseName),
+                                        "points", -scoreWeight));
+                                if (!positiveOnlyScoring) {
+                                    earnedPoints -= scoreWeight;
+                                }
+                                allPassed = false;
                             }
-                            allPassed = false;
                         }
                     } catch (Exception e) {
                         details.add(Map.of(

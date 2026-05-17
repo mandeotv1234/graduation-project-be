@@ -1,22 +1,33 @@
-You are generating a SQL Server grading rubric for a FUNCTION question.
+You are a SQL Server expert generating a grading rubric for a FUNCTION question.
 Return only valid JSON. Do not use markdown.
 
-QUESTION:
-%s
+=== QUESTION ===
+Content: %s
+Reference SQL (correctQuery): %s
+Routine Type: %s
+Total Points: %.2f
 
-REFERENCE SQL:
-%s
+=== CRITICAL PRINCIPLES (MUST READ) ===
+DO NOT guess expected_result or expected_value. The engine will run the reference answer in a sandbox
+and capture the actual result as expected_value. You ONLY generate "scenarios":
+setup_script + invocation_query + validation_query.
 
-ROUTINE TYPE:
-%s
+**IMPORTANT - READ DDL SCHEMA CONTEXT CAREFULLY**:
+- You will receive DDL schema context at the end of this prompt (if available)
+- MUST read DDL carefully to know EXACTLY:
+  + Table names (e.g., NhanVien, PhongBan, ChuyenXe)
+  + Column names (e.g., PhongBan not MaPhongBan, Luong not Salary)
+  + Data types (VARCHAR, INT, DECIMAL, DATETIME, NVARCHAR, ...)
+  + **COLUMN LENGTH**: VARCHAR(10) can only hold max 10 characters, NVARCHAR(50) max 50 characters
+  + Number of columns (so INSERT has enough VALUES)
+  + Primary keys and Foreign keys
+- DO NOT guess column names, DO NOT use column names not in DDL
+- **DO NOT create values longer than column length**
+- If no DDL context, infer structure from correctQuery
 
-DATABASE SPEC CONTEXT:
-%s
+=== RUBRIC REQUIREMENTS ===
+Generate JSON rubric with this structure:
 
-TOTAL POINTS:
-%.2f
-
-STEP 1 - Output JSON shape
 {
   "question_id": "Q_AUTO_01",
   "total_points": %.2f,
@@ -24,65 +35,117 @@ STEP 1 - Output JSON shape
   "grading_payload": {
     "grading_settings": {
       "syntax_error_action": "FAIL_ALL",
-      "print_output_compare_mode": "LENIENT"
+      "print_output_compare_mode": "LENIENT",
+      "case_sensitive_names": false,
+      "positive_only_scoring": false
     },
-    "routines": [ <function metadata> ],
-    "test_cases": [ <generate 3..6 cases> ]
+    "routines": [
+      {
+        "expected_name": "<function name from reference>",
+        "expected_type": "FUNCTION",
+        "expected_return_type": "<INT, DECIMAL, NVARCHAR, TABLE, etc.>",
+        "parameters": [
+          {
+            "name": "<param name without @ prefix>",
+            "expected_type": "<SQL type: INT, VARCHAR(50), DECIMAL(15,2), etc.>",
+            "expected_mode": "IN"
+          }
+        ]
+      }
+    ],
+    "test_cases": [
+      {
+        "case_id": "TC_01",
+        "case_name": "<short Vietnamese description>",
+        "verification_type": "RETURN_VALUE",
+        "match_type": "EXACT",
+        "score_weight": 0.25,
+        "description": "<what this test checks>",
+        "setup_script": "-- MUST use [{SCHEMA}] when referencing tables\nDELETE FROM [{SCHEMA}].ChildTable WHERE ...;\nDELETE FROM [{SCHEMA}].ParentTable WHERE ...;\nINSERT INTO [{SCHEMA}].ParentTable VALUES (...);\nINSERT INTO [{SCHEMA}].ChildTable VALUES (...);",
+        "input_parameters": {},
+        "invocation_query": "",
+        "validation_query": "SELECT [{SCHEMA}].FunctionName(@param1, @param2)"
+      }
+    ]
   }
 }
 
-routines[] must list only the function(s) the QUESTION explicitly asks the student to create.
-Do not list helper routines used internally by the reference solution.
-Each routine entry:
-{
-  "expected_name": "<function name>",
-  "expected_type": "FUNCTION",
-  "expected_return_type": "<scalar sql type, TABLE for table-valued function>",
-  "parameters": [
-    { "name": "<parameter name without @ if reference uses that style>", "expected_type": "<sql type>", "expected_mode": "IN" }
-  ]
-}
+=== TEST CASE CREATION RULES ===
+1. Generate 3-6 diverse test cases covering:
+   - Normal inputs (typical valid data)
+   - Boundary cases (min/max values, edge conditions)
+   - Null/empty cases (when relevant)
+   - Table-read scenarios (when function queries database)
+   - Multiple rows (if function aggregates or filters data)
 
-Each test_cases[] entry:
-{
-  "case_id": "TC_NN",
-  "case_name": "<short Vietnamese display name>",
-  "verification_type": "RETURN_VALUE|RESULT_SET",
-  "match_type": "EXACT",
-  "score_weight": <number; weights should sum ~= 1.0>,
-  "description": "<behavior checked>",
-  "setup_script": "<test data setup only>",
-  "input_parameters": {},
-  "invocation_query": "",
-  "validation_query": "<SELECT that calls the function>"
-}
+2. Each test case MUST have complete setup_script:
+   - **IMPORTANT**: Start with DELETE to clear old data and avoid duplicate primary key errors:
+     ```sql
+     DELETE FROM [{SCHEMA}].ChildTable WHERE PK IN ('TC01_C1', 'TC01_C2');
+     DELETE FROM [{SCHEMA}].ParentTable WHERE PK IN ('TC01_P1');
+     ```
+   - Or use DIFFERENT primary keys for each test case (TC_01 uses 'P001', TC_02 uses 'P002', etc.)
+   - **IMPORTANT**: Check DDL schema context to know EXACT column names and count
+   - **IMPORTANT**: INSERT must have enough values matching the number of columns specified
+   - **IMPORTANT**: VARCHAR/NVARCHAR values must be shorter than column length (e.g., VARCHAR(10) → use 'EMP001' not 'EMPLOYEE_001')
+   - For foreign keys: INSERT parent rows BEFORE child rows
+   - For DELETE: DELETE child rows BEFORE parent rows
+   - **IMPORTANT**: Include ALL columns needed by the function:
+     * Primary key columns
+     * Foreign key columns (for relationships)
+     * NOT NULL columns without defaults
+     * Any columns the function reads or returns (name, status, price, amount, etc.)
+   - DO NOT insert only the key if function needs other columns like name, amount, or status
+   - Engine wraps test case in transaction and rollback, so no cleanup needed
 
-STEP 2 - Choose verification_type
-- Scalar function: use RETURN_VALUE.
-- Table-valued function: use RESULT_SET.
-- Do not use SIDE_EFFECT, PRINT_OUTPUT, or OUT_PARAMETER for function questions.
+3. validation_query: REQUIRED. SQL SELECT that calls the function.
+   - **Scalar function** (returns single value):
+     ```sql
+     SELECT [{SCHEMA}].FN_TongLuong(@MaPhongBan)
+     ```
+   - **Table-valued function** (returns rows):
+     ```sql
+     SELECT MaNV, HoTen, Luong
+     FROM [{SCHEMA}].FN_NhanVienTheoPhongBan(@MaPhongBan)
+     ORDER BY MaNV
+     ```
+   - Use literal arguments directly in validation_query
+   - input_parameters is metadata only, engine does NOT convert it to SQL variables
 
-STEP 3 - Write validation_query
-Scalar function:
-"SELECT [{SCHEMA}].<fn_name>(<literal_args>)"
+4. DO NOT generate "expected_result"/"expected_value" — engine derives automatically
 
-Table-valued function:
-"SELECT col1, col2
-   FROM [{SCHEMA}].<fn_name>(<literal_args>)
-  ORDER BY <stable_col>"
+5. score_weight is 0..1. Total weights are normalized to 1.0 by engine
 
-Use literal arguments directly. input_parameters is metadata only and the engine does not convert it into SQL variables.
+6. verification_type for Functions:
+   - **RETURN_VALUE**: For scalar functions (INT, DECIMAL, VARCHAR, etc.)
+   - **RESULT_SET**: For table-valued functions (returns rows)
+   - DO NOT use SIDE_EFFECT, PRINT_OUTPUT, or OUT_PARAMETER for functions
 
-STEP 4 - Setup and schema rules
-- Every table and function reference in setup_script and validation_query must use the literal placeholder [{SCHEMA}].
-- Never use dbo., [dbo]., THIS., [THIS]., THIS_SCHEMA, TARGET_SCHEMA, YOUR_SCHEMA, SCHEMA_NAME, or bare unqualified object names.
-- If the function reads tables, setup_script must be self-contained: DELETE exact test keys, INSERT all required parent rows, then INSERT child rows.
-- When INSERTing setup rows, include all columns required by DATABASE SPEC CONTEXT: primary key columns, foreign key columns needed for relationships, NOT NULL columns without defaults, and any nullable columns the function reads or returns. Do not insert only the key if the function needs another column such as a name, status, price, or timestamp.
-- For foreign keys, insert parent rows before child rows. Delete child rows before parent rows.
-- setup_script may use DELETE and INSERT for test data. Use UPDATE only when a special state is necessary and the setup remains self-contained.
-- setup_script must never CREATE, ALTER, DROP, CREATE PROCEDURE, CREATE FUNCTION, or use GO.
-- Do not invent tables or columns not present in DATABASE SPEC CONTEXT or clearly used by REFERENCE SQL.
-- Do not include expected_result, expected_value, or expected_output. The engine derives expected values by running REFERENCE SQL.
+=== SCHEMA REFERENCE RULES (MANDATORY) ===
+- MUST use placeholder [{SCHEMA}] when referencing tables/functions in setup_script and validation_query
+- NEVER use "dbo." prefix or bare unqualified names
+- Example CORRECT: "INSERT INTO [{SCHEMA}].NhanVien VALUES (...)"
+- Example WRONG:  "INSERT INTO NhanVien VALUES (...)"   ← no schema
+- Example WRONG:  "INSERT INTO dbo.NhanVien VALUES (...)" ← engine will look in wrong place
 
-Generate 3 to 6 high-quality test cases covering normal inputs, boundary cases, null/empty cases when relevant, and table-read scenarios when the function depends on database data.
-Return only the JSON, no commentary.
+=== IMPORTANT NOTES ===
+- routines[] must list ONLY the function(s) the QUESTION explicitly asks student to create
+- DO NOT list helper functions used internally by reference solution
+- DO NOT use CREATE, ALTER, DROP, CREATE FUNCTION, or GO in setup_script
+- DO NOT invent tables or columns not in DDL schema context or reference SQL
+- Database: Microsoft SQL Server (MSSQL / T-SQL)
+- **READ DDL SCHEMA CONTEXT below carefully for exact table names, column names, data types, and column lengths**
+
+=== DDL SCHEMA CONTEXT ===
+%s
+
+=== REQUIREMENTS ===
+Based on DDL schema context above, create test cases with:
+- EXACT table names from DDL
+- EXACT column names from DDL (do not guess, do not use different names)
+- Number of VALUES matching number of columns in INSERT INTO
+- Correct data types (VARCHAR use '', INT no quotes, DATETIME use '', NVARCHAR use N'')
+- **Appropriate value lengths**: VARCHAR(10) → use values ≤ 10 chars (e.g., 'EMP001' OK, 'EMPLOYEE_001' WRONG)
+- Include ALL columns the function needs (not just primary key)
+
+Return EXACT JSON FORMAT (no markdown, no extra explanation):

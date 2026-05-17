@@ -13,24 +13,31 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateSpecificationV2RequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GenerateSchemaFromDdlRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GenerateSpecificationSchemaRequestDto;
+import graduation_project_be.adapter.web.api.dtos.request.UpdateSpecEntityDescriptionRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateSpecificationRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.ExamSpecificationResponseDto;
+import graduation_project_be.adapter.web.api.dtos.response.GenerateSpecEntityDescriptionResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.SpecificationResponseDto;
 import graduation_project_be.application.usecases.CreateSpecificationUsecase;
 import graduation_project_be.application.usecases.DeleteSpecificationUsecase;
-import graduation_project_be.application.usecases.GenerateSpecificationSchemaUsecase;
 import graduation_project_be.application.usecases.GenerateSchemaFromDdlUsecase;
+import graduation_project_be.application.usecases.GenerateSpecEntityDescriptionUsecase;
+import graduation_project_be.application.usecases.GenerateSpecificationSchemaUsecase;
 import graduation_project_be.application.usecases.GetSpecificationByIdUsecase;
 import graduation_project_be.application.usecases.GetSpecificationsUsecase;
+import graduation_project_be.application.usecases.UpdateSpecEntityDescriptionUsecase;
 import graduation_project_be.application.usecases.UpdateSpecificationUsecase;
+import graduation_project_be.application.usecases.request.UpdateSpecEntityDescriptionRequest;
 import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
+import graduation_project_be.application.usecases.response.GenerateSpecEntityDescriptionResponse;
 import graduation_project_be.application.usecases.response.SpecificationResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -49,6 +56,8 @@ public class SpecificationController {
         private final DeleteSpecificationUsecase deleteSpecificationUsecase;
         private final GenerateSpecificationSchemaUsecase generateSpecificationSchemaUsecase;
         private final GenerateSchemaFromDdlUsecase generateSchemaFromDdlUsecase;
+        private final GenerateSpecEntityDescriptionUsecase generateSpecEntityDescriptionUsecase;
+        private final UpdateSpecEntityDescriptionUsecase updateSpecEntityDescriptionUsecase;
 
         @PostMapping
         @PreAuthorize("hasRole('TEACHER')")
@@ -145,5 +154,32 @@ public class SpecificationController {
                                                 null,
                                                 "SUCCESS",
                                                 "Specification deleted successfully"));
+        }
+
+        @PostMapping("/{specificationId}/entities/{entityId}/generate-description")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> generateEntityDescription(
+                        @PathVariable("specificationId") @Positive Long specificationId,
+                        @PathVariable("entityId") @Positive Long entityId,
+                        @RequestParam("examId") Long examId) {
+                GenerateSpecEntityDescriptionResponse response =
+                                generateSpecEntityDescriptionUsecase.execute(specificationId, entityId, examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                GenerateSpecEntityDescriptionResponseDto.fromResponse(response),
+                                                "SUCCESS",
+                                                "Entity description generated successfully"));
+        }
+
+        @PutMapping("/{specificationId}/entities/{entityId}/description")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<Void> updateEntityDescription(
+                        @PathVariable("specificationId") @Positive Long specificationId,
+                        @PathVariable("entityId") @Positive Long entityId,
+                        @RequestParam("examId") Long examId,
+                        @RequestBody @Valid UpdateSpecEntityDescriptionRequestDto body) {
+                updateSpecEntityDescriptionUsecase.execute(
+                                new UpdateSpecEntityDescriptionRequest(specificationId, entityId, examId, body.description()));
+                return ResponseEntity.noContent().build();
         }
 }

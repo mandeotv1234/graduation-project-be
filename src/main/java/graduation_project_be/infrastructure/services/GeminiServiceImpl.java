@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -2889,5 +2890,72 @@ public class GeminiServiceImpl implements GeminiService {
         requiredTableFields.add("columns");
 
         return rootArray;
+    }
+
+    @Override
+    public String generateEntityDescription(String entityName, String displayName,
+                                            List<SpecAttribute> attributes,
+                                            String schemaContext) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API key missing — skipping entity description generation for {}", entityName);
+            return null;
+        }
+
+        HttpClient client = getOrCreateHttpClient();
+        if (client == null) return null;
+
+        String pkList = attributes == null ? "" : attributes.stream()
+                .filter(SpecAttribute::isPrimaryKey)
+                .map(SpecAttribute::getAttributeName)
+                .collect(Collectors.joining(", "));
+        String fkHint = attributes == null ? "" : attributes.stream()
+                .filter(a -> a.getAttributeName() != null && a.getAttributeName().toLowerCase().startsWith("ma"))
+                .map(SpecAttribute::getAttributeName)
+                .collect(Collectors.joining(", "));
+        String attrList = attributes == null ? "" : attributes.stream()
+                .map(a -> a.getAttributeName() + " (" + a.getDataType() + ")")
+                .collect(Collectors.joining(", "));
+
+        String prompt = String.format(
+                "Cho entity %s (%s) trong CSDL với attributes: %s.\n"
+                + "Sinh đoạn \"Tân từ\" mô tả ngắn gọn (tối đa 2 câu, tiếng Việt) bao gồm:\n"
+                + "- Ý nghĩa entity\n"
+                + "- Khóa chính: %s\n"
+                + "- Quan hệ FK (suy luận từ tên attribute): %s\n"
+                + "Văn phong tài liệu CSDL học thuật. Plain text, không dùng markdown, không dùng bullet points.",
+                entityName, displayName != null ? displayName : entityName,
+                attrList.isBlank() ? "không có" : attrList,
+                pkList.isBlank() ? "không xác định" : pkList,
+                fkHint.isBlank() ? "không xác định" : fkHint);
+
+        String requestBody = buildRequestBody(prompt, 256);
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(geminiEndpoint()))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("Gemini entity description API error {} for entity {}: {}",
+                        response.statusCode(), entityName, response.body());
+                return null;
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            String text = root.path("candidates").get(0)
+                    .path("content").path("parts").get(0)
+                    .path("text").asText("").trim();
+
+            // Strip control characters; keep only printable Unicode
+            text = text.replaceAll("[\\p{Cntrl}&&[^\n\t]]", "").trim();
+            return text.isBlank() ? null : text;
+        } catch (Exception e) {
+            log.warn("Entity description generation failed for {}: {}", entityName, e.getMessage());
+            return null;
+        }
     }
 }

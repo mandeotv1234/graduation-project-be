@@ -5,6 +5,9 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import jakarta.annotation.PreDestroy;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -850,6 +853,54 @@ public class UsecasesConfiguration {
             ExamDraftRepository examDraftRepository,
             ClassRepository classRepository) {
         return new ForceSubmitExamUsecase(examRepository, currentUserService, submitExamUsecase, violationNotificationService, examSessionService, examDraftRepository, classRepository);
+    }
+
+    // ===== ENTITY DESCRIPTION AI USECASES =====
+
+    @Bean
+    GenerateSpecEntityDescriptionUsecase generateSpecEntityDescriptionUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService,
+            GeminiService geminiService) {
+        return new GenerateSpecEntityDescriptionUsecase(
+                examRepository, classRepository, specEntityRepository, currentUserService, geminiService);
+    }
+
+    @Bean
+    UpdateSpecEntityDescriptionUsecase updateSpecEntityDescriptionUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateSpecEntityDescriptionUsecase(
+                examRepository, classRepository, specEntityRepository, currentUserService);
+    }
+
+    // ===== EXPORT PDF USECASES =====
+
+    /** Shared fixed-thread-pool for parallel Gemini calls during PDF export. */
+    @Bean(name = "geminiExecutor", destroyMethod = "shutdown")
+    ExecutorService geminiExecutor() {
+        return Executors.newFixedThreadPool(4);
+    }
+
+    @Bean
+    ExportExamPdfUsecase exportExamPdfUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService,
+            GeminiService geminiService,
+            graduation_project_be.application.port.services.PdfRenderService pdfRenderService,
+            @org.springframework.beans.factory.annotation.Qualifier("geminiExecutor") ExecutorService geminiExecutor) {
+        return new ExportExamPdfUsecase(
+                examRepository, classRepository, examQuestionRepository,
+                examSpecificationRepository, specEntityRepository, currentUserService,
+                geminiService, pdfRenderService, geminiExecutor);
     }
 
 }

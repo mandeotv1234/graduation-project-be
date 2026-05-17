@@ -46,6 +46,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'me.paulschwarz:spring-dotenv:3.0.0'
     implementation 'com.microsoft.sqlserver:mssql-jdbc'
+    implementation 'com.openhtmltopdf:openhtmltopdf-core:1.0.10'
+    implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.jsoup:jsoup:1.17.2'
 }
 
 tasks.named('test') {

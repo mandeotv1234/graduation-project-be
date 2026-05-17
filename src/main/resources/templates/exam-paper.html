@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="vi">
+<head>
+<meta charset="UTF-8"/>
+<style>
+@page {
+  size: A4;
+  margin: 2cm 2cm 2cm 2cm;
+}
+body {
+  font-family: "Liberation Serif", serif;
+  font-size: 11pt;
+  color: #000;
+  line-height: 1.4;
+}
+h1.exam-title {
+  font-size: 16pt;
+  font-weight: bold;
+  text-align: center;
+  margin: 0 0 6pt 0;
+}
+.student-row {
+  display: table;
+  width: 100%;
+  margin: 8pt 0;
+}
+.student-cell {
+  display: table-cell;
+  width: 50%;
+}
+.student-label {
+  font-weight: bold;
+  display: inline;
+}
+.dotted-line {
+  border-bottom: 1pt dotted #000;
+  display: inline-block;
+  width: 60%;
+  vertical-align: bottom;
+}
+h2.section-title {
+  font-size: 13pt;
+  font-weight: bold;
+  margin: 14pt 0 4pt 0;
+  text-transform: uppercase;
+}
+.regulations-block {
+  white-space: pre-wrap;
+  font-size: 10.5pt;
+  margin: 0 0 8pt 0;
+  border-left: 2pt solid #555;
+  padding-left: 8pt;
+}
+/* Entity / dataset table */
+.entity-block {
+  page-break-inside: avoid;
+  margin-bottom: 14pt;
+}
+.entity-name {
+  font-weight: bold;
+  font-size: 12pt;
+  margin-bottom: 3pt;
+}
+.entity-description {
+  font-style: italic;
+  font-size: 10.5pt;
+  margin-bottom: 4pt;
+}
+table.attr-table, table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+table.attr-table th, table.data-table th {
+  background-color: #d9d9d9;
+  border: 1pt solid #555;
+  padding: 3pt 5pt;
+  text-align: left;
+  font-weight: bold;
+}
+table.attr-table td, table.data-table td {
+  border: 1pt solid #888;
+  padding: 3pt 5pt;
+}
+.pk-cell {
+  font-weight: bold;
+}
+/* Questions section */
+ol.questions-list {
+  margin: 0;
+  padding-left: 20pt;
+}
+ol.questions-list > li {
+  margin-bottom: 8pt;
+  page-break-inside: avoid;
+}
+.question-points {
+  font-weight: bold;
+}
+.question-content {
+  display: inline;
+}
+/* Dataset section */
+.dataset-block {
+  page-break-inside: avoid;
+  margin-bottom: 14pt;
+}
+.dataset-table-name {
+  font-weight: bold;
+  font-size: 11pt;
+  margin-bottom: 3pt;
+}
+/* Footer */
+.exam-footer {
+  text-align: center;
+  margin-top: 24pt;
+  font-weight: bold;
+  font-size: 12pt;
+}
+/* Note line under questions */
+.note-line {
+  font-style: italic;
+  margin-top: 8pt;
+  font-size: 10.5pt;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<h1 class="exam-title" th:text="${examTitle}">Đề thi môn Cơ sở dữ liệu</h1>
+
+<!-- ===== MSSV / HỌ TÊN ===== -->
+<div class="student-row">
+  <div class="student-cell">
+    <span class="student-label">MSSV: </span><span class="dotted-line">&nbsp;</span>
+  </div>
+  <div class="student-cell">
+    <span class="student-label">Họ tên: </span><span class="dotted-line">&nbsp;</span>
+  </div>
+</div>
+
+<!-- ===== QUY ĐỊNH ===== -->
+<div th:if="${regulations != null and !#strings.isEmpty(regulations)}">
+  <h2 class="section-title">Quy định :</h2>
+  <div class="regulations-block" th:text="${regulations}"></div>
+</div>
+
+<!-- ===== MÔ TẢ CƠ SỞ DỮ LIỆU ===== -->
+<div th:if="${entities != null and !entities.isEmpty()}">
+  <h2 class="section-title">Mô tả cơ sở dữ liệu :</h2>
+
+  <div th:each="entity : ${entities}" class="entity-block">
+    <div class="entity-name" th:text="${entity.displayName != null and !#strings.isEmpty(entity.displayName)} ? entity.displayName : entity.entityName">ENTITY</div>
+
+    <div class="entity-description"
+         th:if="${entity.description != null and !#strings.isEmpty(entity.description)}"
+         th:text="${entity.description}">Mô tả entity</div>
+
+    <table class="attr-table">
+      <thead>
+        <tr>
+          <th>Thuộc tính</th>
+          <th>Kiểu dữ liệu</th>
+          <th>Mô tả</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="attr : ${entity.attributes}">
+          <td th:class="${attr.primaryKey} ? 'pk-cell'" th:text="${attr.attributeName}">col</td>
+          <td th:text="${attr.dataType}">varchar</td>
+          <td th:text="${attr.description != null} ? ${attr.description} : ''"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== YÊU CẦU ===== -->
+<div th:if="${questions != null and !questions.isEmpty()}">
+  <h2 class="section-title">Yêu cầu :</h2>
+  <ol class="questions-list">
+    <li th:each="q, iter : ${questions}">
+      <span class="question-points" th:text="'(' + q.formattedPoints + 'đ)'"></span>&#160;<span class="question-content" th:utext="${q.sanitizedContent}">Nội dung câu hỏi</span>
+    </li>
+  </ol>
+  <p class="note-line" th:if="${questionNote != null}" th:text="${questionNote}"></p>
+</div>
+
+<!-- ===== DỮ LIỆU MẪU ===== -->
+<div th:if="${dataTables != null and !dataTables.isEmpty()}">
+  <h2 class="section-title">Dữ liệu mẫu :</h2>
+
+  <div th:each="dataTable : ${dataTables}" class="dataset-block">
+    <div class="dataset-table-name" th:text="${dataTable.tableName}">TABLE_NAME</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th th:each="col : ${dataTable.columns}" th:text="${col}">col</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="row : ${dataTable.rows}">
+          <td th:each="cell : ${row}" th:text="${cell}">val</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== HẾT ===== -->
+<div class="exam-footer">--- HẾT ---</div>
+
+</body>
+</html>

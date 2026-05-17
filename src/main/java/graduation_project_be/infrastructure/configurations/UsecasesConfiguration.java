@@ -9,6 +9,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import jakarta.annotation.PreDestroy;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -895,8 +896,8 @@ public class UsecasesConfiguration {
             SpecEntityRepository specEntityRepository,
             CurrentUserService currentUserService,
             GeminiService geminiService,
-            graduation_project_be.application.port.services.PdfRenderService pdfRenderService,
-            @org.springframework.beans.factory.annotation.Qualifier("geminiExecutor") ExecutorService geminiExecutor) {
+            PdfRenderService pdfRenderService,
+            @Qualifier("geminiExecutor") ExecutorService geminiExecutor) {
         return new ExportExamPdfUsecase(
                 examRepository, classRepository, examQuestionRepository,
                 examSpecificationRepository, specEntityRepository, currentUserService,
@@ -904,5 +905,4 @@ public class UsecasesConfiguration {
     }
 
 }
-
 

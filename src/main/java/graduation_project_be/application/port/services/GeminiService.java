@@ -36,10 +36,12 @@ public interface GeminiService {
      * Generate a short Vietnamese "tân từ" description (≤2 sentences) for a DB entity.
      * Returns null on failure — callers must handle gracefully.
      */
-    String generateEntityDescription(String entityName, String displayName,
-                                     List<SpecAttribute> attributes,
-                                     String schemaContext);
+    String generateEntityDescription(
+            String entityName,
+            String displayName,
+            List<SpecAttribute> attributes,
+            String schemaContext);
 
-    record GeneratedQuestion(String correctQuery, String verifyScript) {}
+    record GeneratedQuestion(String correctQuery, String verifyScript) {
+    }
 }
-

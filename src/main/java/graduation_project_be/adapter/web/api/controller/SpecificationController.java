@@ -35,7 +35,6 @@ import graduation_project_be.application.usecases.GetSpecificationByIdUsecase;
 import graduation_project_be.application.usecases.GetSpecificationsUsecase;
 import graduation_project_be.application.usecases.UpdateSpecEntityDescriptionUsecase;
 import graduation_project_be.application.usecases.UpdateSpecificationUsecase;
-import graduation_project_be.application.usecases.request.UpdateSpecEntityDescriptionRequest;
 import graduation_project_be.application.usecases.response.ExamSpecificationResponse;
 import graduation_project_be.application.usecases.response.GenerateSpecEntityDescriptionResponse;
 import graduation_project_be.application.usecases.response.SpecificationResponse;
@@ -161,7 +160,7 @@ public class SpecificationController {
         public ResponseEntity<ResponseDto> generateEntityDescription(
                         @PathVariable("specificationId") @Positive Long specificationId,
                         @PathVariable("entityId") @Positive Long entityId,
-                        @RequestParam("examId") Long examId) {
+                        @RequestParam("examId") @Positive Long examId) {
                 GenerateSpecEntityDescriptionResponse response =
                                 generateSpecEntityDescriptionUsecase.execute(specificationId, entityId, examId);
                 return ResponseEntity.ok(
@@ -176,10 +175,10 @@ public class SpecificationController {
         public ResponseEntity<Void> updateEntityDescription(
                         @PathVariable("specificationId") @Positive Long specificationId,
                         @PathVariable("entityId") @Positive Long entityId,
-                        @RequestParam("examId") Long examId,
+                        @RequestParam("examId") @Positive Long examId,
                         @RequestBody @Valid UpdateSpecEntityDescriptionRequestDto body) {
                 updateSpecEntityDescriptionUsecase.execute(
-                                new UpdateSpecEntityDescriptionRequest(specificationId, entityId, examId, body.description()));
+                                body.toRequest(specificationId, entityId, examId));
                 return ResponseEntity.noContent().build();
         }
 }

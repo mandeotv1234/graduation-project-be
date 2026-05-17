@@ -97,6 +97,9 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/create_table_rules_prompt.txt")
     private Resource createTableRulesPromptResource;
 
+    @Value("classpath:prompts/entity_description_prompt.txt")
+    private Resource entityDescriptionPromptResource;
+
     private String systemPromptTemplate;
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
@@ -107,6 +110,7 @@ public class GeminiServiceImpl implements GeminiService {
     private String triggerRubricPromptTemplate;
     private String specificationSchemaPromptTemplate;
     private String createTableRulesPromptTemplate;
+    private String entityDescriptionPromptTemplate;
 
     public GeminiServiceImpl(
             @Value("${spring.application.gemini.api-key}") String apiKey,
@@ -146,6 +150,8 @@ public class GeminiServiceImpl implements GeminiService {
                     .copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.createTableRulesPromptTemplate = StreamUtils
                     .copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.entityDescriptionPromptTemplate = StreamUtils
+                    .copyToString(entityDescriptionPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -2916,17 +2922,12 @@ public class GeminiServiceImpl implements GeminiService {
                 .map(a -> a.getAttributeName() + " (" + a.getDataType() + ")")
                 .collect(Collectors.joining(", "));
 
-        String prompt = String.format(
-                "Cho entity %s (%s) trong CSDL với attributes: %s.\n"
-                + "Sinh đoạn \"Tân từ\" mô tả ngắn gọn (tối đa 2 câu, tiếng Việt) bao gồm:\n"
-                + "- Ý nghĩa entity\n"
-                + "- Khóa chính: %s\n"
-                + "- Quan hệ FK (suy luận từ tên attribute): %s\n"
-                + "Văn phong tài liệu CSDL học thuật. Plain text, không dùng markdown, không dùng bullet points.",
+        String prompt = String.format(entityDescriptionPromptTemplate,
                 entityName, displayName != null ? displayName : entityName,
                 attrList.isBlank() ? "không có" : attrList,
                 pkList.isBlank() ? "không xác định" : pkList,
-                fkHint.isBlank() ? "không xác định" : fkHint);
+                fkHint.isBlank() ? "không xác định" : fkHint,
+                schemaContext == null || schemaContext.isBlank() ? "không có" : schemaContext);
 
         String requestBody = buildRequestBody(prompt, 256);
 

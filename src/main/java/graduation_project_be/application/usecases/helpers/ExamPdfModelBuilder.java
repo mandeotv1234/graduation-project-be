@@ -2,12 +2,23 @@ package graduation_project_be.application.usecases.helpers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graduation_project_be.domain.models.*;
-import graduation_project_be.infrastructure.utils.HtmlSanitizer;
+import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamSpecification;
+import graduation_project_be.domain.models.SpecAttribute;
+import graduation_project_be.domain.models.SpecDataset;
+import graduation_project_be.domain.models.SpecEntity;
+import graduation_project_be.shared.utils.HtmlSanitizer;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Builds the Thymeleaf model map used by exam-paper.html from domain objects.
@@ -17,8 +28,11 @@ import java.util.*;
 public class ExamPdfModelBuilder {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Pattern QUESTION_PREFIX_PATTERN = Pattern.compile(
+            "(?is)^\\s*(?:<p>\\s*)?(?:<strong>\\s*)?(?:Câu|Cau)\\s*\\d+\\s*(?:\\([^)]*\\))?\\s*:?\\s*(?:</strong>\\s*)?");
 
-    private ExamPdfModelBuilder() {}
+    private ExamPdfModelBuilder() {
+    }
 
     /**
      * Build the template variable map consumed by exam-paper.html.
@@ -69,7 +83,9 @@ public class ExamPdfModelBuilder {
     }
 
     private static List<Map<String, Object>> buildEntityModels(ExamSpecification spec) {
-        if (spec == null || spec.getEntities() == null) return List.of();
+        if (spec == null || spec.getEntities() == null) {
+            return List.of();
+        }
 
         return spec.getEntities().stream()
                 .sorted(Comparator.comparingInt(SpecEntity::getOrderIndex))
@@ -100,23 +116,34 @@ public class ExamPdfModelBuilder {
     }
 
     private static List<Map<String, Object>> buildQuestionModels(List<ExamQuestion> questions) {
-        if (questions == null) return List.of();
+        if (questions == null) {
+            return List.of();
+        }
 
         return questions.stream()
                 .sorted(Comparator.comparingInt(q -> (q.getOrderIndex() != null ? q.getOrderIndex() : 0)))
                 .map(q -> {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("formattedPoints", formatPoints(q.getPoints()));
-                    m.put("sanitizedContent", HtmlSanitizer.clean(q.getContent()));
+                    m.put("sanitizedContent", HtmlSanitizer.clean(stripQuestionPrefix(q.getContent())));
                     return m;
                 })
                 .toList();
     }
 
-    /** Strip trailing zeros: 2.0 → "2", 2.5 → "2.5" */
+    /** Keep exam-style score precision: 2.5 -> "2.50", 1 -> "1.00". */
     static String formatPoints(BigDecimal points) {
-        if (points == null) return "0";
-        return points.stripTrailingZeros().toPlainString();
+        if (points == null) {
+            return "0.00";
+        }
+        return points.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    static String stripQuestionPrefix(String content) {
+        if (content == null) {
+            return "";
+        }
+        return QUESTION_PREFIX_PATTERN.matcher(content).replaceFirst("");
     }
 
     /**
@@ -131,12 +158,16 @@ public class ExamPdfModelBuilder {
 
         try {
             JsonNode arr = MAPPER.readTree(activeDataset.getTableData());
-            if (!arr.isArray()) return List.of();
+            if (!arr.isArray()) {
+                return List.of();
+            }
 
             List<Map<String, Object>> result = new ArrayList<>();
             for (JsonNode tableNode : arr) {
                 String tableName = tableNode.path("tableName").asText("");
-                if (tableName.isBlank()) continue;
+                if (tableName.isBlank()) {
+                    continue;
+                }
 
                 List<String> columns = new ArrayList<>();
                 tableNode.path("columns").forEach(c -> columns.add(c.asText()));

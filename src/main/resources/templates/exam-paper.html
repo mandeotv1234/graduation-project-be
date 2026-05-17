@@ -5,24 +5,41 @@
 <style>
 @page {
   size: A4;
-  margin: 2cm 2cm 2cm 2cm;
+  margin: 1.5cm 1.6cm 1.7cm 1.6cm;
+  @top-left {
+    content: counter(page);
+    font-family: "Liberation Serif", serif;
+    background-color: #4f7fb8;
+    color: #fff;
+    font-size: 11pt;
+    width: 2.2cm;
+    height: 14pt;
+    line-height: 14pt;
+    padding-right: 5pt;
+    box-sizing: border-box;
+    text-align: right;
+    vertical-align: top;
+  }
 }
 body {
   font-family: "Liberation Serif", serif;
   font-size: 11pt;
   color: #000;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 h1.exam-title {
-  font-size: 16pt;
+  font-size: 18pt;
   font-weight: bold;
   text-align: center;
-  margin: 0 0 6pt 0;
+  color: #1f3f68;
+  border-bottom: 1pt solid #4f7fb8;
+  margin: 0 0 8pt 0;
+  padding-bottom: 4pt;
 }
 .student-row {
   display: table;
   width: 100%;
-  margin: 8pt 0;
+  margin: 9pt 0 10pt 0;
 }
 .student-cell {
   display: table-cell;
@@ -39,48 +56,72 @@ h1.exam-title {
   vertical-align: bottom;
 }
 h2.section-title {
-  font-size: 13pt;
+  font-size: 12pt;
   font-weight: bold;
-  margin: 14pt 0 4pt 0;
+  margin: 13pt 0 6pt 0;
   text-transform: uppercase;
 }
 .regulations-block {
   white-space: pre-wrap;
   font-size: 10.5pt;
   margin: 0 0 8pt 0;
-  border-left: 2pt solid #555;
-  padding-left: 8pt;
 }
 /* Entity / dataset table */
-.entity-block {
-  page-break-inside: avoid;
-  margin-bottom: 14pt;
+.entities-container:after {
+  content: "";
+  display: block;
+  clear: both;
 }
-.entity-name {
+.entity-block {
+  float: left;
+  width: 48.5%;
+  page-break-inside: avoid;
+  margin-bottom: 10pt;
+}
+.entity-left {
+  clear: left;
+  margin-right: 3%;
+}
+.entity-right {
+  margin-right: 0;
+}
+.entity-heading {
+  background-color: #dbe6f3;
+  border: 1pt solid #888;
+  padding: 2pt 5pt;
+  text-align: left;
+}
+.entity-code {
   font-weight: bold;
-  font-size: 12pt;
-  margin-bottom: 3pt;
+  font-size: 17pt;
+  line-height: 1;
+}
+.entity-caption {
+  font-size: 8.5pt;
+  font-weight: normal;
+  margin-left: 4pt;
 }
 .entity-description {
-  font-style: italic;
   font-size: 10.5pt;
-  margin-bottom: 4pt;
+  line-height: 1.25;
+  padding: 4pt 5pt;
+  text-align: justify;
 }
-table.attr-table, table.data-table {
+table.entity-table, table.data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 10pt;
 }
-table.attr-table th, table.data-table th {
-  background-color: #d9d9d9;
+table.entity-table th, table.data-table th {
+  background-color: #c6d8ec;
   border: 1pt solid #555;
-  padding: 3pt 5pt;
+  padding: 2pt 5pt;
   text-align: left;
   font-weight: bold;
 }
-table.attr-table td, table.data-table td {
+table.entity-table td, table.data-table td {
   border: 1pt solid #888;
-  padding: 3pt 5pt;
+  padding: 2pt 5pt;
 }
 .pk-cell {
   font-weight: bold;
@@ -133,10 +174,10 @@ ol.questions-list > li {
 <!-- ===== MSSV / HỌ TÊN ===== -->
 <div class="student-row">
   <div class="student-cell">
-    <span class="student-label">MSSV: </span><span class="dotted-line">&nbsp;</span>
+    <span class="student-label">MSSV: </span><span class="dotted-line">&#160;</span>
   </div>
   <div class="student-cell">
-    <span class="student-label">Họ tên: </span><span class="dotted-line">&nbsp;</span>
+    <span class="student-label">Họ tên: </span><span class="dotted-line">&#160;</span>
   </div>
 </div>
 
@@ -150,29 +191,36 @@ ol.questions-list > li {
 <div th:if="${entities != null and !entities.isEmpty()}">
   <h2 class="section-title">Mô tả cơ sở dữ liệu :</h2>
 
-  <div th:each="entity : ${entities}" class="entity-block">
-    <div class="entity-name" th:text="${entity.displayName != null and !#strings.isEmpty(entity.displayName)} ? entity.displayName : entity.entityName">ENTITY</div>
-
-    <div class="entity-description"
-         th:if="${entity.description != null and !#strings.isEmpty(entity.description)}"
-         th:text="${entity.description}">Mô tả entity</div>
-
-    <table class="attr-table">
+  <div class="entities-container">
+  <div th:each="entity, iter : ${entities}"
+       class="entity-block"
+       th:classappend="${iter.index % 2 == 0 ? 'entity-left' : 'entity-right'}">
+    <table class="entity-table">
       <thead>
         <tr>
+          <th colspan="2" class="entity-heading">
+            <span class="entity-code" th:text="${entity.entityName}">ENTITY</span>
+            <span class="entity-caption"
+                  th:if="${entity.displayName != null and !#strings.isEmpty(entity.displayName)}"
+                  th:text="${entity.displayName}">Tên hiển thị</span>
+          </th>
+        </tr>
+        <tr>
           <th>Thuộc tính</th>
-          <th>Kiểu dữ liệu</th>
           <th>Mô tả</th>
         </tr>
       </thead>
       <tbody>
         <tr th:each="attr : ${entity.attributes}">
-          <td th:class="${attr.primaryKey} ? 'pk-cell'" th:text="${attr.attributeName}">col</td>
-          <td th:text="${attr.dataType}">varchar</td>
-          <td th:text="${attr.description != null} ? ${attr.description} : ''"></td>
+          <td th:class="${attr.primaryKey ? 'pk-cell' : ''}" th:text="${attr.attributeName}">col</td>
+          <td th:text="${attr.description != null ? attr.description : ''}"></td>
+        </tr>
+        <tr th:if="${entity.description != null and !#strings.isEmpty(entity.description)}">
+          <td colspan="2" class="entity-description" th:text="${entity.description}">Tân từ</td>
         </tr>
       </tbody>
     </table>
+  </div>
   </div>
 </div>
 
@@ -181,7 +229,7 @@ ol.questions-list > li {
   <h2 class="section-title">Yêu cầu :</h2>
   <ol class="questions-list">
     <li th:each="q, iter : ${questions}">
-      <span class="question-points" th:text="'(' + q.formattedPoints + 'đ)'"></span>&#160;<span class="question-content" th:utext="${q.sanitizedContent}">Nội dung câu hỏi</span>
+      <span class="question-points" th:text="|(${q.formattedPoints}đ)|"></span>&#160;<span class="question-content" th:utext="${q.sanitizedContent}">Nội dung câu hỏi</span>
     </li>
   </ol>
   <p class="note-line" th:if="${questionNote != null}" th:text="${questionNote}"></p>

@@ -3,7 +3,11 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
-import graduation_project_be.application.port.repositories.*;
+import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.ExamQuestionRepository;
+import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
+import graduation_project_be.application.port.repositories.SpecEntityRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.port.services.PdfRenderService;
@@ -15,7 +19,7 @@ import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.SpecEntity;
-import graduation_project_be.infrastructure.utils.SlugUtil;
+import graduation_project_be.shared.utils.SlugUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -118,7 +122,9 @@ public class ExportExamPdfUsecase {
                 .filter(e -> e.getDescription() == null || e.getDescription().isBlank())
                 .collect(Collectors.toList());
 
-        if (needsGen.isEmpty()) return;
+        if (needsGen.isEmpty()) {
+            return;
+        }
 
         List<CompletableFuture<Void>> tasks = needsGen.stream()
                 .map(entity -> CompletableFuture

@@ -868,11 +868,10 @@ public class ExamController {
         public ResponseEntity<byte[]> exportExamPdf(
                         @PathVariable @Positive Long examId,
                         @RequestBody(required = false) @Valid ExportExamPdfRequestDto body) {
-                graduation_project_be.application.usecases.response.ExportExamPdfResponse response =
-                                exportExamPdfUsecase.execute(
-                                                new graduation_project_be.application.usecases.request.ExportExamPdfRequest(
-                                                                examId,
-                                                                body != null ? body.regulationsOverride() : null));
+                ExportExamPdfRequest request = body != null
+                                ? body.toRequest(examId)
+                                : new ExportExamPdfRequest(examId, null);
+                ExportExamPdfResponse response = exportExamPdfUsecase.execute(request);
 
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_PDF);

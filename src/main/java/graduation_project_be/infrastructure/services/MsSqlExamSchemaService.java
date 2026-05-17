@@ -849,11 +849,12 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     @Override
     public java.util.List<RoutineMetadata> extractRoutineMetadata(String schemaName) {
         String sql = "SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE AS RET_TYPE, " +
-                "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE " +
+                "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE, p.ORDINAL_POSITION " +
                 "FROM INFORMATION_SCHEMA.ROUTINES r " +
                 "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p ON r.ROUTINE_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA "
                 +
                 "WHERE r.ROUTINE_SCHEMA = ? " +
+                "AND (p.ORDINAL_POSITION IS NULL OR p.ORDINAL_POSITION > 0) " +
                 "ORDER BY r.ROUTINE_NAME, p.ORDINAL_POSITION";
 
         return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {

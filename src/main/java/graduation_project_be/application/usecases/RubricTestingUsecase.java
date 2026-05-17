@@ -72,7 +72,8 @@ public class RubricTestingUsecase {
         String sc = request.schemaContext();
         boolean hasForeignKey = sc != null && sc.toUpperCase(java.util.Locale.ROOT).contains("FOREIGN KEY");
         boolean hasReferences = sc != null && sc.toUpperCase(java.util.Locale.ROOT).contains("REFERENCES");
-        log.info("[generateGradingRubric] schemaContext length={} containsFOREIGN_KEY={} containsREFERENCES={}\n--- BEGIN schemaContext ---\n{}\n--- END schemaContext ---",
+        log.info(
+                "[generateGradingRubric] schemaContext length={} containsFOREIGN_KEY={} containsREFERENCES={}\n--- BEGIN schemaContext ---\n{}\n--- END schemaContext ---",
                 sc != null ? sc.length() : 0, hasForeignKey, hasReferences, sc);
         String priorQuestionContext = "";
         try {
@@ -1033,7 +1034,7 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
-        } 
+        }
     }
 
     public RubricTestGradeResponse testGradeTrigger(TestGradeTriggerRequest request) {
@@ -2871,7 +2872,8 @@ public class RubricTestingUsecase {
      * Returns an empty list when the rubric omits routines or any entry is
      * malformed — caller falls back to teacher schema metadata in that case.
      *
-     * <p>Why parse from rubric, not teacher schema: the rubric is the
+     * <p>
+     * Why parse from rubric, not teacher schema: the rubric is the
      * authoritative answer for "which routines the QUESTION requires", and
      * intentionally excludes helper FN/SP that the reference SQL uses
      * internally as implementation detail.
@@ -2883,7 +2885,8 @@ public class RubricTestingUsecase {
      * để khớp với metadata extract từ MSSQL, tránh log "Sai loại routine" oan.
      */
     private static String normalizeRoutineType(String raw) {
-        if (raw == null) return null;
+        if (raw == null)
+            return null;
         String upper = raw.trim().toUpperCase(Locale.ROOT);
         if ("STORED_PROCEDURE".equals(upper) || "SQL_STORED_PROCEDURE".equals(upper)) {
             return "PROCEDURE";
@@ -2916,7 +2919,8 @@ public class RubricTestingUsecase {
         List<RoutineMetadata> result = new ArrayList<>();
         for (JsonNode r : routinesNode) {
             String name = r.path("expected_name").asText("").trim();
-            if (name.isBlank()) continue;
+            if (name.isBlank())
+                continue;
             String type = r.path("expected_type").asText("").trim();
             String returnType = r.path("expected_return_type").asText("").trim();
 
@@ -3064,19 +3068,21 @@ public class RubricTestingUsecase {
                         : allPassed && routineTcGrade.allPassed();
 
                 /*
-                double testCaseWeight = totalPoints * 0.3;
-                double perTestCase = testCaseWeight / testCases.size();
-
-                for (JsonNode tc : List.<JsonNode>of()) {
-                    String caseName = tc.path("case_name").asText("Unnamed");
-                    double penaltyValue = tc.path("penalty_value").asDouble(0.5);
-
-                    details.add(Map.of(
-                            "type", "info",
-                            "message", String.format("Test case '%s': chưa thực thi (cần triển khai thêm)", caseName),
-                            "points", 0));
-                }
-                */
+                 * double testCaseWeight = totalPoints * 0.3;
+                 * double perTestCase = testCaseWeight / testCases.size();
+                 * 
+                 * for (JsonNode tc : List.<JsonNode>of()) {
+                 * String caseName = tc.path("case_name").asText("Unnamed");
+                 * double penaltyValue = tc.path("penalty_value").asDouble(0.5);
+                 * 
+                 * details.add(Map.of(
+                 * "type", "info",
+                 * "message",
+                 * String.format("Test case '%s': chưa thực thi (cần triển khai thêm)",
+                 * caseName),
+                 * "points", 0));
+                 * }
+                 */
             }
 
             double finalScore = Math.min(earnedPoints, totalPoints);
@@ -3177,7 +3183,8 @@ public class RubricTestingUsecase {
         boolean printOutput = "PRINT_OUTPUT".equals(verificationType);
 
         if (!printOutput && (validation == null || validation.isBlank())) {
-            throw new IllegalArgumentException("validation_query là bắt buộc cho verification_type=" + verificationType);
+            throw new IllegalArgumentException(
+                    "validation_query là bắt buộc cho verification_type=" + verificationType);
         }
 
         StringBuilder batch = new StringBuilder();
@@ -3329,8 +3336,10 @@ public class RubricTestingUsecase {
         // Coerce to targetSchema. This is safe because no question in this system
         // ever intentionally targets dbo objects.
         return sql
-                .replaceAll("(?i)\\[(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\]", "[" + targetSchema + "]")
-                .replaceAll("(?i)\\b(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\s*\\.", "[" + targetSchema + "].")
+                .replaceAll("(?i)\\[(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\]",
+                        "[" + targetSchema + "]")
+                .replaceAll("(?i)\\b(THIS|THIS_SCHEMA|TARGET_SCHEMA|YOUR_SCHEMA|SCHEMA_NAME)\\s*\\.",
+                        "[" + targetSchema + "].")
                 .replaceAll("(?i)\\[(TEACHER|TEACHER_SCHEMA)\\]", "[" + teacherSchema + "]")
                 .replaceAll("(?i)\\b(TEACHER|TEACHER_SCHEMA)\\s*\\.", "[" + teacherSchema + "].")
                 .replaceAll("(?i)\\[dbo\\]\\s*\\.", "[" + targetSchema + "].")
@@ -3434,25 +3443,25 @@ public class RubricTestingUsecase {
 
             // Check each trigger metadata
             for (TriggerMetadata expected : expectedTriggers) {
-                String triggerNameKey = caseSensitiveNames 
-                    ? expected.getTriggerName() 
-                    : expected.getTriggerName().toLowerCase();
-                
+                String triggerNameKey = caseSensitiveNames
+                        ? expected.getTriggerName()
+                        : expected.getTriggerName().toLowerCase();
+
                 JsonNode triggerConfig = triggerConfigMap.get(triggerNameKey);
-                
+
                 // Use rubric config if available, otherwise use default weights
-                double existencePoints = triggerConfig != null 
-                    ? triggerConfig.path("existence_points").asDouble(0.3) 
-                    : 0.3;
-                double tablePoints = triggerConfig != null 
-                    ? triggerConfig.path("table_points").asDouble(0.2) 
-                    : 0.2;
-                double eventPoints = triggerConfig != null 
-                    ? triggerConfig.path("event_points").asDouble(0.3) 
-                    : 0.3;
-                double timingPoints = triggerConfig != null 
-                    ? triggerConfig.path("timing_points").asDouble(0.2) 
-                    : 0.2;
+                double existencePoints = triggerConfig != null
+                        ? triggerConfig.path("existence_points").asDouble(0.3)
+                        : 0.3;
+                double tablePoints = triggerConfig != null
+                        ? triggerConfig.path("table_points").asDouble(0.2)
+                        : 0.2;
+                double eventPoints = triggerConfig != null
+                        ? triggerConfig.path("event_points").asDouble(0.3)
+                        : 0.3;
+                double timingPoints = triggerConfig != null
+                        ? triggerConfig.path("timing_points").asDouble(0.2)
+                        : 0.2;
 
                 TriggerMetadata actual = actualTriggers.stream()
                         .filter(t -> caseSensitiveNames
@@ -3484,8 +3493,8 @@ public class RubricTestingUsecase {
                 if (expected.getTableName().equalsIgnoreCase(actual.getTableName())) {
                     details.add(Map.of(
                             "type", "success",
-                            "message", String.format("Trigger %s: đúng bảng %s", 
-                                expected.getTriggerName(), expected.getTableName()),
+                            "message", String.format("Trigger %s: đúng bảng %s",
+                                    expected.getTriggerName(), expected.getTableName()),
                             "points", 0));
                 } else {
                     details.add(Map.of(
@@ -3500,9 +3509,9 @@ public class RubricTestingUsecase {
                 }
 
                 // Check events
-                if (expected.isInsert() == actual.isInsert() 
-                    && expected.isUpdate() == actual.isUpdate()
-                    && expected.isDelete() == actual.isDelete()) {
+                if (expected.isInsert() == actual.isInsert()
+                        && expected.isUpdate() == actual.isUpdate()
+                        && expected.isDelete() == actual.isDelete()) {
                     details.add(Map.of(
                             "type", "success",
                             "message", String.format("Trigger %s: đúng sự kiện", expected.getTriggerName()),
@@ -3545,20 +3554,20 @@ public class RubricTestingUsecase {
                     String caseId = tc.path("case_id").asText("");
                     String caseName = tc.path("case_name").asText("Unnamed");
                     String setupScript = tc.path("setup_script").asText("");
-                    
+
                     // Support both old and new structure
                     String invocationQuery = tc.path("invocation_query").asText("");
                     if (invocationQuery.isBlank()) {
                         invocationQuery = tc.path("trigger_sql").asText(""); // fallback to old structure
                     }
-                    
+
                     String validationQuery = tc.path("validation_query").asText("");
                     if (validationQuery.isBlank()) {
                         validationQuery = tc.path("expected_result").asText(""); // fallback to old structure
                     }
-                    
+
                     String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
-                    
+
                     // Support both score_weight (new) and penalty_value (old)
                     double scoreWeight = tc.path("score_weight").asDouble(-1);
                     if (scoreWeight < 0) {
@@ -3568,7 +3577,8 @@ public class RubricTestingUsecase {
                     if (invocationQuery.isBlank()) {
                         details.add(Map.of(
                                 "type", "info",
-                                "message", String.format("Test case '%s': bỏ qua (thiếu invocation_query/trigger_sql)", caseName),
+                                "message",
+                                String.format("Test case '%s': bỏ qua (thiếu invocation_query/trigger_sql)", caseName),
                                 "points", 0));
                         continue;
                     }
@@ -3590,32 +3600,42 @@ public class RubricTestingUsecase {
 
                         // For EXECUTION_STATUS verification, we only check if invocation succeeds/fails
                         // For SIDE_EFFECT verification, we also need to check validation_query results
-                        boolean checkSideEffect = !validationQuery.isBlank() && 
-                                                 "SIDE_EFFECT".equalsIgnoreCase(verificationType);
+                        boolean checkSideEffect = !validationQuery.isBlank() &&
+                                "SIDE_EFFECT".equalsIgnoreCase(verificationType);
 
-                        // Build batch SQL that wraps setup + invocation + validation in a single transaction
+                        // Build batch SQL that wraps setup + invocation + validation in a single
+                        // transaction
                         // This ensures FK constraint state from setup persists during invocation
-                        String normalizedSetupTeacher = setupScript.isBlank() ? "" : normalizeDboReferences(setupScript, teacherSchema);
+                        String normalizedSetupTeacher = setupScript.isBlank() ? ""
+                                : normalizeDboReferences(setupScript, teacherSchema);
                         String normalizedInvocationTeacher = normalizeDboReferences(invocationQuery, teacherSchema);
-                        String normalizedValidationTeacher = checkSideEffect ? normalizeDboReferences(validationQuery, teacherSchema) : "";
-                        
-                        String normalizedSetupStudent = setupScript.isBlank() ? "" : normalizeDboReferences(setupScript, studentSchema);
-                        String normalizedInvocationStudent = normalizeDboReferences(invocationQuery, studentSchema);
-                        String normalizedValidationStudent = checkSideEffect ? normalizeDboReferences(validationQuery, studentSchema) : "";
+                        String normalizedValidationTeacher = checkSideEffect
+                                ? normalizeDboReferences(validationQuery, teacherSchema)
+                                : "";
 
-                        // Execute setup + invocation + validation in single transaction on teacher schema
+                        String normalizedSetupStudent = setupScript.isBlank() ? ""
+                                : normalizeDboReferences(setupScript, studentSchema);
+                        String normalizedInvocationStudent = normalizeDboReferences(invocationQuery, studentSchema);
+                        String normalizedValidationStudent = checkSideEffect
+                                ? normalizeDboReferences(validationQuery, studentSchema)
+                                : "";
+
+                        // Execute setup + invocation + validation in single transaction on teacher
+                        // schema
                         StringBuilder teacherBatch = new StringBuilder();
                         teacherBatch.append("BEGIN TRY\n");
                         teacherBatch.append("  BEGIN TRANSACTION;\n");
-                        
+
                         // Auto-disable FK constraints for ALL tables to avoid false negatives
                         // Trigger logic should be tested independently of FK constraints
                         // Use dynamic SQL to disable FK for all tables in the schema
                         teacherBatch.append("  DECLARE @disableFkSql NVARCHAR(MAX) = '';\n");
-                        teacherBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [").append(teacherSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
-                        teacherBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(teacherSchema).append("');\n");
+                        teacherBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [")
+                                .append(teacherSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
+                        teacherBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(teacherSchema)
+                                .append("');\n");
                         teacherBatch.append("  IF @disableFkSql <> '' EXEC sp_executesql @disableFkSql;\n");
-                        
+
                         if (!normalizedSetupTeacher.isBlank()) {
                             teacherBatch.append("  ").append(normalizedSetupTeacher).append(";\n");
                         }
@@ -3635,24 +3655,28 @@ public class RubricTestingUsecase {
                         String teacherInvocationError = null;
                         SqlExecutionResult teacherResult = null;
                         try {
-                            teacherResult = examSchemaService.executeSqlBatchAsSchemaUser(teacherSchema, teacherBatch.toString());
+                            teacherResult = examSchemaService.executeSqlBatchAsSchemaUser(teacherSchema,
+                                    teacherBatch.toString());
                         } catch (Exception e) {
                             teacherInvocationFailed = true;
                             teacherInvocationError = e.getMessage();
                         }
 
-                        // Execute setup + invocation + validation in single transaction on student schema
+                        // Execute setup + invocation + validation in single transaction on student
+                        // schema
                         StringBuilder studentBatch = new StringBuilder();
                         studentBatch.append("BEGIN TRY\n");
                         studentBatch.append("  BEGIN TRANSACTION;\n");
-                        
+
                         // Auto-disable FK constraints for ALL tables to avoid false negatives
                         // Use dynamic SQL to disable FK for all tables in the schema
                         studentBatch.append("  DECLARE @disableFkSql NVARCHAR(MAX) = '';\n");
-                        studentBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [").append(studentSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
-                        studentBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(studentSchema).append("');\n");
+                        studentBatch.append("  SELECT @disableFkSql = @disableFkSql + 'ALTER TABLE [")
+                                .append(studentSchema).append("].[' + t.name + '] NOCHECK CONSTRAINT ALL;'\n");
+                        studentBatch.append("  FROM sys.tables t WHERE t.schema_id = SCHEMA_ID('").append(studentSchema)
+                                .append("');\n");
                         studentBatch.append("  IF @disableFkSql <> '' EXEC sp_executesql @disableFkSql;\n");
-                        
+
                         if (!normalizedSetupStudent.isBlank()) {
                             studentBatch.append("  ").append(normalizedSetupStudent).append(";\n");
                         }
@@ -3672,31 +3696,40 @@ public class RubricTestingUsecase {
                         String studentInvocationError = null;
                         SqlExecutionResult studentResult = null;
                         try {
-                            studentResult = examSchemaService.executeSqlBatchAsSchemaUser(studentSchema, studentBatch.toString());
+                            studentResult = examSchemaService.executeSqlBatchAsSchemaUser(studentSchema,
+                                    studentBatch.toString());
                         } catch (Exception e) {
                             studentInvocationFailed = true;
                             studentInvocationError = e.getMessage();
                         }
 
                         // Check if both failed with "transaction ended in trigger" (ROLLBACK trigger)
-                        boolean isRollbackTrigger = teacherInvocationError != null 
-                            && teacherInvocationError.toLowerCase().contains("transaction ended in the trigger");
-                        boolean studentAlsoRollback = studentInvocationError != null 
-                            && studentInvocationError.toLowerCase().contains("transaction ended in the trigger");
+                        boolean isRollbackTrigger = teacherInvocationError != null
+                                && teacherInvocationError.toLowerCase().contains("transaction ended in the trigger");
+                        boolean studentAlsoRollback = studentInvocationError != null
+                                && studentInvocationError.toLowerCase().contains("transaction ended in the trigger");
 
-                        // If validation_query is empty, we only check execution status (for validation triggers)
+                        // If validation_query is empty, we only check execution status (for validation
+                        // triggers)
                         if (validationQuery.isBlank()) {
-                            // For validation triggers (ROLLBACK), check if both succeeded or both failed the same way
+                            // For validation triggers (ROLLBACK), check if both succeeded or both failed
+                            // the same way
                             if (teacherInvocationFailed == studentInvocationFailed) {
                                 if (isRollbackTrigger && studentAlsoRollback) {
                                     details.add(Map.of(
                                             "type", "success",
-                                            "message", String.format("Test case '%s': PASS (trigger correctly rejected transaction)", caseName),
+                                            "message",
+                                            String.format(
+                                                    "Test case '%s': PASS (trigger correctly rejected transaction)",
+                                                    caseName),
                                             "points", 0));
                                 } else if (!teacherInvocationFailed && !studentInvocationFailed) {
                                     details.add(Map.of(
                                             "type", "success",
-                                            "message", String.format("Test case '%s': PASS (trigger correctly accepted transaction)", caseName),
+                                            "message",
+                                            String.format(
+                                                    "Test case '%s': PASS (trigger correctly accepted transaction)",
+                                                    caseName),
                                             "points", 0));
                                 } else {
                                     details.add(Map.of(
@@ -3707,7 +3740,8 @@ public class RubricTestingUsecase {
                             } else {
                                 details.add(Map.of(
                                         "type", "error",
-                                        "message", String.format("Test case '%s': FAIL (execution status mismatch)", caseName),
+                                        "message",
+                                        String.format("Test case '%s': FAIL (execution status mismatch)", caseName),
                                         "points", -scoreWeight));
                                 if (!positiveOnlyScoring) {
                                     earnedPoints -= scoreWeight;
@@ -3720,16 +3754,19 @@ public class RubricTestingUsecase {
                         // For SIDE_EFFECT verification, compare validation query results
                         // Results were already captured in the batch execution above
                         if (checkSideEffect) {
-                            // Extract validation results from batch execution (after VALIDATION_MARKER_COLUMN)
+                            // Extract validation results from batch execution (after
+                            // VALIDATION_MARKER_COLUMN)
                             SqlExecutionResult teacherFiltered = dropRowsBeforeValidationMarker(teacherResult);
                             SqlExecutionResult studentFiltered = dropRowsBeforeValidationMarker(studentResult);
-                            
-                            List<Map<String, Object>> expectedRows = teacherFiltered != null && teacherFiltered.getResultSet() != null 
-                                ? teacherFiltered.getResultSet() 
-                                : new ArrayList<>();
-                            List<Map<String, Object>> actualRows = studentFiltered != null && studentFiltered.getResultSet() != null 
-                                ? studentFiltered.getResultSet() 
-                                : new ArrayList<>();
+
+                            List<Map<String, Object>> expectedRows = teacherFiltered != null
+                                    && teacherFiltered.getResultSet() != null
+                                            ? teacherFiltered.getResultSet()
+                                            : new ArrayList<>();
+                            List<Map<String, Object>> actualRows = studentFiltered != null
+                                    && studentFiltered.getResultSet() != null
+                                            ? studentFiltered.getResultSet()
+                                            : new ArrayList<>();
 
                             // Compare results
                             boolean testPassed = compareQueryResults(actualRows, expectedRows);
@@ -3781,7 +3818,7 @@ public class RubricTestingUsecase {
         if (actual == null || expected == null) {
             return actual == expected;
         }
-        
+
         if (actual.size() != expected.size()) {
             return false;
         }

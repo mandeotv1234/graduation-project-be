@@ -2640,11 +2640,11 @@ public class GeminiServiceImpl implements GeminiService {
                 questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery,
                 routineType,
+                totalPoints,
+                totalPoints,
                 schemaContext != null && !schemaContext.isBlank()
                         ? truncateForLog(schemaContext, 6000)
-                        : "No schema context was provided.",
-                totalPoints,
-                totalPoints);
+                        : "No schema context was provided.");
     }
 
     private String buildStoredProcedureRubricPrompt(

@@ -1,30 +1,30 @@
-Bạn là chuyên gia SQL Server, hãy tạo rubric chấm điểm cho câu hỏi TRIGGER.
+You are a SQL Server expert. Create a grading rubric for TRIGGER questions.
 
-=== CÂU HỎI ===
-Nội dung: %s
-Đáp án (correctQuery): %s
-Tổng điểm câu hỏi: %.2f
+=== QUESTION ===
+Content: %s
+Answer (correctQuery): %s
+Total question score: %.2f
 
-=== NGUYÊN TẮC QUAN TRỌNG (BẮT BUỘC ĐỌC) ===
-KHÔNG đoán giá trị `expected_result`. Engine sẽ tự chạy đáp án mẫu trong sandbox
-và lấy kết quả thực tế làm `expected_value`. Bạn CHỈ sinh "kịch bản":
-setup_script + invocation_query (DML kích hoạt trigger) + validation_query.
+=== CRITICAL PRINCIPLES (MANDATORY READ) ===
+Do NOT guess the value of `expected_result`. The engine will automatically run the reference answer in a sandbox
+and use the actual result as `expected_value`. You ONLY generate the "scenario":
+setup_script + invocation_query (DML to trigger the trigger) + validation_query.
 
-**QUAN TRỌNG - ĐỌC KỸ DDL SCHEMA CONTEXT**:
-- Bạn sẽ nhận được DDL schema context ở cuối prompt (nếu có)
-- BẮT BUỘC đọc kỹ DDL để biết CHÍNH XÁC:
-  + Tên bảng (ví dụ: ChuyenXe, TuyenXe, Xe)
-  + Tên cột (ví dụ: TuyenXe không phải MaTuyen, BatDau không phải NgayBatDau)
-  + Kiểu dữ liệu (VARCHAR, INT, DATETIME, NVARCHAR, ...)
-  + **ĐỘ DÀI CỘT**: VARCHAR(10) chỉ chứa tối đa 10 ký tự, NVARCHAR(50) chỉ chứa 50 ký tự
-  + Số lượng cột (để INSERT có đủ VALUES)
-  + Primary key và Foreign key
-- KHÔNG đoán tên cột, KHÔNG dùng tên cột không có trong DDL
-- **KHÔNG tạo giá trị dài hơn độ dài cột được định nghĩa**
-- Nếu không có DDL context, hãy dựa vào correctQuery để suy luận cấu trúc bảng
+**CRITICAL - READ DDL SCHEMA CONTEXT CAREFULLY**:
+- You will receive DDL schema context at the end of the prompt (if available)
+- MANDATORY to read DDL carefully to know EXACTLY:
+  + Table names (example: ChuyenXe, TuyenXe, Xe)
+  + Column names (example: TuyenXe not MaTuyen, BatDau not NgayBatDau)
+  + Data types (VARCHAR, INT, DATETIME, NVARCHAR, ...)
+  + **COLUMN LENGTH**: VARCHAR(10) can only hold maximum 10 characters, NVARCHAR(50) can only hold 50 characters
+  + Number of columns (so INSERT has enough VALUES)
+  + Primary key and Foreign key
+- Do NOT guess column names, do NOT use columns not in DDL
+- **Do NOT create values longer than the defined column length**
+- If no DDL context is available, infer table structure from correctQuery
 
-=== YÊU CẦU RUBRIC ===
-Tạo JSON rubric với cấu trúc sau:
+=== RUBRIC REQUIREMENTS ===
+Create JSON rubric with the following structure:
 
 {
   "grading_settings": {
@@ -34,8 +34,8 @@ Tạo JSON rubric với cấu trúc sau:
   },
   "triggers": [
     {
-      "expected_name": "<tên trigger từ đáp án>",
-      "expected_table_name": "<bảng áp dụng trigger>",
+      "expected_name": "<trigger name from answer>",
+      "expected_table_name": "<table the trigger applies to>",
       "is_insert": <true/false>,
       "is_update": <true/false>,
       "is_delete": <true/false>,
@@ -45,188 +45,188 @@ Tạo JSON rubric với cấu trúc sau:
   "test_cases": [
     {
       "case_id": "TC_01",
-      "case_name": "<mô tả ngắn tiếng Việt>",
+      "case_name": "<brief description in English>",
       "verification_type": "SIDE_EFFECT",
       "match_type": "EXACT",
       "score_weight": 0.5,
-      "setup_script": "-- BẮT BUỘC dùng [{SCHEMA}] khi tham chiếu bảng. Engine sẽ thay placeholder.\nINSERT INTO [{SCHEMA}].ParentTable VALUES (...)",
+      "setup_script": "-- MANDATORY use [{SCHEMA}] when referencing tables. Engine will replace placeholder.\nINSERT INTO [{SCHEMA}].ParentTable VALUES (...)",
       "invocation_query": "INSERT INTO [{SCHEMA}].TableName VALUES (...)",
       "validation_query": "SELECT COUNT(*) FROM [{SCHEMA}].LogTable WHERE ..."
     }
   ]
 }
 
-=== QUY TẮC TẠO TEST CASE ===
-1. Tạo 3-5 test case khác nhau cover các kịch bản:
-   - Single-row INSERT/UPDATE/DELETE (trigger fire bình thường)
-   - Multi-row (lỗi phổ biến: học sinh giả định inserted/deleted có 1 row)
-   - Không có row nào thoả điều kiện (trigger không nên làm gì)
-   - Nếu trigger có WHERE/IF: cả case thoả và không thoả
-2. Mỗi test case phải có setup_script đầy đủ:
-   - **QUAN TRỌNG - DISABLE FK CONSTRAINTS**: Nếu test case cần INSERT dữ liệu không hợp lệ (để test trigger validation), BẮT BUỘC disable FK constraints:
+=== TEST CASE CREATION RULES ===
+1. Create 3-5 different test cases covering scenarios:
+   - Single-row INSERT/UPDATE/DELETE (trigger fires normally)
+   - Multi-row (common mistake: students assume inserted/deleted has only 1 row)
+   - No rows satisfy the condition (trigger should do nothing)
+   - If trigger has WHERE/IF: both satisfying and non-satisfying cases
+2. Each test case must have a complete setup_script:
+   - **CRITICAL - DISABLE FK CONSTRAINTS**: If test case needs to INSERT invalid data (to test trigger validation), MANDATORY disable FK constraints:
      ```sql
-     -- Disable FK constraints để test trigger logic
+     -- Disable FK constraints to test trigger logic
      ALTER TABLE [{SCHEMA}].ChuyenXe NOCHECK CONSTRAINT ALL;
      
-     -- ... DELETE và INSERT test data ...
-     -- LƯU Ý: CHỈ INSERT dữ liệu CẦN THIẾT, KHÔNG INSERT dữ liệu mà invocation_query sẽ test
-     -- Ví dụ: Nếu test MaTuyen không tồn tại, CHỈ INSERT Xe, KHÔNG INSERT TuyenXe
+     -- ... DELETE and INSERT test data ...
+     -- NOTE: ONLY INSERT NECESSARY data, do NOT INSERT data that invocation_query will test
+     -- Example: If testing non-existent MaTuyen, ONLY INSERT Xe, do NOT INSERT TuyenXe
      
-     -- QUAN TRỌNG: KHÔNG re-enable FK constraints ở đây!
-     -- FK sẽ được re-enable tự động khi transaction rollback sau test case
-     -- Nếu re-enable, FK constraint sẽ reject thay vì trigger, làm test case không chính xác
+     -- CRITICAL: do NOT re-enable FK constraints here!
+     -- FK will be re-enabled automatically when transaction rolls back after test case
+     -- If re-enable, FK constraint will reject instead of trigger, making test case inaccurate
      ```
-   - **KHI NÀO CẦN DISABLE FK**:
-     * Test case kiểm tra trigger reject khi foreign key không tồn tại (MaTuyen, MaXe không tồn tại)
-     * Test case kiểm tra trigger validation logic (không phải FK constraint)
-     * **LƯU Ý**: Với INSTEAD OF trigger, nếu disable FK thì KHÔNG được re-enable trong setup_script
-   - **KHI NÀO KHÔNG CẦN DISABLE FK**:
-     * Test case kiểm tra trigger accept với dữ liệu hợp lệ
-     * Test case kiểm tra trigger audit log, timestamp, auto-increment
-     * Test case kiểm tra trigger business logic (thời gian 2 giờ, số lượng, giá trị, ...)
-   - **VERIFICATION_TYPE cho test case có disable FK**:
-     * Dùng "SIDE_EFFECT" thay vì "EXECUTION_STATUS"
-     * Vì EXECUTION_STATUS có thể bị FK constraint ảnh hưởng nếu re-enable sớm
-   - BẮT BUỘC: Bắt đầu với DELETE để xóa data cũ tránh duplicate primary key:
+   - **WHEN TO DISABLE FK**:
+     * Test case checks if trigger rejects when foreign key doesn't exist (MaTuyen, MaXe don't exist)
+     * Test case checks trigger validation logic (not FK constraint)
+     * **NOTE**: With INSTEAD OF trigger, if FK is disabled, do NOT re-enable in setup_script
+   - **WHEN NOT TO DISABLE FK**:
+     * Test case checks if trigger accepts valid data
+     * Test case checks trigger audit log, timestamp, auto-increment
+     * Test case checks trigger business logic (2-hour time window, quantity, value, ...)
+   - **VERIFICATION_TYPE for test case with disabled FK**:
+     * Use "SIDE_EFFECT" instead of "EXECUTION_STATUS"
+     * Because EXECUTION_STATUS may be affected by FK constraint if re-enabled early
+   - MANDATORY: Start with DELETE to clear old data and avoid duplicate primary key:
      DELETE FROM [{SCHEMA}].ChuyenXe;
      DELETE FROM [{SCHEMA}].TuyenXe;
      DELETE FROM [{SCHEMA}].Xe;
-   - Hoặc dùng primary key KHÁC NHAU cho mỗi test case (TC_01 dùng 'T001', TC_02 dùng 'T002', ...)
-   - DROP TABLE IF EXISTS cho các bảng phụ trợ (audit log, temp tables)
-   - CREATE TABLE với cấu trúc đầy đủ (nếu chưa có trong DDL spec)
-   - INSERT dữ liệu test với primary key KHÔNG TRÙNG giữa các test cases
-   - **QUAN TRỌNG**: Kiểm tra DDL schema context để biết CHÍNH XÁC tên cột và số lượng cột
-   - **QUAN TRỌNG**: INSERT phải có đủ số giá trị khớp với số cột được chỉ định
-   - **QUAN TRỌNG**: Giá trị VARCHAR/NVARCHAR phải ngắn hơn độ dài cột (ví dụ: VARCHAR(10) → dùng 'CX001' không dùng 'CX001_EXISTING')
-   - Engine sẽ bao test case trong transaction và rollback, nên không cần dọn cuối.
-3. invocation_query: BẮT BUỘC. Lệnh INSERT/UPDATE/DELETE để fire trigger. Đây là
-   "trigger_sql" của thiết kế cũ, đổi tên cho thống nhất với SP/Function.
-   - **QUAN TRỌNG**: Phải kiểm tra DDL để biết chính xác tên cột và kiểu dữ liệu
-   - **QUAN TRỌNG**: Số lượng giá trị trong VALUES phải khớp với số cột trong INSERT INTO
-4. validation_query: BẮT BUỘC. SQL SELECT đọc kết quả side effect (audit table,
-   cột status đã thay đổi, COUNT, ...). Engine sẽ chạy với trigger mẫu để derive
-   expected_value, sau đó chạy với trigger của học sinh để lấy actual và compare.
-   - **QUAN TRỌNG**: Phải dùng đúng tên cột từ DDL schema context
-5. KHÔNG sinh "expected_result"/"expected_value" — engine derive.
-6. score_weight là số 0..1. Tổng các weight được engine chuẩn hoá về 1.0.
-7. verification_type cho Trigger gần như luôn là SIDE_EFFECT (kiểm tra dữ liệu
-   sau khi DML). Hiếm hoi mới là PRINT_OUTPUT (trigger có PRINT).
-8. **LƯU Ý VỀ ROLLBACK TRIGGER**: Nếu trigger có ROLLBACK TRANSACTION (validation trigger),
-   invocation_query sẽ FAIL và không có side effect. Trong trường hợp này:
-   - Dùng verification_type: "EXECUTION_STATUS" thay vì "SIDE_EFFECT"
-   - validation_query để trống hoặc kiểm tra dữ liệu KHÔNG thay đổi
-   - Test case kiểm tra trigger có REJECT đúng transaction không hợp lệ
+   - Or use DIFFERENT primary keys for each test case (TC_01 use 'T001', TC_02 use 'T002', ...)
+   - DROP TABLE IF EXISTS for helper tables (audit log, temp tables)
+   - CREATE TABLE with complete structure (if not already in DDL spec)
+   - INSERT test data with NON-DUPLICATE primary keys between test cases
+   - **CRITICAL**: Check DDL schema context to know EXACTLY table names and column count
+   - **CRITICAL**: INSERT must have enough values matching the number of columns specified
+   - **CRITICAL**: VARCHAR/NVARCHAR values must be shorter than column length (example: VARCHAR(10) → use 'CX001' not 'CX001_EXISTING')
+   - Engine will wrap test case in transaction and rollback, so no cleanup needed.
+3. invocation_query: MANDATORY. INSERT/UPDATE/DELETE command to fire trigger. This is
+   the "trigger_sql" from old design, renamed for consistency with SP/Function.
+   - **CRITICAL**: Must check DDL to know exact column names and data types
+   - **CRITICAL**: Number of values in VALUES must match number of columns in INSERT INTO
+4. validation_query: MANDATORY. SQL SELECT to read side effect result (audit table,
+   changed status column, COUNT, ...). Engine will run with reference trigger to derive
+   expected_value, then run with student's trigger to get actual and compare.
+   - **CRITICAL**: Must use correct column names from DDL schema context
+5. Do NOT generate "expected_result"/"expected_value" — engine derives.
+6. score_weight is a number 0..1. Sum of all weights is normalized to 1.0 by engine.
+7. verification_type for Trigger is almost always SIDE_EFFECT (check data
+   after DML). Rarely PRINT_OUTPUT (if trigger has PRINT).
+8. **NOTE ON ROLLBACK TRIGGER**: If trigger has ROLLBACK TRANSACTION (validation trigger),
+   invocation_query will FAIL and have no side effect. In this case:
+   - Use verification_type: "EXECUTION_STATUS" instead of "SIDE_EFFECT"
+   - Leave validation_query empty or check data does NOT change
+   - Test case checks if trigger properly REJECTS invalid transaction
 
-=== VÍ DỤ SETUP SCRIPT ĐÚNG ===
+=== CORRECT SETUP SCRIPT EXAMPLES ===
 
-**Ví dụ 1: Trigger validation với ROLLBACK (kiểm tra ràng buộc)**
-Giả sử DDL có:
+**Example 1: Validation trigger with ROLLBACK (constraint checking)**
+Suppose DDL has:
 ```sql
 CREATE TABLE TuyenXe (MaTuyen VARCHAR(10) PRIMARY KEY, BenDi NVARCHAR(50), BenDen NVARCHAR(50), UocLuongThoiGian INT);
 CREATE TABLE Xe (MaXe VARCHAR(10) PRIMARY KEY, BienSo VARCHAR(20), SoCho INT, GhiChu NVARCHAR(100));
 CREATE TABLE ChuyenXe (MaChuyen VARCHAR(10) PRIMARY KEY, TuyenXe VARCHAR(10), MaXe VARCHAR(10), BatDau DATETIME, KetThuc DATETIME);
 ```
 
-Test Case 1 - Kiểm tra trigger REJECT khi vi phạm (BatDau < KetThuc chuyen truoc + 2h):
+Test Case 1 - Check if trigger REJECTS when violated (BatDau < previous trip's KetThuc + 2h):
 ```json
 {
   "case_id": "TC_01",
-  "case_name": "Trigger reject khi thời gian không hợp lệ",
+  "case_name": "Trigger rejects invalid time",
   "verification_type": "EXECUTION_STATUS",
   "match_type": "EXACT",
   "score_weight": 0.3,
-  "setup_script": "-- Disable FK constraints de test trigger logic\nALTER TABLE [{SCHEMA}].ChuyenXe NOCHECK CONSTRAINT ALL;\n\n-- Xoa data cu\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- Insert master data\nINSERT INTO [{SCHEMA}].TuyenXe (MaTuyen, BenDi, BenDen, UocLuongThoiGian) VALUES ('T001', N'Ha Noi', N'Hai Phong', 120);\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X001', '29A-12345', 45, NULL);\n\n-- Insert chuyen xe cu (ket thuc luc 10:00)\nINSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX001', 'T001', 'X001', '2024-01-01 08:00', '2024-01-01 10:00');\n\n-- Re-enable FK constraints\nALTER TABLE [{SCHEMA}].ChuyenXe WITH CHECK CHECK CONSTRAINT ALL;",
+  "setup_script": "-- Disable FK constraints to test trigger logic\nALTER TABLE [{SCHEMA}].ChuyenXe NOCHECK CONSTRAINT ALL;\n\n-- Clear old data\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- Insert master data\nINSERT INTO [{SCHEMA}].TuyenXe (MaTuyen, BenDi, BenDen, UocLuongThoiGian) VALUES ('T001', N'Ha Noi', N'Hai Phong', 120);\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X001', '29A-12345', 45, NULL);\n\n-- Insert previous trip (ends at 10:00)\nINSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX001', 'T001', 'X001', '2024-01-01 08:00', '2024-01-01 10:00');\n\n-- Re-enable FK constraints\nALTER TABLE [{SCHEMA}].ChuyenXe WITH CHECK CHECK CONSTRAINT ALL;",
   "invocation_query": "INSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX002', 'T001', 'X001', '2024-01-01 11:00', '2024-01-01 13:00');",
   "validation_query": "SELECT COUNT(*) AS total FROM [{SCHEMA}].ChuyenXe WHERE MaChuyen = 'CX002';"
 }
 ```
-**Giải thích**: Trigger sẽ ROLLBACK nếu BatDau < 12:00 (10:00 + 2h). invocation_query sẽ FAIL, validation_query sẽ trả về 0 (không insert được).
+**Explanation**: Trigger will ROLLBACK if BatDau < 12:00 (10:00 + 2h). invocation_query will FAIL, validation_query will return 0 (insert failed).
 
-Test Case 1b - Kiểm tra trigger REJECT khi MaTuyen không tồn tại (test trigger validation, không phải FK):
+Test Case 1b - Check if trigger REJECTS when MaTuyen doesn't exist (test trigger validation, not FK):
 ```json
 {
   "case_id": "TC_01b",
-  "case_name": "Trigger reject khi mã tuyến không tồn tại",
+  "case_name": "Trigger rejects when route code doesn't exist",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT",
   "score_weight": 0.2,
-  "setup_script": "-- Disable FK constraints de test trigger logic (khong phai FK constraint)\nALTER TABLE [{SCHEMA}].ChuyenXe NOCHECK CONSTRAINT ALL;\n\n-- Xoa data cu\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- Chi insert Xe, KHONG insert TuyenXe\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X001', '29A-12345', 45, NULL);\n\n-- QUAN TRONG: KHONG re-enable FK o day!\n-- FK se duoc re-enable tu dong khi transaction rollback",
+  "setup_script": "-- Disable FK constraints to test trigger logic (not FK constraint)\nALTER TABLE [{SCHEMA}].ChuyenXe NOCHECK CONSTRAINT ALL;\n\n-- Clear old data\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- ONLY insert Xe, do NOT insert TuyenXe\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X001', '29A-12345', 45, NULL);\n\n-- CRITICAL: do NOT re-enable FK here!\n-- FK will be re-enabled automatically when transaction rolls back",
   "invocation_query": "INSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX001', 'INVALID_TUYEN', 'X001', '2024-01-01 08:00', '2024-01-01 10:00');",
   "validation_query": "SELECT COUNT(*) AS total FROM [{SCHEMA}].ChuyenXe WHERE MaChuyen = 'CX001';"
 }
 ```
-**Giải thích**: 
-- Disable FK để trigger có cơ hội kiểm tra MaTuyen không tồn tại
-- KHÔNG re-enable FK trong setup_script (để tránh FK reject thay vì trigger reject)
-- Dùng SIDE_EFFECT để kiểm tra dữ liệu sau khi trigger chạy
-- Expected (đáp án chuẩn có logic kiểm tra): COUNT = 0 (trigger reject)
-- Actual (đáp án sai không có logic): COUNT = 1 (trigger accept, INSERT thành công)
-- → Test case sẽ FAIL nếu đáp án thiếu logic kiểm tra
+**Explanation**: 
+- Disable FK so trigger gets chance to check if MaTuyen exists
+- do NOT re-enable FK in setup_script (to prevent FK reject instead of trigger reject)
+- Use SIDE_EFFECT to check data after trigger runs
+- Expected (correct answer with validation logic): COUNT = 0 (trigger rejects)
+- Actual (incorrect answer without logic): COUNT = 1 (trigger accepts, INSERT succeeds)
+- → Test case will FAIL if answer lacks validation logic
 
-Test Case 2 - Kiểm tra trigger ACCEPT khi hợp lệ:
+Test Case 2 - Check if trigger ACCEPTS when valid:
 ```json
 {
   "case_id": "TC_02", 
-  "case_name": "Trigger accept khi thời gian hợp lệ",
+  "case_name": "Trigger accepts valid time",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT",
   "score_weight": 0.3,
-  "setup_script": "-- Xoa data cu\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- Insert master data (PRIMARY KEY KHAC TC_01)\nINSERT INTO [{SCHEMA}].TuyenXe (MaTuyen, BenDi, BenDen, UocLuongThoiGian) VALUES ('T002', N'Ha Noi', N'Nam Dinh', 90);\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X002', '30B-67890', 40, NULL);\n\n-- Insert chuyen xe cu (ket thuc luc 10:00)\nINSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX003', 'T002', 'X002', '2024-01-01 08:00', '2024-01-01 10:00');",
+  "setup_script": "-- Clear old data\nDELETE FROM [{SCHEMA}].ChuyenXe;\nDELETE FROM [{SCHEMA}].TuyenXe;\nDELETE FROM [{SCHEMA}].Xe;\n\n-- Insert master data (DIFFERENT PRIMARY KEY than TC_01)\nINSERT INTO [{SCHEMA}].TuyenXe (MaTuyen, BenDi, BenDen, UocLuongThoiGian) VALUES ('T002', N'Ha Noi', N'Nam Dinh', 90);\nINSERT INTO [{SCHEMA}].Xe (MaXe, BienSo, SoCho, GhiChu) VALUES ('X002', '30B-67890', 40, NULL);\n\n-- Insert previous trip (ends at 10:00)\nINSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX003', 'T002', 'X002', '2024-01-01 08:00', '2024-01-01 10:00');",
   "invocation_query": "INSERT INTO [{SCHEMA}].ChuyenXe (MaChuyen, TuyenXe, MaXe, BatDau, KetThuc) VALUES ('CX004', 'T002', 'X002', '2024-01-01 12:30', '2024-01-01 14:00');",
   "validation_query": "SELECT COUNT(*) AS total FROM [{SCHEMA}].ChuyenXe WHERE MaChuyen = 'CX004';"
 }
 ```
-**Giải thích**: BatDau = 12:30 > 12:00 (10:00 + 2h), trigger ACCEPT, validation_query trả về 1.
+**Explanation**: BatDau = 12:30 > 12:00 (10:00 + 2h), trigger ACCEPTS, validation_query returns 1.
 
-**Ví dụ 2: Trigger audit log (ghi nhận thay đổi)**
-Giả sử trigger tạo audit log khi INSERT vào Orders:
+**Example 2: Audit log trigger (record changes)**
+Suppose trigger creates audit log when INSERT into Orders:
 
 Test Case 1:
 ```json
 {
   "case_id": "TC_01",
-  "case_name": "Trigger ghi audit log khi insert đơn hàng",
+  "case_name": "Trigger records audit log when inserting order",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT", 
   "score_weight": 0.5,
-  "setup_script": "-- Xoa data cu\nDELETE FROM [{SCHEMA}].OrderAuditLog;\nDELETE FROM [{SCHEMA}].Orders;\n\n-- Tao bang audit neu chua co\nIF NOT EXISTS (SELECT * FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE s.name = '{SCHEMA}' AND t.name = 'OrderAuditLog')\nBEGIN\n  CREATE TABLE [{SCHEMA}].OrderAuditLog (\n    LogId INT IDENTITY(1,1) PRIMARY KEY,\n    OrderId INT,\n    Action NVARCHAR(50),\n    LogTime DATETIME DEFAULT GETDATE()\n  );\nEND",
+  "setup_script": "-- Clear old data\nDELETE FROM [{SCHEMA}].OrderAuditLog;\nDELETE FROM [{SCHEMA}].Orders;\n\n-- Create audit table if not exists\nIF NOT EXISTS (SELECT * FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id WHERE s.name = '{SCHEMA}' AND t.name = 'OrderAuditLog')\nBEGIN\n  CREATE TABLE [{SCHEMA}].OrderAuditLog (\n    LogId INT IDENTITY(1,1) PRIMARY KEY,\n    OrderId INT,\n    Action NVARCHAR(50),\n    LogTime DATETIME DEFAULT GETDATE()\n  );\nEND",
   "invocation_query": "INSERT INTO [{SCHEMA}].Orders (OrderId, CustomerName, Amount) VALUES (1001, N'Nguyen Van A', 500000);",
   "validation_query": "SELECT COUNT(*) AS total FROM [{SCHEMA}].OrderAuditLog WHERE OrderId = 1001 AND Action = 'INSERT';"
 }
 ```
 
-**LƯU Ý QUAN TRỌNG**:
-- Phải đọc kỹ DDL schema context để biết CHÍNH XÁC tên cột (ví dụ: `TuyenXe` không phải `MaTuyen`)
-- Số lượng cột trong INSERT INTO phải khớp với số giá trị trong VALUES
-- **Độ dài giá trị phải phù hợp với kiểu dữ liệu**: VARCHAR(10) chỉ chứa tối đa 10 ký tự
-- Nếu trigger có ROLLBACK, dùng verification_type: "EXECUTION_STATUS"
-- Nếu trigger ghi audit log, dùng verification_type: "SIDE_EFFECT"
+**CRITICAL NOTES**:
+- Must read DDL schema context carefully to know EXACTLY column names (example: `TuyenXe` not `MaTuyen`)
+- Number of columns in INSERT INTO must match number of values in VALUES
+- **Value length must fit data type**: VARCHAR(10) can hold maximum 10 characters
+- If trigger has ROLLBACK, use verification_type: "EXECUTION_STATUS"
+- If trigger writes audit log, use verification_type: "SIDE_EFFECT"
 
-=== QUY TẮC SCHEMA BẮT BUỘC ===
-- BẮT BUỘC dùng placeholder [{SCHEMA}] khi tham chiếu bảng/trigger trong
-  setup_script / invocation_query / validation_query. KHÔNG dùng "dbo." prefix
-  hay tên trần. Engine substitute {SCHEMA} thành schema thực tế trước khi chạy.
-- Ví dụ ĐÚNG: "INSERT INTO [{SCHEMA}].Orders VALUES (...)"
-- Ví dụ SAI:  "INSERT INTO Orders VALUES (...)"   ← không rõ schema
-- Ví dụ SAI:  "INSERT INTO dbo.Orders VALUES (...)" ← engine sẽ tìm sai chỗ
+=== MANDATORY SCHEMA RULES ===
+- MANDATORY use placeholder [{SCHEMA}] when referencing tables/triggers in
+  setup_script / invocation_query / validation_query. do NOT use "dbo." prefix
+  or bare names. Engine will replace {SCHEMA} with actual schema before running.
+- CORRECT example: "INSERT INTO [{SCHEMA}].Orders VALUES (...)"
+- WRONG example:  "INSERT INTO Orders VALUES (...)"   ← schema unclear
+- WRONG example:  "INSERT INTO dbo.Orders VALUES (...)" ← engine will find wrong place
 
-=== QUAN TRỌNG ===
-- KHÔNG generate metadata points (existence_points, table_points, event_points,
-  timing_points) — engine tự tính dựa trên triggers metadata + score_weight.
-- Setup_script phải bắt đầu bằng DROP TABLE IF EXISTS [{SCHEMA}].<tên> nếu cần
-  tạo bảng phụ trợ (audit log, ...). Bảng đã có trong DDL spec thì không cần.
+=== CRITICAL ===
+- do NOT generate metadata points (existence_points, table_points, event_points,
+  timing_points) — engine calculates based on triggers metadata + score_weight.
+- Setup_script must start with DROP TABLE IF EXISTS [{SCHEMA}].<name> if need to
+  create helper tables (audit log, ...). Tables already in DDL spec don't need this.
 - Database: Microsoft SQL Server (MSSQL / T-SQL).
-- **ĐỌC KỸ DDL SCHEMA CONTEXT bên dưới để biết chính xác tên bảng, tên cột, kiểu dữ liệu**
+- **READ DDL SCHEMA CONTEXT CAREFULLY below to know exact table names, column names, data types**
 
 === DDL SCHEMA CONTEXT ===
 %s
 
-=== YÊU CẦU ===
-Dựa vào DDL schema context ở trên, tạo test cases với:
-- Tên bảng CHÍNH XÁC từ DDL
-- Tên cột CHÍNH XÁC từ DDL (không đoán, không dùng tên khác)
-- Số lượng VALUES khớp với số cột trong INSERT INTO
-- Kiểu dữ liệu đúng (VARCHAR dùng '', INT không dùng '', DATETIME dùng '', NVARCHAR dùng N'')
-- **Độ dài giá trị phù hợp**: VARCHAR(10) → dùng giá trị ≤ 10 ký tự (ví dụ: 'CX001' OK, 'CX001_EXISTING' SAI)
+=== REQUIREMENTS ===
+Based on DDL schema context above, create test cases with:
+- EXACT table names from DDL
+- EXACT column names from DDL (do NOT guess, do NOT use different names)
+- Number of VALUES matches number of columns in INSERT INTO
+- Correct data types (use '' for VARCHAR, no '' for INT, use '' for DATETIME, use N'' for NVARCHAR)
+- **Value length appropriate**: VARCHAR(10) → use values ≤ 10 characters (example: 'CX001' OK, 'CX001_EXISTING' WRONG)
 
-Trả lời ĐÚNG ĐỊNH DẠNG JSON (không markdown, không giải thích thêm):
+Return ONLY valid JSON format (no markdown, no explanation):

@@ -5,7 +5,9 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.concurrent.ExecutorService;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -852,6 +854,47 @@ public class UsecasesConfiguration {
         return new ForceSubmitExamUsecase(examRepository, currentUserService, submitExamUsecase, violationNotificationService, examSessionService, examDraftRepository, classRepository);
     }
 
-}
+    // ===== ENTITY DESCRIPTION AI USECASES =====
 
+    @Bean
+    GenerateSpecEntityDescriptionUsecase generateSpecEntityDescriptionUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService,
+            GeminiService geminiService) {
+        return new GenerateSpecEntityDescriptionUsecase(
+                examRepository, classRepository, specEntityRepository, currentUserService, geminiService);
+    }
+
+    @Bean
+    UpdateSpecEntityDescriptionUsecase updateSpecEntityDescriptionUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService) {
+        return new UpdateSpecEntityDescriptionUsecase(
+                examRepository, classRepository, specEntityRepository, currentUserService);
+    }
+
+    // ===== EXPORT PDF USECASES =====
+
+    @Bean
+    ExportExamPdfUsecase exportExamPdfUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            SpecEntityRepository specEntityRepository,
+            CurrentUserService currentUserService,
+            GeminiService geminiService,
+            PdfRenderService pdfRenderService,
+            @Qualifier("geminiExecutor") ExecutorService geminiExecutor) {
+        return new ExportExamPdfUsecase(
+                examRepository, classRepository, examQuestionRepository,
+                examSpecificationRepository, specEntityRepository, currentUserService,
+                geminiService, pdfRenderService, geminiExecutor);
+    }
+
+}
 

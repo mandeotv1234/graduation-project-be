@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,6 +97,9 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/create_table_rules_prompt.txt")
     private Resource createTableRulesPromptResource;
 
+    @Value("classpath:prompts/entity-description-prompt.txt")
+    private Resource entityDescriptionPromptResource;
+
     private String systemPromptTemplate;
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
@@ -106,6 +110,7 @@ public class GeminiServiceImpl implements GeminiService {
     private String triggerRubricPromptTemplate;
     private String specificationSchemaPromptTemplate;
     private String createTableRulesPromptTemplate;
+    private String entityDescriptionPromptTemplate;
 
     public GeminiServiceImpl(
             @Value("${spring.application.gemini.api-key}") String apiKey,
@@ -145,6 +150,8 @@ public class GeminiServiceImpl implements GeminiService {
                     .copyToString(specificationSchemaPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.createTableRulesPromptTemplate = StreamUtils
                     .copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.entityDescriptionPromptTemplate = StreamUtils
+                    .copyToString(entityDescriptionPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -2889,5 +2896,78 @@ public class GeminiServiceImpl implements GeminiService {
         requiredTableFields.add("columns");
 
         return rootArray;
+    }
+
+    @Override
+    public String generateEntityDescription(String entityName, String displayName,
+                                            List<SpecAttribute> attributes,
+                                            String schemaContext) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API key missing — skipping entity description generation for {}", entityName);
+            return null;
+        }
+
+        HttpClient client = getOrCreateHttpClient();
+        if (client == null) return null;
+
+        String pkList = attributes == null ? "" : attributes.stream()
+                .filter(SpecAttribute::isPrimaryKey)
+                .map(SpecAttribute::getAttributeName)
+                .collect(Collectors.joining(", "));
+        String fkHint = attributes == null ? "" : attributes.stream()
+                .filter(a -> a.getAttributeName() != null
+                        && a.getAttributeName().matches("(?i)^ma[A-Z][A-Za-z0-9]+"))
+                .map(SpecAttribute::getAttributeName)
+                .collect(Collectors.joining(", "));
+        String attrList = attributes == null ? "" : attributes.stream()
+                .map(a -> a.getAttributeName() + " (" + a.getDataType() + ")")
+                .collect(Collectors.joining(", "));
+
+        String prompt = String.format(entityDescriptionPromptTemplate,
+                entityName, displayName != null ? displayName : entityName,
+                attrList.isBlank() ? "không có" : attrList,
+                pkList.isBlank() ? "không xác định" : pkList,
+                fkHint.isBlank() ? "không xác định" : fkHint,
+                schemaContext == null || schemaContext.isBlank() ? "không có" : schemaContext);
+
+        String requestBody = buildRequestBody(prompt, 256);
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(geminiEndpoint()))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("Gemini entity description API error {} for entity {}: {}",
+                        response.statusCode(), entityName, response.body());
+                return null;
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode candidates = root.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                log.warn("Gemini entity description: empty candidates array for entity {}. Response snippet: {}",
+                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
+                return null;
+            }
+            JsonNode parts = candidates.get(0).path("content").path("parts");
+            if (!parts.isArray() || parts.isEmpty()) {
+                log.warn("Gemini entity description: empty parts array for entity {}. Response snippet: {}",
+                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
+                return null;
+            }
+            String text = parts.get(0).path("text").asText("").trim();
+
+            // Strip control characters; keep only printable Unicode
+            text = text.replaceAll("[\\p{Cntrl}&&[^\n\t]]", "").trim();
+            return text.isBlank() ? null : text;
+        } catch (Exception e) {
+            log.warn("Entity description generation failed for {}: {}", entityName, e.getMessage());
+            return null;
+        }
     }
 }

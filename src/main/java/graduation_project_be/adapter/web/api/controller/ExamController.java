@@ -72,6 +72,7 @@ public class ExamController {
         private final RemindStudentUsecase remindStudentUsecase;
         private final ForceSubmitExamUsecase forceSubmitExamUsecase;
         private final GetExamStatisticsUsecase getExamStatisticsUsecase;
+        private final ExportExamPdfUsecase exportExamPdfUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -860,5 +861,25 @@ public class ExamController {
                         @PathVariable Long studentId) {
                 forceSubmitExamUsecase.execute(examId, studentId);
                 return ResponseEntity.ok(ResponseDto.of(null, "SUCCESS", "Đã cưỡng chế nộp bài thành công"));
+        }
+
+        @PostMapping("/{examId}/export-pdf")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<byte[]> exportExamPdf(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody(required = false) @Valid ExportExamPdfRequestDto body) {
+                ExportExamPdfRequest request = body != null
+                                ? body.toRequest(examId)
+                                : new ExportExamPdfRequest(examId, null);
+                ExportExamPdfResponse response = exportExamPdfUsecase.execute(request);
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_PDF);
+                headers.set(HttpHeaders.CONTENT_DISPOSITION,
+                                "inline; filename=\"" + response.fileName() + "\"");
+
+                return ResponseEntity.ok()
+                                .headers(headers)
+                                .body(response.content());
         }
 }

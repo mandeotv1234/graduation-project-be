@@ -40,7 +40,7 @@ public class GenerateSpecEntityDescriptionUsecase {
 
         boolean isTeacher = classRepository.existsTeacherAccess(exam.getClassId(), userId);
         if (!isTeacher) {
-            throw new UnauthorizedException("You are not a teacher of this exam's class");
+            throw new UnauthorizedException("Bạn không phải giảng viên của lớp đề thi này");
         }
 
         SpecEntity entity = specEntityRepository.findById(entityId)

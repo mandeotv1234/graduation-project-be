@@ -29,7 +29,7 @@ public class ExamPdfModelBuilder {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern QUESTION_PREFIX_PATTERN = Pattern.compile(
-            "(?is)^\\s*(?:<p>\\s*)?(?:<strong>\\s*)?(?:Câu|Cau)\\s*\\d+\\s*(?:\\([^)]*\\))?\\s*:?\\s*(?:</strong>\\s*)?");
+            "(?is)^\\s*(?:<p>\\s*)?(?:<strong>\\s*)?(?:Câu|Cau)\\s*\\d+\\s*\\([0-9.,]+đ\\)\\s*:\\s*(?:</strong>\\s*)?");
 
     private ExamPdfModelBuilder() {
     }

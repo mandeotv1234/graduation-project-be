@@ -2915,7 +2915,8 @@ public class GeminiServiceImpl implements GeminiService {
                 .map(SpecAttribute::getAttributeName)
                 .collect(Collectors.joining(", "));
         String fkHint = attributes == null ? "" : attributes.stream()
-                .filter(a -> a.getAttributeName() != null && a.getAttributeName().toLowerCase().startsWith("ma"))
+                .filter(a -> a.getAttributeName() != null
+                        && a.getAttributeName().matches("(?i)^ma[A-Z][A-Za-z0-9]+"))
                 .map(SpecAttribute::getAttributeName)
                 .collect(Collectors.joining(", "));
         String attrList = attributes == null ? "" : attributes.stream()
@@ -2947,9 +2948,19 @@ public class GeminiServiceImpl implements GeminiService {
             }
 
             JsonNode root = objectMapper.readTree(response.body());
-            String text = root.path("candidates").get(0)
-                    .path("content").path("parts").get(0)
-                    .path("text").asText("").trim();
+            JsonNode candidates = root.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                log.warn("Gemini entity description: empty candidates array for entity {}. Response snippet: {}",
+                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
+                return null;
+            }
+            JsonNode parts = candidates.get(0).path("content").path("parts");
+            if (!parts.isArray() || parts.isEmpty()) {
+                log.warn("Gemini entity description: empty parts array for entity {}. Response snippet: {}",
+                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
+                return null;
+            }
+            String text = parts.get(0).path("text").asText("").trim();
 
             // Strip control characters; keep only printable Unicode
             text = text.replaceAll("[\\p{Cntrl}&&[^\n\t]]", "").trim();

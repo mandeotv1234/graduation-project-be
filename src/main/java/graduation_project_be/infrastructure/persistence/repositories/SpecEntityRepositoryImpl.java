@@ -5,6 +5,7 @@ import graduation_project_be.domain.models.SpecEntity;
 import graduation_project_be.infrastructure.persistence.repositories.jpa.SpecEntityJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -21,6 +22,7 @@ public class SpecEntityRepositoryImpl implements SpecEntityRepository {
     }
 
     @Override
+    @Transactional
     public void updateDescription(Long entityId, String description) {
         jpaRepository.updateDescription(entityId, description);
     }

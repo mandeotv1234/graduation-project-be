@@ -67,7 +67,7 @@ public class ExportExamPdfUsecase {
         // Auth: must be class teacher
         boolean isTeacher = classRepository.existsTeacherAccess(exam.getClassId(), userId);
         if (!isTeacher) {
-            throw new UnauthorizedException("You are not a teacher of this exam's class");
+            throw new UnauthorizedException("Bạn không phải giảng viên của lớp đề thi này");
         }
 
         // Precondition 1: spec must exist and have entities
@@ -106,7 +106,8 @@ public class ExportExamPdfUsecase {
 
         byte[] pdfBytes = pdfRenderService.render("exam-paper", model);
 
-        String fileName = "De-" + classCode + "-" + examId + "-"
+        String safeClassCode = SlugUtil.slugify(classCode != null ? classCode : "CLASS");
+        String fileName = "De-" + safeClassCode + "-" + examId + "-"
                 + SlugUtil.slugify(exam.getTitle() != null ? exam.getTitle() : "exam") + ".pdf";
 
         return new ExportExamPdfResponse(pdfBytes, fileName);
@@ -135,7 +136,8 @@ public class ExportExamPdfUsecase {
                                 null), geminiExecutor)
                         .orTimeout(8, TimeUnit.SECONDS)
                         .thenAccept(desc -> {
-                            if (desc != null && !desc.isBlank()) {
+                            if (desc != null && !desc.isBlank()
+                                    && !Thread.currentThread().isInterrupted()) {
                                 specEntityRepository.updateDescription(entity.getId(), desc);
                                 entity.setDescription(desc);
                             }
@@ -145,7 +147,7 @@ public class ExportExamPdfUsecase {
                                     entity.getEntityName(), ex.getMessage());
                             return null;
                         }))
-                .toList();
+                .collect(Collectors.toList());
 
         try {
             CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0]))
@@ -153,6 +155,7 @@ public class ExportExamPdfUsecase {
                     .join();
         } catch (Exception e) {
             log.warn("Lazy description generation did not complete within 20s: {}", e.getMessage());
+            tasks.forEach(t -> t.cancel(true));
         }
     }
 }

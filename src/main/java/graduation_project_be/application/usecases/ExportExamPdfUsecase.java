@@ -72,18 +72,18 @@ public class ExportExamPdfUsecase {
 
         // Precondition 1: spec must exist and have entities
         if (exam.getSpecificationId() == null) {
-            throw new BadRequestException("EXAM_NO_SPECIFICATION");
+            throw new BadRequestException("Đề thi chưa có đặc tả CSDL hoặc đặc tả không có entity nào");
         }
         ExamSpecification spec = examSpecificationRepository.findById(exam.getSpecificationId())
-                .orElseThrow(() -> new BadRequestException("EXAM_NO_SPECIFICATION"));
+                .orElseThrow(() -> new BadRequestException("Đề thi chưa có đặc tả CSDL hoặc đặc tả không có entity nào"));
         if (spec.getEntities() == null || spec.getEntities().isEmpty()) {
-            throw new BadRequestException("EXAM_NO_SPECIFICATION");
+            throw new BadRequestException("Đề thi chưa có đặc tả CSDL hoặc đặc tả không có entity nào");
         }
 
         // Precondition 2: must have questions
         List<ExamQuestion> questions = examQuestionRepository.findByExamId(examId);
         if (questions.isEmpty()) {
-            throw new BadRequestException("EXAM_NO_QUESTIONS");
+            throw new BadRequestException("Đề thi chưa có câu hỏi nào để xuất PDF");
         }
 
         // Lazy-gen descriptions for entities that are blank

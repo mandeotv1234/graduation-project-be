@@ -11,6 +11,7 @@ import graduation_project_be.application.usecases.request.UpdateSpecEntityDescri
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.SpecEntity;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Persist a teacher-edited or AI-generated description onto spec_entity.description.
@@ -26,6 +27,7 @@ public class UpdateSpecEntityDescriptionUsecase {
     private final SpecEntityRepository specEntityRepository;
     private final CurrentUserService currentUserService;
 
+    @Transactional
     public void execute(UpdateSpecEntityDescriptionRequest request) {
         Long userId = currentUserService.getCurrentUserId();
 
@@ -33,7 +35,7 @@ public class UpdateSpecEntityDescriptionUsecase {
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", request.examId()));
 
         if (exam.getSpecificationId() == null || !request.specId().equals(exam.getSpecificationId())) {
-            throw new BadRequestException("SPEC_EXAM_MISMATCH");
+            throw new BadRequestException("Đặc tả không khớp với đề thi");
         }
 
         boolean isTeacher = classRepository.existsTeacherAccess(exam.getClassId(), userId);

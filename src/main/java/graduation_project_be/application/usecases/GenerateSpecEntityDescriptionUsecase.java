@@ -35,7 +35,7 @@ public class GenerateSpecEntityDescriptionUsecase {
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", examId));
 
         if (exam.getSpecificationId() == null || !specId.equals(exam.getSpecificationId())) {
-            throw new BadRequestException("SPEC_EXAM_MISMATCH");
+            throw new BadRequestException("Đặc tả không khớp với đề thi");
         }
 
         boolean isTeacher = classRepository.existsTeacherAccess(exam.getClassId(), userId);

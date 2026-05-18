@@ -97,7 +97,7 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/create_table_rules_prompt.txt")
     private Resource createTableRulesPromptResource;
 
-    @Value("classpath:prompts/entity_description_prompt.txt")
+    @Value("classpath:prompts/entity-description-prompt.txt")
     private Resource entityDescriptionPromptResource;
 
     private String systemPromptTemplate;

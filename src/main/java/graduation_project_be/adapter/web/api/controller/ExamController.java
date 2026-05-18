@@ -866,7 +866,7 @@ public class ExamController {
         @PostMapping("/{examId}/export-pdf")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<byte[]> exportExamPdf(
-                        @PathVariable @Positive Long examId,
+                        @PathVariable("examId") @Positive Long examId,
                         @RequestBody(required = false) @Valid ExportExamPdfRequestDto body) {
                 ExportExamPdfRequest request = body != null
                                 ? body.toRequest(examId)

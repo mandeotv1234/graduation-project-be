@@ -1,6 +1,6 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
-import graduation_project_be.application.usecases.ShareExamAsTemplateUsecase;
+import graduation_project_be.application.usecases.response.ShareExamAsTemplateResponse;
 
 public record ShareExamAsTemplateResponseDto(
         Long templateId,
@@ -9,7 +9,7 @@ public record ShareExamAsTemplateResponseDto(
         int questionCount) {
 
     public static ShareExamAsTemplateResponseDto fromResponse(
-            ShareExamAsTemplateUsecase.ShareResult response) {
+            ShareExamAsTemplateResponse response) {
         return new ShareExamAsTemplateResponseDto(
                 response.templateId(),
                 response.sourceExamId(),

@@ -8,7 +8,6 @@ import graduation_project_be.application.usecases.request.*;
 import graduation_project_be.application.usecases.response.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.domain.models.PaginatedResult;
-import graduation_project_be.domain.models.PaginationParams;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -73,6 +72,7 @@ public class ExamController {
         private final ForceSubmitExamUsecase forceSubmitExamUsecase;
         private final GetExamStatisticsUsecase getExamStatisticsUsecase;
         private final ExportExamPdfUsecase exportExamPdfUsecase;
+        private final ExtractQuestionsFromPdfUsecase extractQuestionsFromPdfUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -683,15 +683,9 @@ public class ExamController {
         public ResponseEntity<ResponseDto> testGradeInsert(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeInsertRequestDto requestDto) {
-                try {
-                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeInsert(
-                                        requestDto.toRequest(examId, objectMapper));
-                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "GRADING_ERROR",
-                                                        "Lỗi chấm thử: " + e.getMessage()));
-                }
+                RubricTestGradeResponse result = rubricTestingUsecase.testGradeInsert(
+                                requestDto.toRequest(examId, objectMapper));
+                return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
         }
 
         @PostMapping("/{examId}/test-grade-select")
@@ -699,15 +693,9 @@ public class ExamController {
         public ResponseEntity<ResponseDto> testGradeSelect(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeSelectRequestDto requestDto) {
-                try {
-                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeSelect(
-                                        requestDto.toRequest(examId, objectMapper));
-                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "GRADING_ERROR",
-                                                        "Lỗi chấm thử SELECT: " + e.getMessage()));
-                }
+                RubricTestGradeResponse result = rubricTestingUsecase.testGradeSelect(
+                                requestDto.toRequest(examId, objectMapper));
+                return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
         }
 
         @PostMapping("/{examId}/test-grade-routine")
@@ -715,15 +703,9 @@ public class ExamController {
         public ResponseEntity<ResponseDto> testGradeRoutine(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeRoutineRequestDto requestDto) {
-                try {
-                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeRoutine(
-                                        requestDto.toRequest(examId, objectMapper));
-                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Routine test grading completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "GRADING_ERROR",
-                                                        "Lỗi chấm thử Routine: " + e.getMessage()));
-                }
+                RubricTestGradeResponse result = rubricTestingUsecase.testGradeRoutine(
+                                requestDto.toRequest(examId, objectMapper));
+                return ResponseEntity.ok(ResponseDto.of(result, "OK", "Routine test grading completed"));
         }
 
         @PostMapping("/{examId}/test-grade-trigger")
@@ -731,15 +713,9 @@ public class ExamController {
         public ResponseEntity<ResponseDto> testGradeTrigger(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid TestGradeTriggerRequestDto requestDto) {
-                try {
-                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeTrigger(
-                                        requestDto.toRequest(examId, objectMapper));
-                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Trigger test grading completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "GRADING_ERROR",
-                                                        "Lỗi chấm thử Trigger: " + e.getMessage()));
-                }
+                RubricTestGradeResponse result = rubricTestingUsecase.testGradeTrigger(
+                                requestDto.toRequest(examId, objectMapper));
+                return ResponseEntity.ok(ResponseDto.of(result, "OK", "Trigger test grading completed"));
         }
 
         @PostMapping("/{examId}/run-select-testcase")
@@ -747,18 +723,12 @@ public class ExamController {
         public ResponseEntity<ResponseDto> runSelectTestcase(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid ExecuteSelectQueryRequestDto requestDto) {
-                try {
-                        ExecuteSelectTestCaseResponse result = rubricTestingUsecase
-                                        .executeSelectTestCase(requestDto.toRequest(examId));
-                        return ResponseEntity.ok(ResponseDto.of(
-                                        ExecuteSelectTestCaseResponseDto.fromResponse(result),
-                                        "OK",
-                                        "Run testcase completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
-                                                        "Lỗi chạy thử dữ liệu: " + e.getMessage()));
-                }
+                ExecuteSelectTestCaseResponse result = rubricTestingUsecase
+                                .executeSelectTestCase(requestDto.toRequest(examId));
+                return ResponseEntity.ok(ResponseDto.of(
+                                ExecuteSelectTestCaseResponseDto.fromResponse(result),
+                                "OK",
+                                "Run testcase completed"));
         }
 
         @PostMapping("/{examId}/build-insert-tables")
@@ -766,19 +736,13 @@ public class ExamController {
         public ResponseEntity<ResponseDto> buildInsertTables(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid BuildInsertTablesRequestDto requestDto) {
-                try {
-                        BuildInsertTablesResponse result = rubricTestingUsecase.buildInsertTablesFromAnswer(
-                                        examId,
-                                        requestDto.correctQuery());
-                        return ResponseEntity.ok(ResponseDto.of(
-                                        BuildInsertTablesResponseDto.fromResponse(result),
-                                        "OK",
-                                        "Build insert tables completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
-                                                        "Lỗi tạo dữ liệu tables INSERT: " + e.getMessage()));
-                }
+                BuildInsertTablesResponse result = rubricTestingUsecase.buildInsertTablesFromAnswer(
+                                examId,
+                                requestDto.correctQuery());
+                return ResponseEntity.ok(ResponseDto.of(
+                                BuildInsertTablesResponseDto.fromResponse(result),
+                                "OK",
+                                "Build insert tables completed"));
         }
 
         @PostMapping("/{examId}/build-create-tables")
@@ -786,34 +750,22 @@ public class ExamController {
         public ResponseEntity<ResponseDto> buildCreateTables(
                         @PathVariable("examId") @Positive Long examId,
                         @RequestBody @Valid BuildCreateTablesRequestDto requestDto) {
-                try {
-                        BuildCreateTablesResponse result = rubricTestingUsecase.buildCreateTablesFromAnswer(
-                                        examId,
-                                        requestDto.correctQuery());
-                        return ResponseEntity.ok(ResponseDto.of(
-                                        BuildCreateTablesResponseDto.fromResponse(result),
-                                        "OK",
-                                        "Build create tables completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "EXECUTE_ERROR",
-                                                        "Lỗi tạo cấu trúc tables CREATE: " + e.getMessage()));
-                }
+                BuildCreateTablesResponse result = rubricTestingUsecase.buildCreateTablesFromAnswer(
+                                examId,
+                                requestDto.correctQuery());
+                return ResponseEntity.ok(ResponseDto.of(
+                                BuildCreateTablesResponseDto.fromResponse(result),
+                                "OK",
+                                "Build create tables completed"));
         }
 
         @PostMapping("/test-grade")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> testGrade(
                         @RequestBody @Valid TestGradeCreateTableRequestDto requestDto) {
-                try {
-                        RubricTestGradeResponse result = rubricTestingUsecase.testGradeCreateTable(
-                                        requestDto.toRequest(objectMapper));
-                        return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
-                } catch (Exception e) {
-                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                        .body(ResponseDto.of(null, "GRADING_ERROR",
-                                                        "Lỗi chấm thử: " + e.getMessage()));
-                }
+                RubricTestGradeResponse result = rubricTestingUsecase.testGradeCreateTable(
+                                requestDto.toRequest(objectMapper));
+                return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
         }
 
         // ===== DRAFT ENDPOINTS =====
@@ -843,6 +795,18 @@ public class ExamController {
                                                                 "Draft retrieved successfully")))
                                 .orElseGet(() -> ResponseEntity.ok(
                                                 ResponseDto.of(null, "NOT_FOUND", "No draft found")));
+        }
+
+        @PostMapping(value = "/{examId}/extract-questions-from-pdf", consumes = MediaType.APPLICATION_JSON_VALUE)
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> extractQuestionsFromPdf(
+                        @PathVariable("examId") @Positive Long examId) {
+                ExtractQuestionsFromPdfRequest request = new ExtractQuestionsFromPdfRequest(examId);
+                ExtractQuestionsFromPdfResponse response = extractQuestionsFromPdfUsecase.execute(request);
+                return ResponseEntity.ok(ResponseDto.of(
+                                ExtractQuestionsFromPdfResponseDto.fromResponse(response),
+                                "OK",
+                                "Questions extracted successfully"));
         }
 
         @PostMapping("/{examId}/students/{studentId}/remind")

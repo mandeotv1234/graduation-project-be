@@ -891,13 +891,13 @@ final class CreateTableRubricEvaluator {
         return (target == null ? "" : target) + "/" + (condition == null ? "" : condition);
     }
 
-    private static void incrementViolationCount(
-            Map<String, Integer> violations,
-            String target,
-            String condition,
-            int delta) {
-        incrementViolationCount(violations, target, condition, delta, GLOBAL_SCOPE);
-    }
+    // private static void incrementViolationCount(
+    //         Map<String, Integer> violations,
+    //         String target,
+    //         String condition,
+    //         int delta) {
+    //     incrementViolationCount(violations, target, condition, delta, GLOBAL_SCOPE);
+    // }
 
     private static void incrementViolationCount(
             Map<String, Integer> violations,

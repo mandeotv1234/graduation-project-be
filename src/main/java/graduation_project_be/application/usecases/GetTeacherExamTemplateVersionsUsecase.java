@@ -8,12 +8,13 @@ import graduation_project_be.application.port.repositories.ExamTemplateQuestionR
 import graduation_project_be.application.port.repositories.ExamTemplateRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.usecases.response.GetTeacherExamTemplateVersionItemResponse;
+import graduation_project_be.application.usecases.response.GetTeacherExamTemplateVersionsResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamTemplate;
 import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,26 +29,7 @@ public class GetTeacherExamTemplateVersionsUsecase {
     private final CurrentUserService currentUserService;
     private final UserRepository userRepository;
 
-    public record TeacherExamTemplateVersionItem(
-            Long templateId,
-            Long sourceExamId,
-            Integer version,
-            String title,
-            String description,
-            String sharedByName,
-            int questionCount,
-            LocalDateTime createdAt,
-            boolean isVisible
-    ) {
-    }
-
-    public record TeacherExamTemplateVersionsResult(
-            boolean canManage,
-            List<TeacherExamTemplateVersionItem> versions
-    ) {
-    }
-
-    public TeacherExamTemplateVersionsResult execute(Long examId) {
+    public GetTeacherExamTemplateVersionsResponse execute(Long examId) {
         Long currentUserId = currentUserService.getCurrentUserId();
 
         Exam sourceExam = examRepository.findById(examId)
@@ -79,8 +61,8 @@ public class GetTeacherExamTemplateVersionsUsecase {
                                 .collect(Collectors.toMap(User::getId, User::getFullName, (left, right) -> left))
                 ));
 
-        List<TeacherExamTemplateVersionItem> versions = visibleTemplates.stream()
-                .map(template -> new TeacherExamTemplateVersionItem(
+        List<GetTeacherExamTemplateVersionItemResponse> versions = visibleTemplates.stream()
+                .map(template -> new GetTeacherExamTemplateVersionItemResponse(
                         template.getId(),
                         template.getSourceExamId(),
                         template.getVersion(),
@@ -94,6 +76,6 @@ public class GetTeacherExamTemplateVersionsUsecase {
                         Boolean.TRUE.equals(template.getIsVisible())))
                 .toList();
 
-        return new TeacherExamTemplateVersionsResult(canManage, versions);
+        return new GetTeacherExamTemplateVersionsResponse(canManage, versions);
     }
 }

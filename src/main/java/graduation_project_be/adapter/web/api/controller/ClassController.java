@@ -12,6 +12,8 @@ import graduation_project_be.application.usecases.GetClassDetailUsecase;
 import graduation_project_be.application.usecases.GetClassesUsecase;
 import graduation_project_be.application.usecases.GetExamsByClassUsecase;
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
+import graduation_project_be.application.usecases.SoftDeleteClassUsecase;
+import graduation_project_be.application.usecases.RestoreClassUsecase;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
 import graduation_project_be.application.usecases.request.UpdateClassRequest;
 import graduation_project_be.application.usecases.request.GetStudentsInClassRequest;
@@ -37,6 +39,8 @@ public class ClassController {
         private final GetStudentsInClassUsecase getStudentsInClassUsecase;
         private final GetClassDetailUsecase getClassDetailUsecase;
         private final GetExamsByClassUsecase getExamsByClassUsecase;
+        private final SoftDeleteClassUsecase softDeleteClassUsecase;
+        private final RestoreClassUsecase restoreClassUsecase;
 
         @PostMapping
         @PreAuthorize("hasRole('TEACHER')")
@@ -135,5 +139,21 @@ public class ClassController {
                                 .toList();
                 return ResponseEntity.ok(
                                 ResponseDto.of(dtos, "OK", "Exams retrieved successfully"));
+        }
+
+        @DeleteMapping("/{classId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> softDeleteClass(
+                        @PathVariable("classId") Long classId) {
+                softDeleteClassUsecase.execute(classId);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Class deleted successfully"));
+        }
+
+        @PostMapping("/{classId}/restore")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> restoreClass(
+                        @PathVariable("classId") Long classId) {
+                restoreClassUsecase.execute(classId);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Class restored successfully"));
         }
 }

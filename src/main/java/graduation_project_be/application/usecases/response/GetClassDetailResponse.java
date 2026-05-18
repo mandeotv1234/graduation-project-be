@@ -10,7 +10,8 @@ public record GetClassDetailResponse(
         String classCode,
         Long creatorId,
         String semester,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        LocalDateTime deletedAt) {
     public static GetClassDetailResponse fromModel(Class clazz) {
         return GetClassDetailResponse.builder()
                 .id(clazz.getId())
@@ -18,6 +19,7 @@ public record GetClassDetailResponse(
                 .creatorId(clazz.getCreatorId())
                 .semester(clazz.getSemester())
                 .createdAt(clazz.getCreatedAt())
+                .deletedAt(clazz.getDeletedAt())
                 .build();
     }
 }

@@ -6,19 +6,11 @@ import graduation_project_be.domain.models.SpecAttribute;
 import java.util.List;
 
 public interface GeminiService {
-    /**
-     * Given a question content + questionType, ask Gemini to generate
-     * correctQuery and verifyScript for an SQL exam question.
-     */
     GeminiService.GeneratedQuestion generateSqlAnswer(
             String questionContent,
             String questionType,
             String schemaContext);
 
-    /**
-     * Given a CREATE TABLE SQL statement, ask Gemini to generate
-     * a structured grading rubric JSON for partial scoring.
-     */
     String generateGradingRubric(
             String correctQuery,
             String questionContent,
@@ -27,9 +19,6 @@ public interface GeminiService {
             String priorQuestionContext,
             String schemaContext);
 
-    /**
-     * Generate DB schema JSON from natural-language specification description.
-     */
     JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson);
 
     /**
@@ -42,6 +31,11 @@ public interface GeminiService {
             List<SpecAttribute> attributes,
             String schemaContext);
 
-    record GeneratedQuestion(String correctQuery, String verifyScript) {
-    }
+    GeminiService.PdfExtractionResult extractQuestionsFromPdf(byte[] pdfBytes, String schemaContext);
+
+    record GeneratedQuestion(String correctQuery, String verifyScript) {}
+
+    record ExtractedQuestion(String title, String content, String questionType, double points, int difficultyLevel, int orderIndex) {}
+
+    record PdfExtractionResult(List<ExtractedQuestion> questions, String schemaScript) {}
 }

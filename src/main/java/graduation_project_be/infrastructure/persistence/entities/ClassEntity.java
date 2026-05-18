@@ -32,6 +32,9 @@ public class ClassEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     public Class toModel() {
         return Class.builder()
                 .id(id)
@@ -39,6 +42,7 @@ public class ClassEntity {
                 .creatorId(creatorId)
                 .semester(semester)
                 .createdAt(createdAt)
+                .deletedAt(deletedAt)
                 .build();
     }
 
@@ -49,6 +53,7 @@ public class ClassEntity {
                 .creatorId(classModel.getCreatorId())
                 .semester(classModel.getSemester())
                 .createdAt(classModel.getCreatedAt())
+                .deletedAt(classModel.getDeletedAt())
                 .build();
     }
 }

@@ -10,6 +10,7 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.application.port.repositories.ExamTemplateQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamTemplateRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.usecases.response.ShareExamAsTemplateResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSpecification;
@@ -19,7 +20,6 @@ import graduation_project_be.domain.models.ExamTemplateSpecificationSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -32,11 +32,8 @@ public class ShareExamAsTemplateUsecase {
     private final ExamTemplateQuestionRepository examTemplateQuestionRepository;
     private final CurrentUserService currentUserService;
 
-    public record ShareResult(Long templateId, Long sourceExamId, Integer version, int questionCount) {
-    }
-
     @Transactional
-    public ShareResult execute(Long examId) {
+    public ShareExamAsTemplateResponse execute(Long examId) {
         Long currentUserId = currentUserService.getCurrentUserId();
 
         Exam exam = examRepository.findById(examId)
@@ -86,7 +83,7 @@ public class ShareExamAsTemplateUsecase {
 
         examTemplateQuestionRepository.saveAll(templateQuestions);
 
-        return new ShareResult(
+        return new ShareExamAsTemplateResponse(
                 savedTemplate.getId(),
                 savedTemplate.getSourceExamId(),
                 savedTemplate.getVersion(),

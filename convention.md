@@ -1,6 +1,6 @@
 # Coding Convention — Graduation Project BE
 
-## 1. Kiến trúc tổng quan (Clean Architecture)
+## 1. Overall Architecture (Clean Architecture)
 
 ```
 adapter/           → Framework-dependent layer (Spring MVC)
@@ -9,12 +9,12 @@ domain/            → Domain model layer (pure Java)
 infrastructure/    → Technical implementation layer (JPA, Redis, WebSocket)
 ```
 
-### Luồng xử lý (Request Flow)
+### Request Flow
 
 ```
 Controller → DTO (request) → Usecase → Port (interface) → Infrastructure (impl)
                                 ↓
-                        Domain Model
+                          Domain Model
                                 ↓
             Usecase Response → DTO (response) → Controller
 ```
@@ -24,13 +24,13 @@ Controller → DTO (request) → Usecase → Port (interface) → Infrastructure
 ### 2.1 Adapter Layer (`adapter.web.api`)
 
 #### Controller
-- **Chỉ làm routing**, không chứa business logic
-- Sử dụng `@RestController`, `@RequestMapping`, `@RequiredArgsConstructor`
-- Inject các Usecase qua constructor (Lombok `@RequiredArgsConstructor`)
-- Validation tại controller với `@Valid`, `@Positive`, `@Validated`
-- Map DTO ↔ Usecase Request/Response ngay tại controller methods
-- Trả về `ResponseEntity<ResponseDto>` hoặc `ResponseEntity<PaginationResponseDto<T>>`
-- Phân quyền bằng `@PreAuthorize("hasRole('TEACHER')")`
+- **Routing only** — no business logic
+- Use `@RestController`, `@RequestMapping`, `@RequiredArgsConstructor`
+- Inject usecases via constructor (Lombok `@RequiredArgsConstructor`)
+- Validate at controller with `@Valid`, `@Positive`, `@Validated`
+- Map DTO ↔ Usecase Request/Response directly in controller methods
+- Return `ResponseEntity<ResponseDto>` or `ResponseEntity<PaginationResponseDto<T>>`
+- Authorization with `@PreAuthorize("hasRole('TEACHER')")`
 
 ```java
 @RestController
@@ -57,9 +57,9 @@ public class ExamController {
 ```
 
 #### Request DTO (`adapter.web.api.dtos.request`)
-- Là **Java Record**
-- Chứa validation annotations (`@NotBlank`, `@NotNull`, v.v.)
-- Có method `toRequest()` để convert sang Usecase Request
+- Is a **Java Record**
+- Contains validation annotations (`@NotBlank`, `@NotNull`, etc.)
+- Has a `toRequest()` method to convert to Usecase Request
 
 ```java
 public record CreateSchemaTemplateRequestDto(
@@ -73,8 +73,8 @@ public record CreateSchemaTemplateRequestDto(
 ```
 
 #### Response DTO (`adapter.web.api.dtos.response`)
-- Là **Java Record**
-- Có static factory method `fromResponse(UsecaseResponse r)` để convert từ Usecase Response
+- Is a **Java Record**
+- Has a static factory method `fromResponse(UsecaseResponse r)` to convert from Usecase Response
 
 ```java
 public record ExamViolationResponseDto(
@@ -91,18 +91,18 @@ public record ExamViolationResponseDto(
 }
 ```
 
-#### Wrapper Response
-- `ResponseDto` — cho response đơn lẻ
-- `PaginationResponseDto<T>` — cho response phân trang
+#### Wrapper Responses
+- `ResponseDto` — for single responses
+- `PaginationResponseDto<T>` — for paginated responses
 
 ### 2.2 Application Layer (`application`)
 
 #### Usecase (`application.usecases`)
-- **Chứa toàn bộ business logic**
-- **Không có Spring annotations** (`@Service`, `@Component`, ...) — bean được tạo thủ công trong `UsecasesConfiguration`
-- Sử dụng `@RequiredArgsConstructor`, `@Slf4j` (Lombok)
-- Inject dependencies qua constructor (các Port interfaces)
-- Method chính: `execute(Request) → Response`
+- **Contains all business logic**
+- **No Spring annotations** (`@Service`, `@Component`, ...) — beans are registered manually in `UsecasesConfiguration`
+- Use `@RequiredArgsConstructor`, `@Slf4j` (Lombok)
+- Inject dependencies via constructor (Port interfaces)
+- Main method: `execute(Request) → Response`
 
 ```java
 @Slf4j
@@ -118,11 +118,11 @@ public class ReportViolationUsecase {
 }
 ```
 
-> **Lưu ý**: Một số usecase cũ vẫn có `@Service` (ví dụ: `GetClassesUsecase`). Convention mới là **KHÔNG** dùng `@Service`, mà đăng ký bean trong `UsecasesConfiguration`.
+> **Note**: Some older usecases still have `@Service` (e.g., `GetClassesUsecase`). The new convention is to **NOT** use `@Service` and instead register the bean in `UsecasesConfiguration`.
 
 #### Usecase Request (`application.usecases.request`)
-- Là **Java Record** — immutable
-- Pure Java, không annotations ngoài Lombok
+- Is a **Java Record** — immutable
+- Pure Java, no annotations other than Lombok
 
 ```java
 public record ReportViolationRequest(
@@ -135,8 +135,8 @@ public record ReportViolationRequest(
 ```
 
 #### Usecase Response (`application.usecases.response`)
-- Là **Java Record**
-- Có static factory method `fromModel(DomainModel model, ...)` để convert từ Domain Model
+- Is a **Java Record**
+- Has a static factory method `fromModel(DomainModel model, ...)` to convert from Domain Model
 
 ```java
 public record ReportViolationResponse(
@@ -153,12 +153,12 @@ public record ReportViolationResponse(
 ```
 
 #### Pagination Response
-- Sử dụng `PaginationResponse<T>` record generic
-- `PaginationResponse.PaginationMeta` chứa `page`, `size`, `total`, `totalPages`
+- Use the generic `PaginationResponse<T>` record
+- `PaginationResponse.PaginationMeta` contains `page`, `size`, `total`, `totalPages`
 
 #### Port — Repository Interface (`application.port.repositories`)
-- Interface thuần, không framework annotations
-- Định nghĩa contract cho data access
+- Pure interface, no framework annotations
+- Defines the contract for data access
 
 ```java
 public interface ExamViolationRepository {
@@ -169,8 +169,8 @@ public interface ExamViolationRepository {
 ```
 
 #### Port — Service Interface (`application.port.services`)
-- Interface cho infrastructure services (JWT, Redis, WebSocket, etc.)
-- Không framework-specific
+- Interface for infrastructure services (JWT, Redis, WebSocket, etc.)
+- Not framework-specific
 
 ```java
 public interface ViolationNotificationService {
@@ -184,9 +184,9 @@ public interface ViolationNotificationService {
 ### 2.3 Domain Layer (`domain`)
 
 #### Domain Model (`domain.models`)
-- Plain Java class với Lombok `@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`
-- Không có JPA annotations
-- Không có business logic phức tạp (chỉ data holder)
+- Plain Java class with Lombok `@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`
+- No JPA annotations
+- No complex business logic (data holder only)
 
 ```java
 @Data
@@ -206,16 +206,16 @@ public class ExamViolation {
 ```
 
 #### Enums (`domain.models.enums`)
-- Mọi trường dữ liệu có tập giá trị cố định (ví dụ: trạng thái, phân loại, type) **phải được định nghĩa bằng Java Enum**, tuyệt đối không dùng kiểu `String` thuần để tránh lỗi typo và dễ maintain.
-- Các enum nên đặt ở thư mục `domain.models.enums`.
-- Ví dụ: `GradingStatus` (PENDING, GRADING, COMPLETED, FAILED), `Role` (ADMIN, TEACHER, STUDENT), v.v.
+- Every field with a fixed set of values (e.g., status, type) **must be defined as a Java Enum** — never use plain `String` to avoid typos and improve maintainability.
+- Enums should be placed in `domain.models.enums`.
+- Examples: `GradingStatus` (PENDING, GRADING, COMPLETED, FAILED), `Role` (ADMIN, TEACHER, STUDENT), etc.
 
 ### 2.4 Infrastructure Layer (`infrastructure`)
 
 #### Entity (`infrastructure.persistence.entities`)
-- JPA Entity, ánh xạ trực tiếp tới database table
-- Sử dụng Lombok `@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`
-- Có 2 method convert:
+- JPA Entity, mapped directly to a database table
+- Use Lombok `@Data`, `@Builder`, `@NoArgsConstructor`, `@AllArgsConstructor`
+- Must have 2 conversion methods:
   - `toModel()` → Entity → Domain Model
   - `static fromModel(Model m)` → Domain Model → Entity
 
@@ -238,14 +238,14 @@ public class ExamViolationEntity {
 ```
 
 #### JPA Repository (`infrastructure.persistence.repositories.jpa`)
-- Extend `JpaRepository<Entity, ID>`
-- Chứa Spring Data query methods
+- Extends `JpaRepository<Entity, ID>`
+- Contains Spring Data query methods
 
 #### Repository Implementation (`infrastructure.persistence.repositories`)
 - Implements Port Repository Interface
-- Sử dụng `@Repository`, `@RequiredArgsConstructor`
+- Use `@Repository`, `@RequiredArgsConstructor`
 - Inject JPA Repository
-- Convert Entity ↔ Domain Model
+- Converts Entity ↔ Domain Model
 
 ```java
 @Repository
@@ -263,8 +263,8 @@ public class ExamViolationRepositoryImpl implements ExamViolationRepository {
 
 #### Service Implementation (`infrastructure.services`)
 - Implements Port Service Interface
-- Sử dụng `@RequiredArgsConstructor`, `@Slf4j`
-- Có thể dùng `@Service` hoặc đăng ký trong Configuration
+- Use `@RequiredArgsConstructor`, `@Slf4j`
+- Can use `@Service` or be registered in a Configuration class
 
 ```java
 @Slf4j
@@ -276,29 +276,29 @@ public class WebSocketViolationNotificationService implements ViolationNotificat
 ```
 
 #### Configuration (`infrastructure.configurations`)
-- **`UsecasesConfiguration`** — đăng ký tất cả Usecase beans thủ công bằng `@Bean`
-- **`RedisConfiguration`** — cấu hình Redis + đăng ký Redis-based services
+- **`UsecasesConfiguration`** — manually registers all Usecase beans with `@Bean`
+- **`RedisConfiguration`** — configures Redis and registers Redis-based services
 - **`SecurityConfiguration`** — Spring Security
 - **`WebSocketConfiguration`** — STOMP WebSocket
 
-## 3. Quy tắc chung
+## 3. General Rules
 
-| Quy tắc | Mô tả |
+| Rule | Description |
 |----|-----|
-| **DTO là Record** | Tất cả Request/Response DTOs đều là Java `record` |
-| **Controller chỉ route** | Không có business logic trong controller |
-| **Usecase không framework** | Usecase KHÔNG dùng Spring annotations, inject qua constructor |
-| **Giao tiếp qua Interface** | Usecase → Port Interface → Infrastructure Implementation |
-| **Entity ↔ Model convert** | Entity có `toModel()` và `fromModel()` |
-| **Response wrap** | Mọi response đều wrap trong `ResponseDto` hoặc `PaginationResponseDto` |
-| **Validation ở Controller** | Sử dụng Jakarta Validation annotations trên DTO |
-| **Lombok everywhere** | Sử dụng `@RequiredArgsConstructor`, `@Data`, `@Builder`, `@Slf4j` |
-| **Usecase bean registration** | Usecase beans đăng ký trong `UsecasesConfiguration` |
+| **DTOs are Records** | All Request/Response DTOs are Java `record` |
+| **Controllers route only** | No business logic in controllers |
+| **Usecases are framework-free** | Usecases do NOT use Spring annotations; injected via constructor |
+| **Communicate via Interfaces** | Usecase → Port Interface → Infrastructure Implementation |
+| **Entity ↔ Model conversion** | Entity has `toModel()` and `fromModel()` |
+| **Wrap responses** | All responses are wrapped in `ResponseDto` or `PaginationResponseDto` |
+| **Validate at Controller** | Use Jakarta Validation annotations on DTOs |
+| **Lombok everywhere** | Use `@RequiredArgsConstructor`, `@Data`, `@Builder`, `@Slf4j` |
+| **Usecase bean registration** | Usecase beans are registered in `UsecasesConfiguration` |
 
 ## 4. Naming Convention
 
-| Layer | Pattern | Ví dụ |
-|-------|---------|-------|
+| Layer | Pattern | Example |
+|-------|---------|---------|
 | Controller | `{Feature}Controller` | `ExamController` |
 | Request DTO | `{Action}RequestDto` | `CreateExamRequestDto` |
 | Response DTO | `{Action}ResponseDto` | `CreateExamResponseDto` |
@@ -352,54 +352,54 @@ graduation_project_be/
 
 ## 6. Redis Pattern
 
-- Sử dụng `RedisTemplate<String, String>` 
-- Key naming: `{feature}:{id}:{sub_id}` (ví dụ: `exam_session:1:2`)
-- Serialize/deserialize thủ công (String-based)
-- Set TTL phù hợp cho mỗi loại data
+- Use `RedisTemplate<String, String>`
+- Key naming: `{feature}:{id}:{sub_id}` (e.g., `exam_session:1:2`)
+- Serialize/deserialize manually (String-based)
+- Set an appropriate TTL for each type of data
 
 ## 7. Database Migration — Liquibase Changelog Convention
 
-- Sử dụng Liquibase với YAML changelog
-- File nằm trong `src/main/resources/db/changelog/`
-- **Các changeSet PHẢI tuân thủ quy tắc ID và Author sau:**
+- Uses Liquibase with YAML changelogs
+- Files located in `src/main/resources/db/changelog/`
+- **All changeSets MUST follow the ID and Author rules below:**
 
 ### 7.1 ChangeSet ID Format
 
 **ID format: `DDMMYYhhmm`** (Date + Time)
 
 ```
-DD = Ngày (01-31)
-MM = Tháng (01-12)
-YY = Năm (25, 26, ...)
-hh = Giờ (00-23)
-mm = Phút (00-59)
+DD = Day (01-31)
+MM = Month (01-12)
+YY = Year (25, 26, ...)
+hh = Hour (00-23)
+mm = Minute (00-59)
 ```
 
-**Ví dụ:**
-- `2212251601` = 22/12/25 16:01 (lúc 16 giờ 01 phút)
-- `1803260002` = 18/03/26 00:02 (lúc 00 giờ 02 phút)
-- `2103260003` = 21/03/26 00:03 (lúc 00 giờ 03 phút)
+**Examples:**
+- `2212251601` = 22/12/25 at 16:01
+- `1803260002` = 18/03/26 at 00:02
+- `2103260003` = 21/03/26 at 00:03
 
-**❌ SAI**: `GRAD-68-add-status`, `GRAD-63-update-default`, ...  
-**✅ ĐÚNG**: `2212251601`, `1803260002`, `2103260003`, ...
+**❌ Wrong**: `GRAD-68-add-status`, `GRAD-63-update-default`, ...  
+**✅ Correct**: `2212251601`, `1803260002`, `2103260003`, ...
 
 ### 7.2 Author Convention
 
-**Author PHẢI là tên thực của người tạo changelog**, không phải "graduation-project" hay "system".
+**Author MUST be the real name of the developer** who created the changelog — not `graduation-project` or `system`.
 
-**Ví dụ tên hợp lệ:**
+**Valid author names:**
 - `manhuynh` (Mạn Huy Ân)
 - `phucpha` (Phúc Phạm)
 - `tdhoang` (Trần Duy Hoàng)
 
-**❌ SAI**: `graduation-project`, `system`, `Graduation Project`, ...  
-**✅ ĐÚNG**: `manhuynh`, `phucpha`, `tdhoang`, ...
+**❌ Wrong**: `graduation-project`, `system`, `Graduation Project`, ...  
+**✅ Correct**: `manhuynh`, `phucpha`, `tdhoang`, ...
 
 ### 7.3 Changelog File Naming
 
-File changelog nên đặt tên theo JIRA ticket hoặc feature:
-- `grad-changelog-GRAD-25.yaml` (cho ticket GRAD-25)
-- `grad-changelog-GRAD-68.yaml` (cho ticket GRAD-68)
+Changelog files should be named after the JIRA ticket or feature:
+- `grad-changelog-GRAD-25.yaml` (for ticket GRAD-25)
+- `grad-changelog-GRAD-68.yaml` (for ticket GRAD-68)
 
 ### 7.4 Example ChangeSet
 
@@ -419,11 +419,47 @@ databaseChangeLog:
                   defaultValue: "STUDENT"
 ```
 
-**Giải thích:**
-- ID `2212251601` = Được tạo lúc 22/12/25 16:01 (4:01 PM)
-- Author `manhuynh` = Tên thực của developer ([không dùng "graduation-project" hay "system")
-- Comment ghi rõ JIRA ticket ID (GRAD-25) và mô tả ngắn gọn
+**Explanation:**
+- ID `2212251601` = Created on 22/12/25 at 16:01 (4:01 PM)
+- Author `manhuynh` = Real developer name (do not use `graduation-project` or `system`)
+- Comment includes the JIRA ticket ID (GRAD-25) and a brief description
 
-## 8. General Coding Standards
+## 8. TimeUtils — Timezone Convention
 
-- **Tránh dùng Fully Qualified Class Names (FQCN) trực tiếp trong code**: Các package chuẩn của Java/Spring (`java.util.List`, `java.time.LocalDateTime`, v.v.) BẮT BUỘC phải được đưa lên phần `import` ở đầu file, nghiêm cấm viết thẳng package (`java.util.List<T>`) vào khai báo thuộc tính, tham số hoặc kiểu trả về của method.
+All timestamps in the system must use Vietnam timezone (Asia/Ho_Chi_Minh).
+
+**Rule: NEVER use `LocalDateTime.now()` directly. Always use `TimeUtils.now()` instead.**
+
+```java
+// ❌ Wrong — uses server/JVM default timezone, inconsistent across environments
+LocalDateTime now = LocalDateTime.now();
+
+// ✅ Correct — always Vietnam timezone regardless of server config
+import graduation_project_be.shared.utils.TimeUtils;
+LocalDateTime now = TimeUtils.now();
+```
+
+`TimeUtils` is located at `graduation_project_be.shared.utils.TimeUtils` and can be imported from any layer (usecase, repository implementation, response builder, etc.).
+
+Typical usage pattern — set timestamps in the **usecase** layer when building domain models:
+
+```java
+// In a usecase:
+Class clazz = Class.builder()
+        .classCode(request.classCode())
+        .createdAt(TimeUtils.now())   // ✅ correct
+        .build();
+```
+
+When time must be set inside a repository implementation (e.g., for a `@Modifying` UPDATE query), import and use `TimeUtils.now()` there as well:
+
+```java
+// In a repository impl:
+import graduation_project_be.shared.utils.TimeUtils;
+
+classJpaRepository.updateDeletedAt(classId, TimeUtils.now()); // ✅ correct
+```
+
+## 9. General Coding Standards
+
+- **Avoid using Fully Qualified Class Names (FQCN) inline in code**: Standard Java/Spring packages (`java.util.List`, `java.time.LocalDateTime`, etc.) **must** be placed in the `import` section at the top of the file. Writing them inline (e.g., `java.util.List<T>` in a field declaration, parameter, or return type) is strictly forbidden.

@@ -11,7 +11,8 @@ public record GetClassesResponse(
         String classCode,
         Long creatorId,
         String semester,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        LocalDateTime deletedAt) {
     public static GetClassesResponse fromModel(Class clazz) {
         return GetClassesResponse.builder()
                 .id(clazz.getId())
@@ -19,6 +20,7 @@ public record GetClassesResponse(
                 .creatorId(clazz.getCreatorId())
                 .semester(clazz.getSemester())
                 .createdAt(clazz.getCreatedAt())
+                .deletedAt(clazz.getDeletedAt())
                 .build();
     }
 }

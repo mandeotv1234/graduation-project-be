@@ -18,6 +18,8 @@ import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.Base64;
+import java.util.Collections;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -100,6 +102,9 @@ public class GeminiServiceImpl implements GeminiService {
     @Value("classpath:prompts/entity-description-prompt.txt")
     private Resource entityDescriptionPromptResource;
 
+    @Value("classpath:prompts/extract_questions_from_pdf_prompt.txt")
+    private Resource extractQuestionsFromPdfPromptResource;
+
     private String systemPromptTemplate;
     private String createTableRubricPromptTemplate;
     private String insertDataRubricPromptTemplate;
@@ -111,6 +116,7 @@ public class GeminiServiceImpl implements GeminiService {
     private String specificationSchemaPromptTemplate;
     private String createTableRulesPromptTemplate;
     private String entityDescriptionPromptTemplate;
+    private String extractQuestionsFromPdfPromptTemplate;
 
     public GeminiServiceImpl(
             @Value("${spring.application.gemini.api-key}") String apiKey,
@@ -152,6 +158,8 @@ public class GeminiServiceImpl implements GeminiService {
                     .copyToString(createTableRulesPromptResource.getInputStream(), StandardCharsets.UTF_8);
             this.entityDescriptionPromptTemplate = StreamUtils
                     .copyToString(entityDescriptionPromptResource.getInputStream(), StandardCharsets.UTF_8);
+            this.extractQuestionsFromPdfPromptTemplate = StreamUtils
+                    .copyToString(extractQuestionsFromPdfPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.error("Failed to load Gemini prompt templates from resources/prompts", e);
             throw new RuntimeException("Failed to load Gemini prompt templates", e);
@@ -2968,6 +2976,128 @@ public class GeminiServiceImpl implements GeminiService {
         } catch (Exception e) {
             log.warn("Entity description generation failed for {}: {}", entityName, e.getMessage());
             return null;
+        }
+    }
+
+    private static final GeminiService.PdfExtractionResult EMPTY_EXTRACTION =
+            new GeminiService.PdfExtractionResult(Collections.emptyList(), "");
+
+    @Override
+    public GeminiService.PdfExtractionResult extractQuestionsFromPdf(byte[] pdfBytes, String schemaContext) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Gemini API key is missing. Cannot extract questions from PDF.");
+            return EMPTY_EXTRACTION;
+        }
+
+        HttpClient client = getOrCreateHttpClient();
+        if (client == null) {
+            return EMPTY_EXTRACTION;
+        }
+
+        try {
+            String prompt = String.format(extractQuestionsFromPdfPromptTemplate,
+                    schemaContext != null && !schemaContext.isBlank() ? schemaContext : "No schema context available");
+
+            String requestBody = buildRequestBodyWithPdf(pdfBytes, prompt);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(geminiEndpoint()))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .timeout(Duration.ofSeconds(60))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                log.error("Gemini PDF extraction error {}: {}", response.statusCode(), response.body());
+                return EMPTY_EXTRACTION;
+            }
+
+            return parsePdfExtractionResponse(response.body());
+
+        } catch (Exception e) {
+            log.error("Failed to extract questions from PDF via Gemini: {}", e.getMessage(), e);
+            return EMPTY_EXTRACTION;
+        }
+    }
+
+    private String buildRequestBodyWithPdf(byte[] pdfBytes, String prompt) throws Exception {
+        String base64Pdf = Base64.getEncoder().encodeToString(pdfBytes);
+
+        ObjectNode inlineData = objectMapper.createObjectNode();
+        inlineData.put("mime_type", "application/pdf");
+        inlineData.put("data", base64Pdf);
+
+        ObjectNode pdfPart = objectMapper.createObjectNode();
+        pdfPart.set("inline_data", inlineData);
+
+        ObjectNode textPart = objectMapper.createObjectNode();
+        textPart.put("text", prompt);
+
+        ArrayNode parts = objectMapper.createArrayNode();
+        parts.add(pdfPart);
+        parts.add(textPart);
+
+        ObjectNode content = objectMapper.createObjectNode();
+        content.set("parts", parts);
+
+        ArrayNode contents = objectMapper.createArrayNode();
+        contents.add(content);
+
+        ObjectNode genConfig = objectMapper.createObjectNode();
+        genConfig.put("temperature", 0.1);
+        genConfig.put("maxOutputTokens", 8192);
+
+        ObjectNode root = objectMapper.createObjectNode();
+        root.set("contents", contents);
+        root.set("generationConfig", genConfig);
+
+        return objectMapper.writeValueAsString(root);
+    }
+
+    private GeminiService.PdfExtractionResult parsePdfExtractionResponse(String body) {
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            String text = root
+                    .path("candidates").get(0)
+                    .path("content")
+                    .path("parts").get(0)
+                    .path("text").asText();
+
+            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+
+            JsonNode parsed = objectMapper.readTree(text);
+            String schemaScript = parsed.path("schemaScript").asText("").trim();
+
+            JsonNode questionsNode = parsed.path("questions");
+            if (!questionsNode.isArray()) {
+                log.warn("Gemini PDF response missing 'questions' array");
+                return new GeminiService.PdfExtractionResult(Collections.emptyList(), schemaScript);
+            }
+
+            List<GeminiService.ExtractedQuestion> questions = new ArrayList<>();
+            for (JsonNode q : questionsNode) {
+                String content = q.path("content").asText("").trim();
+                String title = q.path("title").asText("").trim();
+                if (title.isBlank()) {
+                    title = content.length() > 120 ? content.substring(0, 120).trim() + "..." : content;
+                }
+                String questionType = q.path("questionType").asText("SELECT_QUERY").trim();
+                double points = q.path("points").asDouble(1.0);
+                int difficultyLevel = q.path("difficultyLevel").asInt(2);
+                int orderIndex = q.path("orderIndex").asInt(questions.size() + 1);
+
+                if (content.isBlank()) continue;
+
+                questions.add(new GeminiService.ExtractedQuestion(title, content, questionType, points, difficultyLevel, orderIndex));
+            }
+
+            return new GeminiService.PdfExtractionResult(questions, schemaScript);
+
+        } catch (Exception e) {
+            log.error("Failed to parse Gemini PDF extraction response: {}", e.getMessage());
+            return EMPTY_EXTRACTION;
         }
     }
 }

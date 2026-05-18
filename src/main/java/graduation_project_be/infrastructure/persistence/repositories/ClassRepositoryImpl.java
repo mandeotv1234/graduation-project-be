@@ -19,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import graduation_project_be.domain.models.enums.SortDirection;
 
+import graduation_project_be.shared.utils.TimeUtils;
 import java.util.List;
 import java.util.Optional;
 
@@ -86,5 +87,15 @@ public class ClassRepositoryImpl implements ClassRepository {
     @Override
     public void deleteTeacherAssociation(Long classId, Long teacherId) {
         teacherClassJpaRepository.deleteByClassIdAndTeacherId(classId, teacherId);
+    }
+
+    @Override
+    public void softDelete(Long classId) {
+        classJpaRepository.updateDeletedAt(classId, TimeUtils.now());
+    }
+
+    @Override
+    public void restore(Long classId) {
+        classJpaRepository.updateDeletedAt(classId, null);
     }
 }

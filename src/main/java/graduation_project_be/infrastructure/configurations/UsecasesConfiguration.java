@@ -108,6 +108,20 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    SoftDeleteClassUsecase softDeleteClassUsecase(
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new SoftDeleteClassUsecase(classRepository, currentUserService);
+    }
+
+    @Bean
+    RestoreClassUsecase restoreClassUsecase(
+            ClassRepository classRepository,
+            CurrentUserService currentUserService) {
+        return new RestoreClassUsecase(classRepository, currentUserService);
+    }
+
+    @Bean
     GetStudentsInClassUsecase getStudentsInClassUsecase(
             ClassEnrollmentRepository classEnrollmentRepository,
             ClassRepository classRepository,
@@ -831,6 +845,18 @@ public class UsecasesConfiguration {
     @Bean
     UpdateUserRoleUsecase updateUserRoleUsecase(UserRepository userRepository) {
         return new UpdateUserRoleUsecase(userRepository);
+    }
+
+    @Bean
+    ExtractQuestionsFromPdfUsecase extractQuestionsFromPdfUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            PdfStorageService pdfStorageService,
+            CurrentUserService currentUserService,
+            GeminiService geminiService) {
+        return new ExtractQuestionsFromPdfUsecase(examRepository, classRepository, examSpecificationRepository,
+                pdfStorageService, currentUserService, geminiService);
     }
 
     @Bean

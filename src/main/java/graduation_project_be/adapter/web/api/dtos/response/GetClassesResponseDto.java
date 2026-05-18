@@ -9,13 +9,15 @@ public record GetClassesResponseDto(
         String classCode,
         Long creatorId,
         String semester,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        LocalDateTime deletedAt) {
     public static GetClassesResponseDto fromResponse(GetClassesResponse response) {
         return new GetClassesResponseDto(
                 response.id(),
                 response.classCode(),
                 response.creatorId(),
                 response.semester(),
-                response.createdAt());
+                response.createdAt(),
+                response.deletedAt());
     }
 }

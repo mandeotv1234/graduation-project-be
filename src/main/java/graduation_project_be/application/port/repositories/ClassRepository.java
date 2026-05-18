@@ -24,4 +24,8 @@ public interface ClassRepository {
     Optional<TeacherClass> findTeacherAssociation(Long classId, Long teacherId);
 
     void deleteTeacherAssociation(Long classId, Long teacherId);
+
+    void softDelete(Long classId);
+
+    void restore(Long classId);
 }

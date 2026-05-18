@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1805261000
+      author: manhuynh
+      comment: "GRAD-149: Add deleted_at column to classes table for soft delete"
+      changes:
+        - addColumn:
+            tableName: classes
+            columns:
+              - column:
+                  name: deleted_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: true

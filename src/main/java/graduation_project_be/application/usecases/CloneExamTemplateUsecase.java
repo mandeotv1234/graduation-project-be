@@ -12,6 +12,7 @@ import graduation_project_be.application.port.repositories.ExamTemplateQuestionR
 import graduation_project_be.application.port.repositories.ExamTemplateRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
+import graduation_project_be.application.usecases.response.CloneExamTemplateResponse;
 import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
@@ -38,11 +39,8 @@ public class CloneExamTemplateUsecase {
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamSchemaService examSchemaService;
 
-    public record CloneResult(Long examId, String title, int questionCount) {
-    }
-
     @Transactional
-    public CloneResult execute(Long templateId, Long classId) {
+    public CloneExamTemplateResponse execute(Long templateId, Long classId) {
         Long currentUserId = currentUserService.getCurrentUserId();
 
         if (!classRepository.existsTeacherAccess(classId, currentUserId)) {
@@ -94,7 +92,7 @@ public class CloneExamTemplateUsecase {
             examSchemaService.createExamSchemaForStudent(savedExam.getId(), enrollment.getStudentId());
         }
 
-        return new CloneResult(savedExam.getId(), savedExam.getTitle(), newQuestions.size());
+        return new CloneExamTemplateResponse(savedExam.getId(), savedExam.getTitle(), newQuestions.size());
     }
 
     private ExamSettings defaultSettings() {

@@ -17,4 +17,5 @@ public class Class {
     private Long creatorId;
     private String semester;
     private LocalDateTime createdAt;
+    private LocalDateTime deletedAt;
 }

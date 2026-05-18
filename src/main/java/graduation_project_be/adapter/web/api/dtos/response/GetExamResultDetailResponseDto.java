@@ -59,7 +59,8 @@ public record GetExamResultDetailResponseDto(
         Long gradedBy,
         String gradedByName,
         LocalDateTime gradedAt,
-        String teacherComment
+        String teacherComment,
+        List<TestCaseResultDetailDto> testCaseResults
     ) {
         public static QuestionResultDetailDto fromResponse(GetExamResultDetailResponse.QuestionResultDetail d) {
             return new QuestionResultDetailDto(
@@ -67,7 +68,34 @@ public record GetExamResultDetailResponseDto(
                 d.isCorrect(), d.scoreEarned(), d.maxPoints(),
                 d.errorMessage(), d.executionTimeMs(),
                 d.questionType(), d.gradingType(),
-                d.gradedBy(), d.gradedByName(), d.gradedAt(), d.teacherComment()
+                d.gradedBy(), d.gradedByName(), d.gradedAt(), d.teacherComment(),
+                d.testCaseResults() == null
+                    ? List.of()
+                    : d.testCaseResults().stream()
+                        .map(TestCaseResultDetailDto::fromResponse)
+                        .toList()
+            );
+        }
+    }
+
+    public record TestCaseResultDetailDto(
+        Long testCaseId,
+        Integer orderIndex,
+        String caseName,
+        boolean passed,
+        BigDecimal scoreEarned,
+        BigDecimal maxPoints,
+        String message
+    ) {
+        public static TestCaseResultDetailDto fromResponse(GetExamResultDetailResponse.TestCaseResultDetail d) {
+            return new TestCaseResultDetailDto(
+                d.testCaseId(),
+                d.orderIndex(),
+                d.caseName(),
+                d.passed(),
+                d.scoreEarned(),
+                d.maxPoints(),
+                d.message()
             );
         }
     }

@@ -234,18 +234,22 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 try {
                     if (ddlScript != null && !ddlScript.isBlank()) {
-                        try (Statement stmt = conn.createStatement()) {
-                            stmt.execute(ddlScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                        for (String ddlBatch : splitExecutableBatches(ddlScript)) {
+                            try (Statement stmt = conn.createStatement()) {
+                                stmt.execute(ddlBatch);
+                                while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                                }
                             }
                         }
                         log.info("Loaded DDL into schema: {}", schemaName);
                     }
 
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
-                        try (Statement stmt = conn.createStatement()) {
-                            stmt.execute(defaultDataScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                        for (String dataBatch : splitExecutableBatches(defaultDataScript)) {
+                            try (Statement stmt = conn.createStatement()) {
+                                stmt.execute(dataBatch);
+                                while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                                }
                             }
                         }
                         log.info("Loaded default data into schema: {}", schemaName);
@@ -429,7 +433,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         ensureSchemaAndUser(schemaName);
 
         // Sanitize SQL — block privilege escalation keywords
-        validateStudentSql(sql);
+        List<String> executableBatches = splitExecutableBatches(sql);
+        for (String batch : executableBatches) {
+            validateStudentSql(batch);
+        }
 
         try {
             return jdbcTemplate.execute((Connection conn) -> {
@@ -444,79 +451,26 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 List<String> printMessages = new ArrayList<>();
                 try {
-                    try (Statement stmt = conn.createStatement()) {
-                        stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                        stmt.setMaxRows(1000);
+                    long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
 
-                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+                    for (String batch : executableBatches) {
+                        try (Statement stmt = conn.createStatement()) {
+                            stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                            stmt.setMaxRows(1000);
 
-                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
-                            try {
-                                return stmt.execute(sql);
-                            } catch (Exception e) {
-                                throw new CompletionException(e);
-                            }
-                        });
+                            int[] updateCountState = new int[] { totalUpdateCount };
+                            boolean[] hasUpdateCountState = new boolean[] { hasUpdateCount };
 
-                        boolean isResultSet;
-                        try {
-                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                        } catch (TimeoutException e) {
-                            try {
-                                stmt.cancel();
-                            } catch (Exception ignore) {
-                            }
-                            throw new RuntimeException(
-                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
-                        } catch (Exception e) {
-                            Throwable cause = e.getCause() != null ? e.getCause() : e;
-                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                            executeSingleBatch(stmt, batch, results, updateCountState, hasUpdateCountState,
+                                    absoluteTimeoutMs);
+
+                            totalUpdateCount = updateCountState[0];
+                            hasUpdateCount = hasUpdateCountState[0];
+
+                            // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
+                            // the Statement is closed by try-with-resources.
+                            printMessages.addAll(collectPrintMessages(stmt));
                         }
-
-                        // Walk through ALL results using correct JDBC pattern
-                        // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
-                        while (true) {
-                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                stmt.cancel();
-                                throw new RuntimeException("Query processing exceeded hard timeout of "
-                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
-                            }
-
-                            if (isResultSet) {
-                                try (ResultSet rs = stmt.getResultSet()) {
-                                    ResultSetMetaData meta = rs.getMetaData();
-                                    int colCount = meta.getColumnCount();
-                                    while (rs.next()) {
-                                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                            stmt.cancel();
-                                            throw new RuntimeException("Result set fetching exceeded hard timeout of "
-                                                    + QUERY_TIMEOUT_SECONDS + " seconds.");
-                                        }
-
-                                        Map<String, Object> row = new LinkedHashMap<>();
-                                        for (int i = 1; i <= colCount; i++) {
-                                            row.put(meta.getColumnLabel(i), rs.getObject(i));
-                                        }
-                                        results.add(row);
-                                    }
-                                }
-                            } else {
-                                // Current result is an update count
-                                int updateCount = stmt.getUpdateCount();
-                                if (updateCount == -1) {
-                                    // No more results of any kind
-                                    break;
-                                }
-                                totalUpdateCount += updateCount;
-                                hasUpdateCount = true;
-                            }
-                            // Advance to next result (only call ONCE per iteration!)
-                            isResultSet = stmt.getMoreResults();
-                        }
-
-                        // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
-                        // the Statement is closed by try-with-resources.
-                        printMessages.addAll(collectPrintMessages(stmt));
                     }
 
                     String statusMessage = null;
@@ -545,6 +499,139 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
             throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
         }
+    }
+
+    private void executeSingleBatch(
+            Statement stmt,
+            String sql,
+            List<Map<String, Object>> results,
+            int[] totalUpdateCount,
+            boolean[] hasUpdateCount,
+            long absoluteTimeoutMs) {
+        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return stmt.execute(sql);
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        });
+
+        boolean isResultSet;
+        try {
+            long remainingMs = Math.max(1, absoluteTimeoutMs - System.currentTimeMillis());
+            isResultSet = executeFuture.get(remainingMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            try {
+                stmt.cancel();
+            } catch (Exception ignore) {
+            }
+            throw new RuntimeException(
+                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+        }
+
+        // Walk through ALL results using correct JDBC pattern
+        // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
+        while (true) {
+            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                try {
+                    stmt.cancel();
+                } catch (Exception ignore) {
+                }
+                throw new RuntimeException("Query processing exceeded hard timeout of "
+                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+            }
+
+            if (isResultSet) {
+                try (ResultSet rs = stmt.getResultSet()) {
+                    ResultSetMetaData meta = rs.getMetaData();
+                    int colCount = meta.getColumnCount();
+                    while (rs.next()) {
+                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                            try {
+                                stmt.cancel();
+                            } catch (Exception ignore) {
+                            }
+                            throw new RuntimeException("Result set fetching exceeded hard timeout of "
+                                    + QUERY_TIMEOUT_SECONDS + " seconds.");
+                        }
+
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        for (int i = 1; i <= colCount; i++) {
+                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                        }
+                        results.add(row);
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException("SQL result processing error: " + e.getMessage(), e);
+                }
+            } else {
+                int updateCount;
+                try {
+                    updateCount = stmt.getUpdateCount();
+                } catch (Exception e) {
+                    throw new RuntimeException("SQL update count processing error: " + e.getMessage(), e);
+                }
+                if (updateCount == -1) {
+                    break;
+                }
+                totalUpdateCount[0] += updateCount;
+                hasUpdateCount[0] = true;
+            }
+
+            try {
+                isResultSet = stmt.getMoreResults();
+            } catch (Exception e) {
+                throw new RuntimeException("SQL result processing error: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    private List<String> splitExecutableBatches(String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return List.of();
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        List<String> batches = new ArrayList<>();
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    batches.add(executable);
+                }
+            }
+        }
+        return batches;
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        if (prefix.isBlank()) {
+            return List.of(routine);
+        }
+        return List.of(prefix, routine);
     }
 
     /**

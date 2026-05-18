@@ -13,7 +13,8 @@ public record ExamSettingsResponseDto(
         String gradingMethod,
         Integer maxViolations,
         Boolean showResultAfterSubmit,
-        Boolean isLoadDdl) {
+        Boolean isLoadDdl,
+        Long seedDatasetId) {
 
     public static ExamSettingsResponseDto fromModel(ExamSettings settings) {
         if (settings == null) return null;
@@ -28,6 +29,7 @@ public record ExamSettingsResponseDto(
                 settings.getGradingMethod(),
                 settings.getMaxViolations(),
                 settings.getShowResultAfterSubmit(),
-                settings.getIsLoadDdl());
+                settings.getIsLoadDdl(),
+                settings.getSeedDatasetId());
     }
 }

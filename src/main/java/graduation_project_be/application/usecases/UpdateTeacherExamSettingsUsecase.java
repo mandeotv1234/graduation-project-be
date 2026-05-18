@@ -3,10 +3,12 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.request.UpdateTeacherExamSettingsRequest;
 import graduation_project_be.application.usecases.response.CreateExamResponse;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 import graduation_project_be.domain.models.Exam;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +19,7 @@ public class UpdateTeacherExamSettingsUsecase {
     private final ExamRepository examRepository;
     private final ClassRepository classRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSpecificationRepository examSpecificationRepository;
 
     @Transactional
     public CreateExamResponse execute(Long examId, UpdateTeacherExamSettingsRequest request) {
@@ -45,6 +48,11 @@ public class UpdateTeacherExamSettingsUsecase {
                 .lateThreshold(request.lateThreshold())
                 .settings(request.settings())
                 .build();
+
+        ExamSettingsValidator.validateDatabaseInitialization(
+                examSpecificationRepository,
+                updatedExam.getSpecificationId(),
+                updatedExam.getSettings());
 
         return CreateExamResponse.fromModel(examRepository.save(updatedExam));
     }

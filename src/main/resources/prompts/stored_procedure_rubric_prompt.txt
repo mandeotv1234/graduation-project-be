@@ -39,11 +39,11 @@ OUTPUT JSON SHAPE:
     "test_cases": [
       {
         "case_id": "TC_NN",
-        "case_name": "<short Vietnamese display name>",
+        "case_name": "<tên test case bằng tiếng Việt có dấu, giống description>",
         "verification_type": "RETURN_VALUE|RESULT_SET|OUT_PARAMETER|SIDE_EFFECT|PRINT_OUTPUT",
         "match_type": "EXACT|CONTAINS",
         "score_weight": <number; all weights sum to 1.0 within 0.01>,
-        "description": "<behavior checked>",
+        "description": "<mô tả kịch bản bằng tiếng Việt có dấu>",
         "setup_script": "<test data setup only>",
         "invocation_query": "<declare variables and execute the procedure once>",
         "validation_query": "<select actual outcome for comparison>"
@@ -57,6 +57,8 @@ routines[] must list only the stored procedure(s) the QUESTION asks the student 
 Do not list helper routines used internally by REFERENCE SQL.
 Do not include expected_result, expected_value, expected_output, explanations, or markdown.
 The backend derives expected values by running REFERENCE SQL.
+Write every test_cases[].description in natural Vietnamese with full accents. Do not write descriptions without Vietnamese accents or in English.
+Set every test_cases[].case_name to the same Vietnamese accented text as test_cases[].description so the UI can display a consistent test case name.
 
 1. UNDERSTAND REFERENCE SQL
 - Read the user-facing stored procedure body in REFERENCE SQL.
@@ -166,11 +168,11 @@ Abstract setup examples; apply the pattern to the actual schema, do not copy tab
 End-to-end abstract SIDE_EFFECT test case example; copy the structure, not table names:
 {
   "case_id": "TC_01_SUCCESS",
-  "case_name": "Them chi tiet thanh cong",
+  "case_name": "Thêm chi tiết thành công",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT",
   "score_weight": 0.2,
-  "description": "Valid parent rows exist, procedure inserts one detail row",
+  "description": "Có đủ dữ liệu cha hợp lệ, thủ tục thêm thành công một dòng chi tiết",
   "setup_script": "DELETE FROM [{SCHEMA}].Detail WHERE detailId = 9001; DELETE FROM [{SCHEMA}].Child WHERE childId = 7001; DELETE FROM [{SCHEMA}].Parent WHERE parentId = 5001; SET IDENTITY_INSERT [{SCHEMA}].Parent ON; INSERT INTO [{SCHEMA}].Parent (parentId, requiredCol) VALUES (5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Parent OFF; SET IDENTITY_INSERT [{SCHEMA}].Child ON; INSERT INTO [{SCHEMA}].Child (childId, parentId, requiredCol) VALUES (7001, 5001, 'ok'); SET IDENTITY_INSERT [{SCHEMA}].Child OFF;",
   "invocation_query": "DECLARE @Result INT; EXEC [{SCHEMA}].sp_AddDetail @ChildId = 7001, @Quantity = 3, @Result = @Result OUTPUT;",
   "validation_query": "SELECT @Result AS return_value, childId, quantity FROM [{SCHEMA}].Detail WHERE childId = 7001 AND quantity = 3"

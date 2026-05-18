@@ -80,15 +80,19 @@ public class GradeExamUsecase {
      * tables (Function/SP/Trigger) work even if the exam has no CREATE_TABLE
      * questions.
      */
-    private void setupSchemaWithSpec(String schemaName, ExamSpecification specification, boolean includeDataset) {
+    private void setupSchemaWithSpec(
+            String schemaName,
+            ExamSpecification specification,
+            boolean includeDataset,
+            Long seedDatasetId) {
         if (specification == null || specification.getDdlScript() == null) {
             return;
         }
         String defaultDataScript = null;
-        if (includeDataset && specification.getDatasets() != null) {
+        if (includeDataset && seedDatasetId != null && specification.getDatasets() != null) {
             defaultDataScript = specification.getDatasets().stream()
                     .filter(SpecDataset::isActive)
-                    .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
+                    .filter(dataset -> seedDatasetId.equals(dataset.getId()))
                     .map(SpecDataset::getDataScript)
                     .filter(s -> s != null && !s.isBlank())
                     .findFirst()
@@ -247,14 +251,16 @@ public class GradeExamUsecase {
                     .sorted(Comparator.comparingInt(ExamQuestion::getOrderIndex))
                     .toList();
 
-            // 7. Reset + reload student schema with DDL spec (mirror startSession state).
+            // 7. Reset + reload student schema with DDL spec only.
             // Without this, SP/Function/Trigger questions referencing tables from the spec
             // would fail because the schema was wiped clean before grading.
+            // Seed dataset is only for the student's live exam environment; grading test
+            // cases prepare their own data.
             boolean isLoadDdl = exam.getSettings() != null
                     && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
             log.info("Resetting schema [{}] before grading (isLoadDdl={})", schemaName, isLoadDdl);
             examSchemaService.resetSchema(schemaName, false);
-            setupSchemaWithSpec(schemaName, specification, isLoadDdl);
+            setupSchemaWithSpec(schemaName, specification, isLoadDdl, null);
 
             // 8. Setup teacher schema as a "reference answer" environment.
             // DDL only (no datasets — test cases provide their own setup data),
@@ -264,7 +270,7 @@ public class GradeExamUsecase {
             //     their validation_query against the teacher's correct answer.
             log.info("Setting up teacher schema [{}] for test case validation", teacherSchemaName);
             examSchemaService.resetSchema(teacherSchemaName, false);
-            setupSchemaWithSpec(teacherSchemaName, specification, false);
+            setupSchemaWithSpec(teacherSchemaName, specification, false, null);
             Map<Long, String> teacherSetupErrors = populateTeacherSchemaWithAnswers(teacherSchemaName, sortedQuestions);
 
             // 9. Grade ALL questions sequentially (order by orderIndex)
@@ -298,12 +304,67 @@ public class GradeExamUsecase {
                     long startTime = System.currentTimeMillis();
                     try {
                         if (question.getQuestionType() == QuestionType.SELECT_QUERY) {
-                            GradeDecision decision = gradeSelectAcrossDatasets(
-                                    specification, schemaName, question, studentQuery);
+                            GradeDecision decision = hasSelectRubricTestCases(question)
+                                    ? gradeSelectByRubricTestCases(
+                                            exam,
+                                            specification,
+                                            sortedQuestions,
+                                            schemaName,
+                                            question,
+                                            studentQuery)
+                                    : gradeSelectAcrossDatasets(
+                                            specification,
+                                            schemaName,
+                                            question,
+                                            studentQuery);
                             isCorrect = decision.isCorrect();
                             errorMessage = decision.errorMessage();
                             if (submission != null) {
                                 submission.setScoreEarned(decision.scoreEarned());
+                            }
+                        } else if (question.getQuestionType() == QuestionType.STORED_PROCEDURE) {
+                            String routineSchemaName = schemaName + "_routine_" + question.getId();
+                            boolean fallbackTriggered = false;
+                            try {
+                                examSchemaService.resetSchema(routineSchemaName, false);
+                                setupSchemaWithSpec(routineSchemaName, specification, false, null);
+                                try {
+                                    executeSqlScriptBatches(routineSchemaName, studentQuery);
+                                } catch (Exception execErr) {
+                                    errorMessage = "Canh bao Loi Execute: " + execErr.getMessage();
+                                    hasExecutionError = true;
+                                }
+
+                                if (hasExecutionError && isSyntaxErrorFailAllMode(question)) {
+                                    if (submission != null) {
+                                        submission.setScoreEarned(BigDecimal.ZERO);
+                                        submission.setErrorMessage(
+                                                "SQL loi thuc thi va rubric dang de FAIL_ALL nen cau nay bi 0 diem.");
+                                    }
+                                    isCorrect = false;
+                                } else if (submission != null) {
+                                    isCorrect = gradeAnswer(routineSchemaName, teacherSchemaName, question, submission,
+                                            fallbackTriggered);
+                                }
+                            } finally {
+                                try {
+                                    examSchemaService.dropSchema(routineSchemaName);
+                                } catch (Exception e) {
+                                    log.warn("Failed to drop routine grading schema [{}]: {}",
+                                            routineSchemaName, e.getMessage());
+                                }
+                            }
+
+                            if (submission != null && submission.getErrorMessage() != null
+                                    && !submission.getErrorMessage().isBlank()) {
+                                if (errorMessage != null) {
+                                    errorMessage = errorMessage + " | Loi cu phap/Cau truc: "
+                                            + submission.getErrorMessage();
+                                } else {
+                                    errorMessage = submission.getErrorMessage();
+                                }
+                            } else if (!isCorrect && errorMessage == null) {
+                                errorMessage = "Ket qua khong khop voi dap an mau.";
                             }
                         } else {
                             boolean fallbackTriggered = false;
@@ -1730,6 +1791,647 @@ public class GradeExamUsecase {
         return null;
     }
 
+    private boolean hasSelectRubricTestCases(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return false;
+        }
+
+        try {
+            JsonNode rubric = objectMapper.readTree(question.getGradingRubric());
+            JsonNode testCases = rubric.path("grading_payload").path("test_cases");
+            return testCases.isArray() && testCases.size() > 0;
+        } catch (Exception e) {
+            log.warn("Cannot parse SELECT test_cases for Q{}: {}", question.getId(), e.getMessage());
+            return false;
+        }
+    }
+
+    private GradeDecision gradeSelectByRubricTestCases(
+            Exam exam,
+            ExamSpecification specification,
+            List<ExamQuestion> sortedQuestions,
+            String baseSchemaName,
+            ExamQuestion question,
+            String studentQuery) {
+        BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+
+        try {
+            JsonNode rubric = objectMapper.readTree(question.getGradingRubric());
+            JsonNode payload = rubric.path("grading_payload");
+            JsonNode testCases = payload.path("test_cases");
+            if (!testCases.isArray() || testCases.size() == 0) {
+                return gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
+            }
+
+            JsonNode selectRules = resolveSelectGradingRules(question);
+            boolean strictOrdering = readBooleanSetting(
+                    payload.path("global_grading_rules").path("strict_ordering"),
+                    false);
+
+            BigDecimal totalDeduction = BigDecimal.ZERO;
+            BigDecimal structuralDeduction = BigDecimal.ZERO;
+            boolean structuralChecked = false;
+            boolean allPassed = true;
+            StringBuilder issues = new StringBuilder();
+
+            for (int i = 0; i < testCases.size(); i++) {
+                JsonNode tc = testCases.get(i);
+                String caseId = tc.path("case_id").asText("TC_" + (i + 1));
+                String caseName = tc.path("case_name").asText(caseId);
+                BigDecimal caseMaxPenalty = BigDecimal
+                        .valueOf(Math.max(0d, tc.path("penalty_value").asDouble(1.0)))
+                        .setScale(4, RoundingMode.HALF_UP);
+                String casePhase = "setup";
+                String caseSchema = baseSchemaName + "_sel_" + question.getId() + "_" + i + "_"
+                        + (System.currentTimeMillis() % 100000);
+
+                try {
+                    examSchemaService.resetSchema(caseSchema, false);
+
+                    bootstrapSelectGradingSchema(
+                            exam,
+                            specification,
+                            sortedQuestions,
+                            caseSchema,
+                            caseId,
+                            issues);
+
+                    runSelectSetupDependency(
+                            sortedQuestions,
+                            tc.path("setup_dependency_id").asText("").trim(),
+                            caseSchema,
+                            caseId,
+                            issues);
+
+                    String setupCustomScript = tc.path("setup_custom_script").asText("");
+                    if (!setupCustomScript.isBlank()) {
+                        if (containsForbiddenSchemaDdl(setupCustomScript)) {
+                            throw new IllegalArgumentException(
+                                    "setup_custom_script must not contain CREATE/DROP TABLE or unsupported ALTER TABLE.");
+                        }
+                        clearAllDataInSchema(caseSchema);
+                        executeSetupScriptWithFkFallback(caseSchema, setupCustomScript, caseId, issues);
+                    }
+
+                    casePhase = "student_query";
+                    List<Map<String, Object>> actualRows = examSchemaService.executeSql(caseSchema, studentQuery)
+                            .getResultSet();
+                    if (actualRows == null) {
+                        actualRows = List.of();
+                    }
+
+                    casePhase = "teacher_query";
+                    SelectExpectedRows expected = resolveSelectExpectedRows(
+                            caseSchema,
+                            question.getCorrectQuery(),
+                            tc);
+
+                    if (!structuralChecked && !actualRows.isEmpty() && !expected.columns().isEmpty()) {
+                        structuralChecked = true;
+                        structuralDeduction = calculateSelectStructuralDeductionForTestCases(
+                                expected.columns(),
+                                actualRows,
+                                selectRules,
+                                totalPoints,
+                                issues);
+                    }
+
+                    casePhase = "grading";
+                    BigDecimal caseDeduction = calculateSelectCaseDeductionForTestCase(
+                            caseId,
+                            caseName,
+                            caseMaxPenalty,
+                            expected.columns(),
+                            expected.rows(),
+                            actualRows,
+                            strictOrdering,
+                            selectRules,
+                            issues);
+
+                    if (caseDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                        allPassed = false;
+                        totalDeduction = totalDeduction.add(caseDeduction);
+                    }
+                } catch (Exception caseEx) {
+                    String message = caseEx.getMessage() != null ? caseEx.getMessage() : caseEx.getClass().getSimpleName();
+                    if ("setup".equals(casePhase)) {
+                        appendSelectIssue(issues,
+                                "[" + caseId + "] Setup failed, skipped without deduction: " + message);
+                        continue;
+                    }
+
+                    allPassed = false;
+                    totalDeduction = totalDeduction.add(caseMaxPenalty);
+                    appendSelectIssue(issues,
+                            "[" + caseId + "] " + casePhase + " failed, deducted "
+                                    + caseMaxPenalty.setScale(2, RoundingMode.HALF_UP).toPlainString()
+                                    + " points: " + message);
+                } finally {
+                    try {
+                        examSchemaService.dropSchema(caseSchema);
+                    } catch (Exception e) {
+                        log.warn("Failed to drop SELECT test-case schema [{}]: {}", caseSchema, e.getMessage());
+                    }
+                }
+            }
+
+            if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                allPassed = false;
+                totalDeduction = totalDeduction.add(structuralDeduction);
+            }
+
+            BigDecimal finalEarned = totalPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
+            if (finalEarned.compareTo(BigDecimal.ZERO) < 0) {
+                finalEarned = BigDecimal.ZERO;
+            }
+            if (finalEarned.compareTo(totalPoints) > 0) {
+                finalEarned = totalPoints;
+            }
+
+            if (allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0) {
+                return GradeDecision.pass(finalEarned);
+            }
+
+            String errorMessage = issues.length() > 0
+                    ? issues.toString().trim()
+                    : "SELECT result did not match rubric test cases.";
+            return GradeDecision.partial(finalEarned, errorMessage);
+        } catch (Exception e) {
+            return GradeDecision.fail("Failed to grade SELECT test cases: " + e.getMessage());
+        }
+    }
+
+    private int bootstrapSelectGradingSchema(
+            Exam exam,
+            ExamSpecification specification,
+            List<ExamQuestion> sortedQuestions,
+            String schemaName,
+            String caseId,
+            StringBuilder issues) {
+        boolean isLoadDdl = exam != null
+                && exam.getSettings() != null
+                && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+        if (isLoadDdl) {
+            if (specification == null || specification.getDdlScript() == null
+                    || specification.getDdlScript().isBlank()) {
+                throw new IllegalArgumentException("Exam enabled DDL loading but specification DDL is missing.");
+            }
+            examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), null);
+            return 0;
+        }
+
+        int preparedCount = 0;
+        for (ExamQuestion q : sortedQuestions) {
+            if (q.getQuestionType() != QuestionType.CREATE_TABLE) {
+                continue;
+            }
+            if (q.getCorrectQuery() == null || q.getCorrectQuery().isBlank()) {
+                continue;
+            }
+
+            try {
+                executeSqlScriptBatches(schemaName, q.getCorrectQuery());
+                preparedCount++;
+            } catch (Exception ex) {
+                String error = ex.getMessage() != null ? ex.getMessage() : "";
+                boolean duplicateObject = error.contains("There is already an object named")
+                        || error.contains("error code [2714]");
+                if (!duplicateObject) {
+                    appendSelectIssue(issues,
+                            "[" + caseId + "] Could not run CREATE_TABLE answer #" + q.getId()
+                                    + " while preparing SELECT schema: " + error);
+                }
+            }
+        }
+        return preparedCount;
+    }
+
+    private void runSelectSetupDependency(
+            List<ExamQuestion> sortedQuestions,
+            String setupDependencyId,
+            String schemaName,
+            String caseId,
+            StringBuilder issues) {
+        if (setupDependencyId == null || setupDependencyId.isBlank()) {
+            return;
+        }
+        if (!setupDependencyId.matches("\\d+")) {
+            appendSelectIssue(issues, "[" + caseId + "] Ignored non-numeric setup_dependency_id: " + setupDependencyId);
+            return;
+        }
+
+        try {
+            Long depId = Long.valueOf(setupDependencyId);
+            ExamQuestion depQuestion = sortedQuestions.stream()
+                    .filter(q -> q.getId() != null && q.getId().equals(depId))
+                    .findFirst()
+                    .orElse(null);
+            if (depQuestion == null || depQuestion.getCorrectQuery() == null
+                    || depQuestion.getCorrectQuery().isBlank()) {
+                return;
+            }
+            executeSqlScriptBatches(schemaName, depQuestion.getCorrectQuery());
+        } catch (Exception e) {
+            appendSelectIssue(issues,
+                    "[" + caseId + "] Could not run setup_dependency_id " + setupDependencyId + ": "
+                            + e.getMessage());
+        }
+    }
+
+    private SelectExpectedRows resolveSelectExpectedRows(
+            String schemaName,
+            String correctQuery,
+            JsonNode testCase) {
+        if (correctQuery != null && !correctQuery.isBlank()) {
+            List<Map<String, Object>> teacherRows = examSchemaService.executeSql(schemaName, correctQuery).getResultSet();
+            if (teacherRows == null || teacherRows.isEmpty()) {
+                return new SelectExpectedRows(List.of(), teacherRows == null ? List.of() : teacherRows);
+            }
+            return new SelectExpectedRows(new ArrayList<>(teacherRows.get(0).keySet()), teacherRows);
+        }
+
+        JsonNode expectedResult = testCase.path("expected_result");
+        JsonNode columnsConfig = expectedResult.path("columns_config");
+        JsonNode rowsNode = expectedResult.path("rows");
+
+        List<String> columns = new ArrayList<>();
+        if (columnsConfig.isArray()) {
+            for (JsonNode columnNode : columnsConfig) {
+                columns.add(columnNode.path("column_name").asText(""));
+            }
+        }
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (rowsNode.isArray()) {
+            for (JsonNode rowNode : rowsNode) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (int i = 0; i < columns.size(); i++) {
+                    JsonNode valueNode = i < rowNode.size() ? rowNode.get(i) : null;
+                    row.put(columns.get(i), valueNode == null || valueNode.isNull() ? null : valueNode.asText());
+                }
+                rows.add(row);
+            }
+        }
+
+        return new SelectExpectedRows(columns, rows);
+    }
+
+    private BigDecimal calculateSelectStructuralDeductionForTestCases(
+            List<String> expectedColumns,
+            List<Map<String, Object>> actualRows,
+            JsonNode selectRules,
+            BigDecimal maxTotalPoints,
+            StringBuilder issues) {
+        List<String> actualColumns = actualRows == null || actualRows.isEmpty()
+                ? new ArrayList<>()
+                : new ArrayList<>(actualRows.get(0).keySet());
+
+        List<String> effectiveExpectedColumns = expectedColumns == null ? new ArrayList<>()
+                : expectedColumns.stream()
+                        .filter(col -> col != null && !col.isBlank())
+                        .collect(Collectors.toCollection(ArrayList::new));
+
+        if (effectiveExpectedColumns.isEmpty() || actualColumns.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        int nameMismatchAtSamePosition = 0;
+        int minCols = Math.min(effectiveExpectedColumns.size(), actualColumns.size());
+        for (int i = 0; i < minCols; i++) {
+            if (!effectiveExpectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
+                nameMismatchAtSamePosition++;
+            }
+        }
+        int trulyMissingColumns = Math.max(0, effectiveExpectedColumns.size() - actualColumns.size());
+        int trulyExtraColumns = Math.max(0, actualColumns.size() - effectiveExpectedColumns.size());
+        int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
+        int extraColumns = trulyExtraColumns;
+
+        int columnOrderViolations = 0;
+        if (nameMismatchAtSamePosition == 0
+                && trulyMissingColumns == 0
+                && trulyExtraColumns == 0
+                && !sameColumnOrderIgnoreCase(effectiveExpectedColumns, actualColumns)) {
+            columnOrderViolations = 1;
+        }
+
+        if (nameMismatchAtSamePosition == 0 && missingColumns == 0 && extraColumns == 0
+                && columnOrderViolations == 0) {
+            return BigDecimal.ZERO;
+        }
+
+        List<SelectRuleApplication> applications = List.of(
+                applySelectRule(selectRules, "COLUMN", "NOT_EQUAL", nameMismatchAtSamePosition,
+                        maxTotalPoints, 0.0, "wrong column name at " + nameMismatchAtSamePosition + " positions"),
+                applySelectRule(selectRules, "COLUMN", "IS_MISSING", trulyMissingColumns,
+                        maxTotalPoints, 0.0, "missing " + trulyMissingColumns + " columns"),
+                applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
+                        maxTotalPoints, 0.0, "extra " + extraColumns + " columns"),
+                applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
+                        maxTotalPoints, 0.0, "wrong column order"));
+
+        BigDecimal totalDeduction = BigDecimal.ZERO;
+        boolean failAll = false;
+        for (SelectRuleApplication application : applications) {
+            if (!application.violationPresent()) {
+                continue;
+            }
+            if (application.failAllTriggered()) {
+                failAll = true;
+            }
+            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                totalDeduction = totalDeduction.add(application.deduction());
+            }
+            if (application.message() != null && !application.message().isBlank()) {
+                appendSelectIssue(issues, "[Column structure] " + application.message());
+            }
+        }
+
+        if (failAll) {
+            return maxTotalPoints.setScale(2, RoundingMode.HALF_UP);
+        }
+        if (totalDeduction.compareTo(maxTotalPoints) > 0) {
+            totalDeduction = maxTotalPoints;
+        }
+        return totalDeduction.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateSelectCaseDeductionForTestCase(
+            String caseId,
+            String caseName,
+            BigDecimal caseMaxPenalty,
+            List<String> expectedColumns,
+            List<Map<String, Object>> expectedRows,
+            List<Map<String, Object>> actualRows,
+            boolean strictOrdering,
+            JsonNode selectRules,
+            StringBuilder issues) {
+        List<Map<String, Object>> safeExpectedRows = expectedRows == null ? List.of() : expectedRows;
+        List<Map<String, Object>> safeActualRows = actualRows == null ? List.of() : actualRows;
+
+        List<String> actualColumns = safeActualRows.isEmpty()
+                ? new ArrayList<>()
+                : new ArrayList<>(safeActualRows.get(0).keySet());
+
+        List<String> effectiveExpectedColumns = expectedColumns == null ? new ArrayList<>()
+                : expectedColumns.stream()
+                        .filter(column -> column != null && !column.isBlank())
+                        .collect(Collectors.toCollection(ArrayList::new));
+        if (effectiveExpectedColumns.isEmpty() && !actualColumns.isEmpty()) {
+            effectiveExpectedColumns = new ArrayList<>(actualColumns);
+        }
+
+        List<String> comparisonColumns = !effectiveExpectedColumns.isEmpty()
+                ? new ArrayList<>(effectiveExpectedColumns)
+                : new ArrayList<>(actualColumns);
+        if (comparisonColumns.isEmpty() && !safeExpectedRows.isEmpty()) {
+            comparisonColumns.addAll(safeExpectedRows.get(0).keySet());
+        }
+
+        List<Map<String, Object>> remappedActualRows = remapActualRowsByPosition(
+                safeActualRows,
+                actualColumns,
+                effectiveExpectedColumns);
+
+        if (compareSelectResultStrict(remappedActualRows, safeExpectedRows, strictOrdering, comparisonColumns)) {
+            return BigDecimal.ZERO;
+        }
+
+        int expectedRowsCount = safeExpectedRows.size();
+        int actualRowsCount = safeActualRows.size();
+        int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
+        int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
+
+        JsonNode rowOrderRule = findInsertRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
+        int rowOrderViolations = 0;
+        if (strictOrdering && rowOrderRule != null && !hasInsertModifier(rowOrderRule, "SORT_ASC")) {
+            rowOrderViolations = countSelectRowOrderViolations(remappedActualRows, safeExpectedRows, comparisonColumns);
+            if (rowOrderViolations == 0) {
+                rowOrderViolations = 1;
+            }
+        }
+
+        JsonNode cellNotEqualRule = findInsertRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
+        JsonNode cellNullRule = findInsertRule(selectRules, "CELL_VALUE", "IS_NULL");
+        JsonNode cellCompareModifiers = firstNonEmptyModifiers(
+                extractInsertRuleModifiers(cellNotEqualRule),
+                extractInsertRuleModifiers(cellNullRule));
+
+        List<SelectRowPair> rowPairs = buildSelectRowPairs(
+                remappedActualRows,
+                safeExpectedRows,
+                comparisonColumns,
+                strictOrdering,
+                cellCompareModifiers);
+        int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
+        int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+
+        List<SelectRuleApplication> applications = List.of(
+                applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
+                        caseMaxPenalty, 0.0, "missing " + missingRows + " rows"),
+                applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
+                        caseMaxPenalty, 0.0, "extra " + extraRows + " rows"),
+                applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
+                        caseMaxPenalty, 0.0, "wrong " + wrongCells + " cells"),
+                applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
+                        caseMaxPenalty, 0.0, "null " + nullViolations + " cells"),
+                applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
+                        caseMaxPenalty, 0.0, "wrong row order"));
+
+        BigDecimal totalCaseDeduction = BigDecimal.ZERO;
+        int matchedRuleCount = 0;
+        boolean failAllTriggered = false;
+        StringBuilder caseIssues = new StringBuilder();
+        for (SelectRuleApplication application : applications) {
+            if (!application.violationPresent()) {
+                continue;
+            }
+            if (application.ruleMatched()) {
+                matchedRuleCount++;
+            }
+            if (application.failAllTriggered()) {
+                failAllTriggered = true;
+            }
+            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                totalCaseDeduction = totalCaseDeduction.add(application.deduction());
+            }
+            if (application.message() != null && !application.message().isBlank()) {
+                appendSelectIssue(caseIssues, application.message());
+            }
+        }
+
+        if (failAllTriggered) {
+            totalCaseDeduction = caseMaxPenalty;
+        } else if (matchedRuleCount == 0) {
+            appendSelectIssue(issues,
+                    "[" + caseId + "] " + caseName
+                            + ": mismatch detected but no matching SELECT grading rule; no deduction.");
+            return BigDecimal.ZERO;
+        }
+
+        if (totalCaseDeduction.compareTo(caseMaxPenalty) > 0) {
+            totalCaseDeduction = caseMaxPenalty;
+        }
+
+        BigDecimal rounded = totalCaseDeduction.setScale(2, RoundingMode.HALF_UP);
+        if (rounded.compareTo(BigDecimal.ZERO) > 0) {
+            String detail = caseIssues.length() > 0 ? caseIssues.toString().trim() : "result mismatch";
+            appendSelectIssue(issues,
+                    "[" + caseId + "] " + caseName + ": " + detail
+                            + " -> deducted " + rounded.toPlainString() + " points.");
+        }
+        return rounded;
+    }
+
+    private boolean compareSelectResultStrict(
+            List<Map<String, Object>> actualRows,
+            List<Map<String, Object>> expectedRows,
+            boolean strictOrdering,
+            List<String> comparisonColumns) {
+        if (actualRows == null || expectedRows == null || actualRows.size() != expectedRows.size()) {
+            return false;
+        }
+
+        List<String> actualSignatures = new ArrayList<>();
+        for (Map<String, Object> actualRow : actualRows) {
+            actualSignatures.add(buildSelectRowSignature(actualRow, comparisonColumns));
+        }
+
+        List<String> expectedSignatures = new ArrayList<>();
+        for (Map<String, Object> expectedRow : expectedRows) {
+            expectedSignatures.add(buildSelectRowSignature(expectedRow, comparisonColumns));
+        }
+
+        if (!strictOrdering) {
+            Collections.sort(actualSignatures);
+            Collections.sort(expectedSignatures);
+        }
+        return actualSignatures.equals(expectedSignatures);
+    }
+
+    private boolean containsForbiddenSchemaDdl(String sql) {
+        if (sql == null || sql.isBlank()) {
+            return false;
+        }
+
+        String normalized = sql.toUpperCase(Locale.ROOT);
+        if (normalized.contains("CREATE TABLE") || normalized.contains("DROP TABLE")) {
+            return true;
+        }
+        if (!normalized.contains("ALTER TABLE")) {
+            return false;
+        }
+
+        String[] statements = normalized.split(";");
+        for (String raw : statements) {
+            String stmt = raw.trim();
+            if (stmt.isBlank() || !stmt.contains("ALTER TABLE")) {
+                continue;
+            }
+            boolean allowNocheck = stmt.matches("(?s).*ALTER\\s+TABLE.*NOCHECK\\s+CONSTRAINT.*");
+            boolean allowCheck = stmt.matches("(?s).*ALTER\\s+TABLE.*CHECK\\s+CONSTRAINT.*");
+            if (!allowNocheck && !allowCheck) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void executeSetupScriptWithFkFallback(
+            String schemaName,
+            String setupScript,
+            String caseId,
+            StringBuilder issues) {
+        try {
+            executeSqlScriptBatches(schemaName, setupScript);
+        } catch (Exception ex) {
+            String message = ex.getMessage() != null ? ex.getMessage() : "";
+            boolean isFkConflict = message.contains("FOREIGN KEY constraint")
+                    || message.toLowerCase(Locale.ROOT).contains("foreign key");
+            if (!isFkConflict) {
+                throw ex;
+            }
+
+            appendSelectIssue(issues,
+                    "[" + caseId + "] setup_custom_script hit FK conflict; retrying with NOCHECK constraints.");
+            clearAllDataInSchema(schemaName);
+            setAllConstraintsEnabled(schemaName, false);
+            try {
+                try {
+                    executeSqlScriptBatches(schemaName, setupScript);
+                } catch (Exception retryEx) {
+                    String relaxedScript = stripRecheckConstraintStatements(setupScript);
+                    if (relaxedScript.isBlank() || relaxedScript.equals(setupScript)) {
+                        throw retryEx;
+                    }
+                    clearAllDataInSchema(schemaName);
+                    setAllConstraintsEnabled(schemaName, false);
+                    executeSqlScriptBatches(schemaName, relaxedScript);
+                }
+            } finally {
+                try {
+                    setAllConstraintsEnabled(schemaName, true);
+                } catch (Exception recheckEx) {
+                    appendSelectIssue(issues,
+                            "[" + caseId + "] FK constraints still invalid after setup; continuing with NOCHECK.");
+                    try {
+                        setAllConstraintsEnabled(schemaName, false);
+                    } catch (Exception ignore) {
+                    }
+                }
+            }
+        }
+    }
+
+    private String stripRecheckConstraintStatements(String setupScript) {
+        if (setupScript == null || setupScript.isBlank()) {
+            return "";
+        }
+
+        StringBuilder filtered = new StringBuilder();
+        String[] statements = setupScript.split(";");
+        for (String rawStatement : statements) {
+            String statement = rawStatement == null ? "" : rawStatement.trim();
+            if (statement.isBlank()) {
+                continue;
+            }
+            String normalized = statement.replaceAll("\\s+", " ").trim().toUpperCase(Locale.ROOT);
+            boolean isRecheckConstraint = normalized.matches("ALTER TABLE .* WITH CHECK CHECK CONSTRAINT ALL")
+                    || normalized.matches("ALTER TABLE .* CHECK CONSTRAINT ALL")
+                    || normalized.matches("ALTER TABLE .* WITH CHECK CHECK CONSTRAINT \\[?[^\\]]+\\]?")
+                    || normalized.matches("ALTER TABLE .* CHECK CONSTRAINT \\[?[^\\]]+\\]?");
+            if (isRecheckConstraint) {
+                continue;
+            }
+            filtered.append(statement).append(";\n");
+        }
+        return filtered.toString().trim();
+    }
+
+    private void clearAllDataInSchema(String schemaName) {
+        String safeSchema = schemaName.replaceAll("[^a-zA-Z0-9_]", "");
+        setAllConstraintsEnabled(safeSchema, false);
+        try {
+            List<Map<String, Object>> tables = examSchemaService.executeAdminSql(
+                    "SELECT t.name AS TABLE_NAME "
+                            + "FROM sys.tables t "
+                            + "INNER JOIN sys.schemas s ON t.schema_id = s.schema_id "
+                            + "WHERE s.name = '" + safeSchema + "'")
+                    .getResultSet();
+
+            for (Map<String, Object> row : tables) {
+                Object tableNameObj = row.get("TABLE_NAME");
+                if (tableNameObj == null) {
+                    continue;
+                }
+                String tableName = String.valueOf(tableNameObj).replaceAll("[^a-zA-Z0-9_]", "");
+                examSchemaService.executeAdminSql("DELETE FROM [" + safeSchema + "].[" + tableName + "]");
+            }
+        } finally {
+            setAllConstraintsEnabled(safeSchema, true);
+        }
+    }
+
     private JsonNode findInsertRule(JsonNode gradingRules, String target, String condition) {
         if (!gradingRules.isArray()) {
             return null;
@@ -2758,6 +3460,9 @@ public class GradeExamUsecase {
         builder.append(message.trim());
     }
 
+    private record SelectExpectedRows(List<String> columns, List<Map<String, Object>> rows) {
+    }
+
     private record SelectDatasetSpec(String datasetLabel, String datasetScript) {
     }
 
@@ -2848,13 +3553,15 @@ public class GradeExamUsecase {
             return gradeByStrictComparison(schemaName, question);
         }
 
-        BigDecimal earnedTotal = BigDecimal.ZERO;
+        boolean useDeductionScoring = question.getQuestionType() == QuestionType.STORED_PROCEDURE;
+        BigDecimal earnedTotal = useDeductionScoring ? BigDecimal.ONE : BigDecimal.ZERO;
         boolean allPassed = true;
         StringBuilder errorBuilder = new StringBuilder();
         String printOutputCompareMode = readPrintOutputCompareMode(question);
 
         for (TestCase tc : testCases) {
             int tcOrder = tc.getOrderIndex() != null ? tc.getOrderIndex() : 0;
+            BigDecimal caseWeight = tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO;
             try {
                 TestCaseRunResult run = runOneTestCase(schemaName, teacherSchemaName, tc);
                 String actualSerialized = run.actualValue;
@@ -2868,21 +3575,33 @@ public class GradeExamUsecase {
                         truncateForLog(actualSerialized), truncateForLog(expected), isTcCorrect);
 
                 if (isTcCorrect) {
-                    earnedTotal = earnedTotal.add(
-                            tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO);
+                    if (!useDeductionScoring) {
+                        earnedTotal = earnedTotal.add(caseWeight);
+                    }
                 } else {
                     allPassed = false;
+                    if (useDeductionScoring) {
+                        earnedTotal = earnedTotal.subtract(caseWeight);
+                    }
                     String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
                     errorBuilder.append(String.format("[%s] expected='%s' actual='%s'. ",
                             tcLabel, truncateForLog(expected), truncateForLog(actualSerialized)));
                 }
             } catch (Exception e) {
                 allPassed = false;
+                if (useDeductionScoring) {
+                    earnedTotal = earnedTotal.subtract(caseWeight);
+                }
                 String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
                 errorBuilder.append(String.format("[%s] runtime error: %s. ", tcLabel, e.getMessage()));
                 log.error("[gradeByTestCases] Q{} TC{} threw exception: {}",
                         question.getId(), tcOrder, e.getMessage(), e);
             }
+        }
+        if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) {
+            earnedTotal = BigDecimal.ZERO;
+        } else if (earnedTotal.compareTo(BigDecimal.ONE) > 0) {
+            earnedTotal = BigDecimal.ONE;
         }
         log.info("[gradeByTestCases] Q{} allPassed={} earnedTotal={}", question.getId(), allPassed, earnedTotal);
 
@@ -3239,9 +3958,9 @@ public class GradeExamUsecase {
                 return false;
             }
             boolean passed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
-            // gradeByTestCases already sets scoreEarned based on scoreWeight sum (0..1
-            // range)
-            // Scale up to totalPoints
+            // gradeByTestCases returns a normalized test-case ratio. SP uses deduction
+            // scoring (1 - failed weights); other routine types still use additive
+            // scoring.
             if (submission != null && submission.getScoreEarned() != null) {
                 BigDecimal scaled = totalPoints.multiply(submission.getScoreEarned());
                 if (scaled.compareTo(totalPoints) > 0)
@@ -3319,8 +4038,8 @@ public class GradeExamUsecase {
 
         if (hasTestCases) {
             testCasesPassed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
-            // gradeByTestCases sets scoreEarned as sum of scoreWeights (0..1 ratio)
-            // Multiply by maxTestCaseScore (= totalPoints * testCaseWeight)
+            // gradeByTestCases returns a normalized test-case ratio. SP uses deduction
+            // scoring (1 - failed weights); Function keeps additive scoring.
             if (submission != null && submission.getScoreEarned() != null) {
                 BigDecimal maxTestCaseScore = totalPoints.multiply(testCaseWeight);
                 earnedTestCaseScore = maxTestCaseScore.multiply(submission.getScoreEarned());

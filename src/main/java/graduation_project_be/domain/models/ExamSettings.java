@@ -21,4 +21,5 @@ public class ExamSettings {
     private Integer maxViolations;
     private Boolean showResultAfterSubmit;
     private Boolean isLoadDdl;
+    private Long seedDatasetId;
 }

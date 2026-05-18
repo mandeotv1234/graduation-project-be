@@ -13,7 +13,8 @@ public record ExamSettingsDto(
         String gradingMethod,
         Integer maxViolations,
         Boolean showResultAfterSubmit,
-        Boolean isLoadDdl) {
+        Boolean isLoadDdl,
+        Long seedDatasetId) {
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -28,6 +29,7 @@ public record ExamSettingsDto(
                 .maxViolations(maxViolations)
                 .showResultAfterSubmit(showResultAfterSubmit)
                 .isLoadDdl(isLoadDdl)
+                .seedDatasetId(seedDatasetId)
                 .build();
     }
 }

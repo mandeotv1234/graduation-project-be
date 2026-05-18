@@ -77,7 +77,8 @@ public class GetMyResultDetailUsecase {
                             gradedBy,
                             gradedByName,
                             submission != null ? submission.getGradedAt() : null,
-                            submission != null ? submission.getTeacherComment() : null
+                            submission != null ? submission.getTeacherComment() : null,
+                            List.of()
                     );
                 }).toList();
 

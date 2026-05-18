@@ -705,24 +705,21 @@ public class GeminiServiceImpl implements GeminiService {
             }
 
             addRoutineSetupIdentityIssues(issues, label, setup, setupInsertColumnsByTable, identityColumnsByTable);
-            addRoutineSetupForeignKeyIssues(issues, label, setupInsertColumnsByTable, foreignKeys);
+            addRoutineSetupForeignKeyIssues(issues, label, setupInserts, setupInsertColumnsByTable, foreignKeys);
             addRoutineSetupForeignKeyOrderIssues(issues, label, setupInserts, foreignKeys);
             // Do not block on missing parent rows inferred only from invocation/validation.
             // Many valid failure cases intentionally pass a missing FK-like input
             // (for example CustomerId does not exist) and should be judged by the
             // executable gate against the reference procedure instead of this heuristic.
 
-            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[?\\{SCHEMA\\}\\]?\\.\\[?ChuyenXe\\]?.*")
-                    || setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[[^\\]]+\\]\\.\\[?ChuyenXe\\]?.*")) {
-                if (setup.matches("(?is).*\\bTuyenXe\\b.*")
-                        && !setup.matches(
-                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?TuyenXe\\]?.*")) {
+            if (setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("ChuyenXe"))) {
+                if (setupInsertsNonNullForeignKey(setupInserts, "ChuyenXe", List.of("TuyenXe"))
+                        && !setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("TuyenXe"))) {
                     issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
                             + "parent TuyenXe rows first. ChuyenXe.TuyenXe has a foreign key to TuyenXe.MaTuyen.");
                 }
-                if (setup.matches("(?is).*\\bMaXe\\b.*")
-                        && !setup.matches(
-                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?Xe\\]?.*")) {
+                if (setupInsertsNonNullForeignKey(setupInserts, "ChuyenXe", List.of("MaXe"))
+                        && !setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("Xe"))) {
                     issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
                             + "parent Xe rows first. ChuyenXe.MaXe has a foreign key to Xe.MaXe.");
                 }
@@ -1486,6 +1483,7 @@ public class GeminiServiceImpl implements GeminiService {
     private void addRoutineSetupForeignKeyIssues(
             List<String> issues,
             String label,
+            List<RoutineSetupInsert> setupInserts,
             Map<String, Set<String>> setupInsertColumnsByTable,
             List<RoutineForeignKey> foreignKeys) {
         if (setupInsertColumnsByTable.isEmpty() || foreignKeys.isEmpty()) {
@@ -1494,27 +1492,32 @@ public class GeminiServiceImpl implements GeminiService {
 
         Set<String> reported = new HashSet<>();
         for (RoutineForeignKey foreignKey : foreignKeys) {
-            Set<String> childColumns = setupInsertColumnsByTable.get(foreignKey.tableName());
-            if (childColumns == null) {
+            if (setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
                 continue;
             }
 
-            boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
-                    || childColumns.containsAll(foreignKey.columns());
-            if (!insertsForeignKeyColumns || setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
-                continue;
-            }
+            for (RoutineSetupInsert setupInsert : setupInserts) {
+                if (!setupInsert.tableName().equals(foreignKey.tableName())) {
+                    continue;
+                }
 
-            String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable()
-                    + ":" + String.join(",", foreignKey.columns());
-            if (!reported.add(reportKey)) {
-                continue;
-            }
+                boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
+                        || setupInsert.columns().containsAll(foreignKey.columns());
+                if (!insertsForeignKeyColumns || !insertHasNonNullValuesForColumns(setupInsert, foreignKey.columns())) {
+                    continue;
+                }
 
-            issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
-                    + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
-                    + " but does not insert matching parent table " + foreignKey.referencesTable()
-                    + " in the same setup. Insert parent rows first and do not rely on seed data or invalid FK rows.");
+                String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable()
+                        + ":" + String.join(",", foreignKey.columns());
+                if (!reported.add(reportKey)) {
+                    continue;
+                }
+
+                issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
+                        + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
+                        + " but does not insert matching parent table " + foreignKey.referencesTable()
+                        + " in the same setup. Insert parent rows first and do not rely on seed data or invalid FK rows.");
+            }
         }
     }
 
@@ -1541,7 +1544,9 @@ public class GeminiServiceImpl implements GeminiService {
 
                 boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
                         || insert.columns().containsAll(foreignKey.columns());
-                if (!insertsForeignKeyColumns || !tablesInSetup.contains(foreignKey.referencesTable())) {
+                if (!insertsForeignKeyColumns
+                        || !insertHasNonNullValuesForColumns(insert, foreignKey.columns())
+                        || !tablesInSetup.contains(foreignKey.referencesTable())) {
                     continue;
                 }
 
@@ -1676,18 +1681,86 @@ public class GeminiServiceImpl implements GeminiService {
                 continue;
             }
 
+            List<String> orderedColumns = new ArrayList<>();
             Set<String> columns = new LinkedHashSet<>();
             for (String column : splitIdentifiers(matcher.group(2))) {
                 String normalizedColumn = normalizeIdentifierKey(column);
                 if (!normalizedColumn.isBlank()) {
+                    orderedColumns.add(normalizedColumn);
                     columns.add(normalizedColumn);
                 }
             }
 
-            inserts.add(new RoutineSetupInsert(tableName, columns, matcher.start()));
+            inserts.add(new RoutineSetupInsert(
+                    tableName,
+                    columns,
+                    extractInsertValuesByColumn(setup, matcher.end(), orderedColumns),
+                    matcher.start()));
         }
 
         return inserts;
+    }
+
+    private Map<String, String> extractInsertValuesByColumn(String setup, int searchStart, List<String> columns) {
+        if (setup == null || columns.isEmpty() || searchStart < 0 || searchStart >= setup.length()) {
+            return Map.of();
+        }
+
+        Matcher valuesMatcher = Pattern.compile("(?is)\\bVALUES\\s*\\(").matcher(setup);
+        if (!valuesMatcher.find(searchStart)) {
+            return Map.of();
+        }
+
+        int openParenIndex = setup.indexOf('(', valuesMatcher.start());
+        int closeParenIndex = findMatchingParen(setup, openParenIndex);
+        if (openParenIndex < 0 || closeParenIndex <= openParenIndex) {
+            return Map.of();
+        }
+
+        List<String> values = splitTopLevelComma(setup.substring(openParenIndex + 1, closeParenIndex));
+        Map<String, String> valuesByColumn = new LinkedHashMap<>();
+        for (int i = 0; i < Math.min(columns.size(), values.size()); i++) {
+            valuesByColumn.put(columns.get(i), values.get(i).trim());
+        }
+        return valuesByColumn;
+    }
+
+    private boolean setupInsertsNonNullForeignKey(
+            List<RoutineSetupInsert> setupInserts,
+            String tableName,
+            List<String> columns) {
+        String normalizedTableName = normalizeIdentifierKey(tableName);
+        List<String> normalizedColumns = columns.stream()
+                .map(this::normalizeIdentifierKey)
+                .filter(column -> !column.isBlank())
+                .toList();
+
+        for (RoutineSetupInsert setupInsert : setupInserts) {
+            if (setupInsert.tableName().equals(normalizedTableName)
+                    && setupInsert.columns().containsAll(normalizedColumns)
+                    && insertHasNonNullValuesForColumns(setupInsert, normalizedColumns)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean insertHasNonNullValuesForColumns(RoutineSetupInsert setupInsert, List<String> columns) {
+        if (columns.isEmpty()) {
+            return true;
+        }
+
+        for (String column : columns) {
+            String value = setupInsert.valuesByColumn().get(normalizeIdentifierKey(column));
+            if (value == null || !isSqlNullLiteral(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isSqlNullLiteral(String value) {
+        return value != null && value.trim().matches("(?is)^NULL$");
     }
 
     private boolean hasIdentityInsertState(String setup, String tableName, String state) {
@@ -2395,6 +2468,7 @@ public class GeminiServiceImpl implements GeminiService {
     private record RoutineSetupInsert(
             String tableName,
             Set<String> columns,
+            Map<String, String> valuesByColumn,
             int position) {
     }
 

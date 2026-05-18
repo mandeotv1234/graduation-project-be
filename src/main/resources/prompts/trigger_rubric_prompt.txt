@@ -6,7 +6,7 @@ Answer (correctQuery): %s
 Total question score: %.2f
 
 === CRITICAL PRINCIPLES (MANDATORY READ) ===
-Do NOT guess the value of `expected_result`. The engine will automatically run the reference answer in a sandbox
+Do NOT output `expected_result` or expected values. The engine will automatically run the reference answer in a sandbox
 and use the actual result as `expected_value`. You ONLY generate the "scenario":
 setup_script + invocation_query (DML to trigger the trigger) + validation_query.
 
@@ -99,8 +99,8 @@ Create JSON rubric with the following structure:
    - **CRITICAL**: INSERT must have enough values matching the number of columns specified
    - **CRITICAL**: VARCHAR/NVARCHAR values must be shorter than column length (example: VARCHAR(10) → use 'CX001' not 'CX001_EXISTING')
    - Engine will wrap test case in transaction and rollback, so no cleanup needed.
-3. invocation_query: MANDATORY. INSERT/UPDATE/DELETE command to fire trigger. This is
-   the "trigger_sql" from old design, renamed for consistency with SP/Function.
+3. invocation_query: MANDATORY. INSERT/UPDATE/DELETE command to fire trigger.
+   Always use this field name; do not output trigger_sql.
    - **CRITICAL**: Must check DDL to know exact column names and data types
    - **CRITICAL**: Number of values in VALUES must match number of columns in INSERT INTO
 4. validation_query: MANDATORY. SQL SELECT to read side effect result (audit table,

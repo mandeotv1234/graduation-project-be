@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
@@ -372,12 +373,12 @@ public class RubricTestingUsecase {
             examSchemaService.resetSchema(caseSchema, false);
 
             List<Map<String, Object>> details = new ArrayList<>();
-            int bootstrappedTables = executeExistingAnswersForSchema(
+            bootstrapSelectSchema(
+                    request.examId(),
                     examQuestions,
                     caseSchema,
                     details,
-                    "RUN_TC",
-                    true);
+                    "RUN_TC");
 
             if (setupDependencyId != null && !setupDependencyId.isBlank()) {
                 if (setupDependencyId.matches("\\d+")) {
@@ -732,12 +733,12 @@ public class RubricTestingUsecase {
                 try {
                     examSchemaService.resetSchema(caseSchema, false);
 
-                    int bootstrappedTables = executeExistingAnswersForSchema(
+                    int bootstrappedTables = bootstrapSelectSchema(
+                            request.examId(),
                             examQuestions,
                             caseSchema,
                             details,
-                            caseId,
-                            true);
+                            caseId);
                     if (bootstrappedTables > 0) {
                         details.add(Map.of(
                                 "type", "info",
@@ -1034,6 +1035,67 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    private int bootstrapSelectSchema(
+            Long examId,
+            List<ExamQuestionResponse> examQuestions,
+            String schemaName,
+            List<Map<String, Object>> details,
+            String caseId) {
+        SelectExamBootstrap bootstrap = resolveSelectExamBootstrap(examId);
+        if (bootstrap.useExamDdl()) {
+            examSchemaService.loadTemplateIntoSchema(
+                    schemaName,
+                    bootstrap.ddlScript(),
+                    null);
+            String prefix = caseId == null || caseId.isBlank() ? "" : "[" + caseId + "] ";
+            details.add(Map.of(
+                    "type", "info",
+                    "message", prefix + "Da nap DDL cua dac ta de thi",
+                    "points", 0));
+            return 0;
+        }
+
+        return executeExistingAnswersForSchema(
+                examQuestions,
+                schemaName,
+                details,
+                caseId,
+                true);
+    }
+
+    private SelectExamBootstrap resolveSelectExamBootstrap(Long examId) {
+        if (examId == null) {
+            return SelectExamBootstrap.disabled();
+        }
+
+        Exam exam = examRepository.findById(examId).orElse(null);
+        if (exam == null || exam.getSettings() == null || !Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl())) {
+            return SelectExamBootstrap.disabled();
+        }
+
+        Long specificationId = exam.getSpecificationId();
+        if (specificationId == null) {
+            throw new BadRequestException("Exam da bat nap DDL nhung khong co specificationId.");
+        }
+
+        ExamSpecification specification = examSpecificationRepository.findById(specificationId)
+                .orElseThrow(() -> new BadRequestException(
+                        "Khong tim thay specification " + specificationId + " cua exam."));
+
+        String ddlScript = specification.getDdlScript();
+        if (ddlScript == null || ddlScript.isBlank()) {
+            throw new BadRequestException("Specification cua exam khong co DDL script de chay SELECT test.");
+        }
+
+        return new SelectExamBootstrap(true, ddlScript);
+    }
+
+    private record SelectExamBootstrap(boolean useExamDdl, String ddlScript) {
+        private static SelectExamBootstrap disabled() {
+            return new SelectExamBootstrap(false, "");
         }
     }
 
@@ -3555,17 +3617,8 @@ public class RubricTestingUsecase {
                     String caseName = tc.path("case_name").asText("Unnamed");
                     String setupScript = tc.path("setup_script").asText("");
 
-                    // Support both old and new structure
                     String invocationQuery = tc.path("invocation_query").asText("");
-                    if (invocationQuery.isBlank()) {
-                        invocationQuery = tc.path("trigger_sql").asText(""); // fallback to old structure
-                    }
-
                     String validationQuery = tc.path("validation_query").asText("");
-                    if (validationQuery.isBlank()) {
-                        validationQuery = tc.path("expected_result").asText(""); // fallback to old structure
-                    }
-
                     String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
 
                     // Support both score_weight (new) and penalty_value (old)
@@ -3578,7 +3631,7 @@ public class RubricTestingUsecase {
                         details.add(Map.of(
                                 "type", "info",
                                 "message",
-                                String.format("Test case '%s': bỏ qua (thiếu invocation_query/trigger_sql)", caseName),
+                                String.format("Test case '%s': bỏ qua (thiếu invocation_query)", caseName),
                                 "points", 0));
                         continue;
                     }

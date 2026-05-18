@@ -5,9 +5,8 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import jakarta.annotation.PreDestroy;
+import java.util.concurrent.ExecutorService;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -880,12 +879,6 @@ public class UsecasesConfiguration {
     }
 
     // ===== EXPORT PDF USECASES =====
-
-    /** Shared fixed-thread-pool for parallel Gemini calls during PDF export. */
-    @Bean(name = "geminiExecutor", destroyMethod = "shutdown")
-    ExecutorService geminiExecutor() {
-        return Executors.newFixedThreadPool(4);
-    }
 
     @Bean
     ExportExamPdfUsecase exportExamPdfUsecase(

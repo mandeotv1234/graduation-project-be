@@ -130,7 +130,7 @@ public class StartExamSessionUsecase {
 
             deviceConflictNotificationService.notifyTeacherConflictPending(request.examId(), teacherIds, conflict);
 
-            log.warn("Device conflict pending approval: exam={}, student={}, conflictId={}",
+            log.warn("Xung đột thiết bị đang chờ duyệt: exam={}, student={}, conflictId={}",
                     request.examId(), studentId, conflictId);
 
             return StartExamSessionResponse.conflictPending(conflictId,
@@ -157,7 +157,7 @@ public class StartExamSessionUsecase {
                     initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
                     examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
                     examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
-                    log.info("Reinitialized empty student schema on start-session: exam={}, student={}",
+                    log.info("Đã khởi tạo lại schema trống của sinh viên khi start-session: exam={}, student={}",
                             request.examId(), studentId);
                 }
             } else {
@@ -225,7 +225,7 @@ public class StartExamSessionUsecase {
 
     private String resolveSeedDatasetScript(ExamSpecification specification, Long seedDatasetId) {
         if (seedDatasetId == null) {
-            throw new BadRequestException("Exam requires a seed dataset, but seedDatasetId is missing.");
+            throw new BadRequestException("Đề thi yêu cầu nạp dataset nhưng chưa có seedDatasetId.");
         }
 
         if (specification.getDatasets() == null) {
@@ -239,6 +239,6 @@ public class StartExamSessionUsecase {
                 .filter(script -> script != null && !script.isBlank())
                 .findFirst()
                 .orElseThrow(() -> new BadRequestException(
-                        "Selected seed dataset is missing, inactive, or has no data script."));
+                        "Dataset dùng để nạp dữ liệu mẫu không tồn tại, đang tắt, hoặc không có data script."));
     }
 }

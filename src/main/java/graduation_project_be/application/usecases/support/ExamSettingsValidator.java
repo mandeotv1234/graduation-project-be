@@ -19,19 +19,19 @@ public final class ExamSettingsValidator {
         }
 
         if (specificationId == null || specificationId <= 0L) {
-            throw new BadRequestException("Exam da bat nap DDL va dataset nhung chua chon dac ta CSDL.");
+            throw new BadRequestException("Đề thi đã bật nạp DDL và dataset nhưng chưa chọn đặc tả CSDL.");
         }
 
         Long seedDatasetId = settings.getSeedDatasetId();
         if (seedDatasetId == null) {
-            throw new BadRequestException("Exam da bat nap DDL va dataset nhung chua chon dataset.");
+            throw new BadRequestException("Đề thi đã bật nạp DDL và dataset nhưng chưa chọn dataset.");
         }
 
         var specification = examSpecificationRepository.findById(specificationId)
-                .orElseThrow(() -> new BadRequestException("Khong tim thay dac ta CSDL cua exam."));
+                .orElseThrow(() -> new BadRequestException("Không tìm thấy đặc tả CSDL của đề thi."));
 
         if (specification.getDdlScript() == null || specification.getDdlScript().isBlank()) {
-            throw new BadRequestException("Dac ta CSDL dang chon chua co DDL script.");
+            throw new BadRequestException("Đặc tả CSDL đang chọn chưa có DDL script.");
         }
 
         boolean validDataset = specification.getDatasets() != null
@@ -43,7 +43,7 @@ public final class ExamSettingsValidator {
 
         if (!validDataset) {
             throw new BadRequestException(
-                    "Dataset da chon khong thuoc dac ta CSDL, dang tat, hoac khong co data script.");
+                    "Dataset đã chọn không thuộc đặc tả CSDL, đang tắt, hoặc không có data script.");
         }
     }
 }

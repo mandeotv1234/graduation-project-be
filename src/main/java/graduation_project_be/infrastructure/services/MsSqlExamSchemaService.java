@@ -81,10 +81,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     userName);
             jdbcTemplate.execute(grantCreate);
 
-            log.info("Ensured schema [{}] and user [{}] exist with full permissions", schemaName, userName);
+            log.info("Đã đảm bảo schema [{}] và user [{}] tồn tại với đầy đủ quyền", schemaName, userName);
         } catch (Exception e) {
-            log.error("Failed to create schema/user for {}", schemaName, e);
-            throw new RuntimeException("Failed to prepare exam schema: " + e.getMessage(), e);
+            log.error("Không thể tạo schema/user cho {}", schemaName, e);
+            throw new RuntimeException("Không thể chuẩn bị schema bài thi: " + e.getMessage(), e);
         }
     }
 
@@ -184,10 +184,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Reset schema [{}] — all objects dropped", schemaName);
+            log.info("Đã reset schema [{}] — toàn bộ object đã bị xóa", schemaName);
         } catch (Exception e) {
-            log.error("Failed to reset schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Failed to reset schema: " + e.getMessage(), e);
+            log.error("Không thể reset schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Không thể reset schema: " + e.getMessage(), e);
         }
     }
 
@@ -214,10 +214,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Dropped schema [{}] and user [{}]", schemaName, userName);
+            log.info("Đã xóa schema [{}] và user [{}]", schemaName, userName);
         } catch (Exception e) {
-            log.error("Failed to drop schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Failed to drop schema: " + e.getMessage(), e);
+            log.error("Không thể xóa schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Không thể xóa schema: " + e.getMessage(), e);
         }
     }
 
@@ -241,7 +241,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 }
                             }
                         }
-                        log.info("Loaded DDL into schema: {}", schemaName);
+                        log.info("Đã nạp DDL vào schema: {}", schemaName);
                     }
 
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
@@ -252,7 +252,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 }
                             }
                         }
-                        log.info("Loaded default data into schema: {}", schemaName);
+                        log.info("Đã nạp dữ liệu mặc định vào schema: {}", schemaName);
                     }
                 } finally {
                     try (Statement stmt = conn.createStatement()) {
@@ -262,8 +262,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
         } catch (Exception e) {
-            log.error("Failed to load template into schema: {}", schemaName, e);
-            throw new RuntimeException("Failed to load template into schema: " + e.getMessage(), e);
+            log.error("Không thể nạp template vào schema: {}", schemaName, e);
+            throw new RuntimeException("Không thể nạp template vào schema: " + e.getMessage(), e);
         }
     }
 
@@ -378,7 +378,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
     private String formatDataType(String dataType, int maxLength) {
         if (dataType == null)
-            return "Unknown";
+            return "Không rõ";
         String lower = dataType.toLowerCase();
 
         switch (lower) {
@@ -478,7 +478,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Commands completed successfully.";
+                            statusMessage = "Các lệnh đã chạy thành công.";
                         }
                     }
 
@@ -496,8 +496,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
     }
 
@@ -526,10 +526,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             } catch (Exception ignore) {
             }
             throw new RuntimeException(
-                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
         }
 
         // Walk through ALL results using correct JDBC pattern
@@ -540,8 +540,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     stmt.cancel();
                 } catch (Exception ignore) {
                 }
-                throw new RuntimeException("Query processing exceeded hard timeout of "
-                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                throw new RuntimeException("Xử lý truy vấn vượt quá thời gian tối đa "
+                        + QUERY_TIMEOUT_SECONDS + " giây.");
             }
 
             if (isResultSet) {
@@ -554,8 +554,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 stmt.cancel();
                             } catch (Exception ignore) {
                             }
-                            throw new RuntimeException("Result set fetching exceeded hard timeout of "
-                                    + QUERY_TIMEOUT_SECONDS + " seconds.");
+                            throw new RuntimeException("Lấy result set vượt quá thời gian tối đa "
+                                    + QUERY_TIMEOUT_SECONDS + " giây.");
                         }
 
                         Map<String, Object> row = new LinkedHashMap<>();
@@ -695,17 +695,17 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             } catch (Exception ignore) {
                             }
                             throw new RuntimeException(
-                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
                         } catch (Exception e) {
                             Throwable cause = e.getCause() != null ? e.getCause() : e;
-                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
                         }
 
                         while (true) {
                             if (System.currentTimeMillis() > absoluteTimeoutMs) {
                                 stmt.cancel();
-                                throw new RuntimeException("Batch processing exceeded hard timeout of "
-                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                throw new RuntimeException("Xử lý batch vượt quá thời gian tối đa "
+                                        + QUERY_TIMEOUT_SECONDS + " giây.");
                             }
 
                             if (isResultSet) {
@@ -717,8 +717,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                             if (System.currentTimeMillis() > absoluteTimeoutMs) {
                                                 stmt.cancel();
                                                 throw new RuntimeException(
-                                                        "Result fetch exceeded hard timeout of "
-                                                                + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                                        "Lấy result vượt quá thời gian tối đa "
+                                                                + QUERY_TIMEOUT_SECONDS + " giây.");
                                             }
                                             Map<String, Object> row = new LinkedHashMap<>();
                                             for (int i = 1; i <= colCount; i++) {
@@ -747,7 +747,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Batch executed successfully.";
+                            statusMessage = "Batch đã chạy thành công.";
                         }
                     }
 
@@ -761,13 +761,13 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.execute("REVERT");
                     } catch (Exception e) {
-                        log.warn("REVERT failed for schema [{}]: {}", schemaName, e.getMessage());
+                        log.warn("REVERT thất bại cho schema [{}]: {}", schemaName, e.getMessage());
                     }
                 }
             });
         } catch (Exception e) {
-            log.error("Batch SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi batch SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
     }
 
@@ -794,7 +794,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             }
             stmt.clearWarnings();
         } catch (Exception e) {
-            log.warn("Failed to collect PRINT messages from statement: {}", e.getMessage());
+            log.warn("Không thể thu thập thông báo PRINT từ câu lệnh: {}", e.getMessage());
         }
         return messages;
     }
@@ -915,7 +915,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Admin statement executed successfully.";
+                            statusMessage = "Câu lệnh admin đã chạy thành công.";
                         }
                     }
 
@@ -928,8 +928,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("Admin SQL execution error: {}", e.getMessage());
-            throw new RuntimeException("Admin SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL admin: {}", e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL admin: " + e.getMessage(), e);
         }
     }
 

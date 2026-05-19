@@ -8,6 +8,7 @@ import graduation_project_be.application.port.repositories.ExamSubmissionReposit
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.usecases.response.GetExamStatisticsResponse;
+import graduation_project_be.application.usecases.response.GetExamStatisticsResponse.QuestionAccuracy;
 import graduation_project_be.application.usecases.response.GetExamStatisticsResponse.QuestionTypeAccuracy;
 import graduation_project_be.application.usecases.response.GetExamStatisticsResponse.ScoreDistributionBucket;
 import graduation_project_be.application.usecases.response.GetExamStatisticsResponse.SuspiciousStudent;
@@ -75,20 +76,17 @@ public class GetExamStatisticsUsecase {
             passRate = (double) passCount / scores.size() * 100.0;
         }
 
-        // ===== Score Distribution =====
-        int bucket0_4 = 0, bucket4_6 = 0, bucket6_8 = 0, bucket8_10 = 0;
+        // ===== Score Distribution (10 buckets: 0–1, 1–2, … 9–10) =====
+        int[] buckets = new int[10];
         for (double s : scores) {
-            if (s < 4.0) bucket0_4++;
-            else if (s < 6.0) bucket4_6++;
-            else if (s < 8.0) bucket6_8++;
-            else bucket8_10++;
+            int idx = Math.min((int) s, 9);
+            buckets[idx]++;
         }
-        List<ScoreDistributionBucket> scoreDistribution = List.of(
-                new ScoreDistributionBucket("0–4", bucket0_4),
-                new ScoreDistributionBucket("4–6", bucket4_6),
-                new ScoreDistributionBucket("6–8", bucket6_8),
-                new ScoreDistributionBucket("8–10", bucket8_10)
-        );
+        List<ScoreDistributionBucket> scoreDistribution = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            scoreDistribution.add(new ScoreDistributionBucket(
+                    i + "–" + (i + 1), buckets[i]));
+        }
 
         // ===== Skill Analysis — by QuestionType =====
         Map<String, int[]> typeStats = new HashMap<>(); // int[]{totalAttempts, correctCount}
@@ -109,6 +107,36 @@ public class GetExamStatisticsUsecase {
                     return new QuestionTypeAccuracy(e.getKey(), total, correct, accuracy);
                 })
                 .sorted(Comparator.comparing(QuestionTypeAccuracy::questionType))
+                .toList();
+
+        // ===== Per-Question Accuracy =====
+        Map<Long, int[]> questionStats = new HashMap<>(); // int[]{totalAttempts, correctCount}
+        for (ExamSubmission sub : submissions) {
+            questionStats.computeIfAbsent(sub.getQuestionId(), k -> new int[]{0, 0});
+            questionStats.get(sub.getQuestionId())[0]++;
+            if (Boolean.TRUE.equals(sub.getIsCorrect())) {
+                questionStats.get(sub.getQuestionId())[1]++;
+            }
+        }
+
+        Map<Long, ExamQuestion> questionMap = questions.stream()
+                .collect(Collectors.toMap(ExamQuestion::getId, q -> q));
+
+        List<QuestionAccuracy> perQuestionAccuracy = questionStats.entrySet().stream()
+                .map(e -> {
+                    Long qId = e.getKey();
+                    int total = e.getValue()[0];
+                    int correct = e.getValue()[1];
+                    double acc = total > 0 ? round2((double) correct / total * 100.0) : 0.0;
+                    ExamQuestion q = questionMap.get(qId);
+                    String content = q != null && q.getContent() != null
+                            ? (q.getContent().length() > 80 ? q.getContent().substring(0, 80) + "..." : q.getContent())
+                            : "";
+                    String qType = q != null && q.getQuestionType() != null ? q.getQuestionType().name() : "UNKNOWN";
+                    int orderIdx = q != null && q.getOrderIndex() != null ? q.getOrderIndex() : 0;
+                    return new QuestionAccuracy(qId, orderIdx, content, qType, total, correct, acc);
+                })
+                .sorted(Comparator.comparingInt(QuestionAccuracy::orderIndex))
                 .toList();
 
         // ===== Behavior — Avg Completion Time =====
@@ -155,6 +183,7 @@ public class GetExamStatisticsUsecase {
                 suspiciousCount,
                 scoreDistribution,
                 questionTypeAccuracy,
+                perQuestionAccuracy,
                 round2(avgCompletionTimeMinutes),
                 suspiciousStudents
         );

@@ -157,13 +157,15 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             CurrentUserService currentUserService,
             ClassEnrollmentRepository classEnrollmentRepository,
-            ExamSchemaService examSchemaService) {
+            ExamSchemaService examSchemaService,
+            ExamSpecificationRepository examSpecificationRepository) {
         return new CreateExamUsecase(
                 examRepository,
                 classRepository,
                 currentUserService,
                 classEnrollmentRepository,
-                examSchemaService);
+                examSchemaService,
+                examSpecificationRepository);
     }
 
     @Bean
@@ -177,8 +179,13 @@ public class UsecasesConfiguration {
     UpdateExamUsecase updateExamUsecase(
             ExamRepository examRepository,
             ClassRepository classRepository,
-            CurrentUserService currentUserService) {
-        return new UpdateExamUsecase(examRepository, classRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new UpdateExamUsecase(
+                examRepository,
+                classRepository,
+                currentUserService,
+                examSpecificationRepository);
     }
 
     @Bean
@@ -373,8 +380,10 @@ public class UsecasesConfiguration {
             ExamResultRepository examResultRepository,
             ExamSubmissionRepository examSubmissionRepository,
             ExamQuestionRepository examQuestionRepository,
-            UserRepository userRepository) {
-        return new GetExamResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, userRepository);
+            UserRepository userRepository,
+            TestCaseRepository testCaseRepository) {
+        return new GetExamResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository,
+                userRepository, testCaseRepository);
     }
 
     @Bean
@@ -549,8 +558,13 @@ public class UsecasesConfiguration {
     UpdateTeacherExamSettingsUsecase updateTeacherExamSettingsUsecase(
             ExamRepository examRepository,
             ClassRepository classRepository,
-            CurrentUserService currentUserService) {
-        return new UpdateTeacherExamSettingsUsecase(examRepository, classRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new UpdateTeacherExamSettingsUsecase(
+                examRepository,
+                classRepository,
+                currentUserService,
+                examSpecificationRepository);
     }
 
     // ===== AI USECASES =====

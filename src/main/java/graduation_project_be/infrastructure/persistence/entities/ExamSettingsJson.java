@@ -25,6 +25,9 @@ public class ExamSettingsJson {
     private Integer maxViolations;
     private Boolean showResultAfterSubmit;
     private Boolean isLoadDdl;
+    /** Legacy field kept only so old settings JSON can still be deserialized. */
+    private String databaseInitMode;
+    private Long seedDatasetId;
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -39,6 +42,7 @@ public class ExamSettingsJson {
                 .maxViolations(maxViolations)
                 .showResultAfterSubmit(showResultAfterSubmit)
                 .isLoadDdl(isLoadDdl)
+                .seedDatasetId(seedDatasetId)
                 .build();
     }
 
@@ -56,6 +60,7 @@ public class ExamSettingsJson {
                 .maxViolations(model.getMaxViolations())
                 .showResultAfterSubmit(model.getShowResultAfterSubmit())
                 .isLoadDdl(model.getIsLoadDdl())
+                .seedDatasetId(model.getSeedDatasetId())
                 .build();
     }
 }

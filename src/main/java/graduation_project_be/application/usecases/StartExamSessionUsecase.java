@@ -29,7 +29,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -131,7 +130,7 @@ public class StartExamSessionUsecase {
 
             deviceConflictNotificationService.notifyTeacherConflictPending(request.examId(), teacherIds, conflict);
 
-            log.warn("Device conflict pending approval: exam={}, student={}, conflictId={}",
+            log.warn("Xung đột thiết bị đang chờ duyệt: exam={}, student={}, conflictId={}",
                     request.examId(), studentId, conflictId);
 
             return StartExamSessionResponse.conflictPending(conflictId,
@@ -149,16 +148,16 @@ public class StartExamSessionUsecase {
             if (stillValid) {
                 String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId);
                 boolean hasSchemaObjects = !examSchemaService.extractMetadata(schemaName).isEmpty();
-                boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+                boolean shouldInitializeDb = shouldInitializeDatabase(exam);
 
-                if (hasSchemaObjects || !isLoadDdl) {
+                if (hasSchemaObjects || !shouldInitializeDb) {
                     examStartedAt = existingStartTime.get();
                 } else {
                     examStartedAt = now;
                     initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
                     examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
                     examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
-                    log.info("Reinitialized empty student schema on start-session: exam={}, student={}",
+                    log.info("Đã khởi tạo lại schema trống của sinh viên khi start-session: exam={}, student={}",
                             request.examId(), studentId);
                 }
             } else {
@@ -209,22 +208,37 @@ public class StartExamSessionUsecase {
         ExamSpecification specification = examSpecificationRepository.findById(specificationId)
                 .orElseThrow(() -> new ResourceNotFoundException("ExamSpecification", "id", specificationId));
 
-        boolean isLoadDdl = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
-
-        String ddlScript = isLoadDdl ? specification.getDdlScript() : null;
-
-        String defaultDatasetScript = (isLoadDdl && specification.getDatasets() != null)
-                ? specification.getDatasets().stream()
-                        .filter(SpecDataset::isActive)
-                        .sorted(Comparator.comparingInt(SpecDataset::getOrderIndex))
-                        .map(SpecDataset::getDataScript)
-                        .filter(script -> script != null && !script.isBlank())
-                        .findFirst()
-                        .orElse(null)
+        boolean shouldInitializeDatabase = shouldInitializeDatabase(exam);
+        String ddlScript = shouldInitializeDatabase ? specification.getDdlScript() : null;
+        String defaultDatasetScript = shouldInitializeDatabase
+                ? resolveSeedDatasetScript(specification, exam.getSettings().getSeedDatasetId())
                 : null;
 
         String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId);
         examSchemaService.resetSchema(schemaName, false);
         examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
+    }
+
+    private boolean shouldInitializeDatabase(Exam exam) {
+        return exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
+    }
+
+    private String resolveSeedDatasetScript(ExamSpecification specification, Long seedDatasetId) {
+        if (seedDatasetId == null) {
+            throw new BadRequestException("Đề thi yêu cầu nạp dataset nhưng chưa có seedDatasetId.");
+        }
+
+        if (specification.getDatasets() == null) {
+            throw new BadRequestException("Exam requires a seed dataset, but the specification has no datasets.");
+        }
+
+        return specification.getDatasets().stream()
+                .filter(SpecDataset::isActive)
+                .filter(dataset -> seedDatasetId.equals(dataset.getId()))
+                .map(SpecDataset::getDataScript)
+                .filter(script -> script != null && !script.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new BadRequestException(
+                        "Dataset dùng để nạp dữ liệu mẫu không tồn tại, đang tắt, hoặc không có data script."));
     }
 }

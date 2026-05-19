@@ -64,7 +64,7 @@ public class RubricToTestCaseTransformer {
         try {
             root = objectMapper.readTree(rubricJson);
         } catch (Exception e) {
-            log.error("Cannot parse rubric JSON for Q{}: {}", questionId, e.getMessage());
+            log.error("Không thể phân tích rubric JSON cho câu {}: {}", questionId, e.getMessage());
             return List.of();
         }
 
@@ -74,7 +74,7 @@ public class RubricToTestCaseTransformer {
             testCasesNode = root.path("test_cases");
         }
         if (!testCasesNode.isArray()) {
-            log.warn("No test_cases array found in rubric for Q{}", questionId);
+            log.warn("Không tìm thấy mảng test_cases trong rubric của câu {}", questionId);
             return List.of();
         }
 
@@ -103,12 +103,12 @@ public class RubricToTestCaseTransformer {
         //       existing test cases (CreateExamQuestionsUsecase path).
         for (TestCase tc : testCases) {
             if (tc.getExpectedValue() == null) {
-                log.error("Refusing to persist Q{} TC{} — expectedValue is null. "
-                        + "Did you forget to call ExpectedValueDeriver?", questionId, tc.getOrderIndex());
-                throw new IllegalStateException("TestCase.expectedValue must be set before persist");
+                log.error("Từ chối lưu câu {} TC{} vì expectedValue đang null. "
+                        + "Có thể chưa gọi ExpectedValueDeriver.", questionId, tc.getOrderIndex());
+                throw new IllegalStateException("Phải gán TestCase.expectedValue trước khi lưu");
             }
             testCaseRepository.save(tc);
-            log.info("[RubricToTestCase] Q{} TC{} ({}) persisted, weight={}",
+            log.info("[RubricToTestCase] Đã lưu câu {} TC{} ({}), trọng số={}",
                     questionId, tc.getOrderIndex(), tc.getCaseName(), tc.getScoreWeight());
         }
     }
@@ -126,8 +126,8 @@ public class RubricToTestCaseTransformer {
             && vType != VerificationType.PRINT_OUTPUT 
             && !isTriggerSideEffect) {
             throw new IllegalArgumentException(String.format(
-                    "Q%d TC%d (%s): validation_query is required for verification_type=%s. "
-                            + "AI must supply the SQL that reads the actual outcome.",
+                    "Câu %d TC%d (%s): validation_query là bắt buộc với verification_type=%s. "
+                            + "AI phải cung cấp SQL đọc kết quả thực tế.",
                     questionId, orderIndex, textOrNull(tc, "case_name"), vType));
         }
 
@@ -159,7 +159,7 @@ public class RubricToTestCaseTransformer {
         try {
             return VerificationType.valueOf(s.trim().toUpperCase());
         } catch (Exception e) {
-            log.warn("Unknown verification_type [{}], defaulting based on question type", s);
+            log.warn("verification_type [{}] không xác định, dùng mặc định theo loại câu hỏi", s);
             if ("TRIGGER".equalsIgnoreCase(questionType)) {
                 return VerificationType.SIDE_EFFECT;
             }

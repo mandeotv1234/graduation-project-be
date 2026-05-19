@@ -4,11 +4,13 @@ import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.usecases.request.CreateExamRequest;
 import graduation_project_be.application.usecases.response.CreateExamResponse;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class CreateExamUsecase {
     private final CurrentUserService currentUserService;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final ExamSchemaService examSchemaService;
+    private final ExamSpecificationRepository examSpecificationRepository;
 
     @Transactional
     public CreateExamResponse execute(CreateExamRequest request) {
@@ -44,6 +47,11 @@ public class CreateExamUsecase {
         if (hasPdf) {
             specificationId = null;
         }
+
+        ExamSettingsValidator.validateDatabaseInitialization(
+                examSpecificationRepository,
+                specificationId,
+                request.settings());
 
         Exam exam = Exam.builder()
                 .specificationId(hasPdf ? null : specificationId)

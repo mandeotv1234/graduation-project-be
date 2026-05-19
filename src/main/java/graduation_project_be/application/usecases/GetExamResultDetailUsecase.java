@@ -8,6 +8,9 @@ import graduation_project_be.domain.models.enums.GradingType;
 import lombok.RequiredArgsConstructor;
 
 import java.util.HashMap;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -19,6 +22,7 @@ public class GetExamResultDetailUsecase {
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamQuestionRepository examQuestionRepository;
     private final UserRepository userRepository;
+    private final TestCaseRepository testCaseRepository;
 
     public GetExamResultDetailResponse execute(Long examId, Long resultId) {
         ExamResult result = examResultRepository.findById(resultId)
@@ -66,7 +70,8 @@ public class GetExamResultDetailUsecase {
                             gradedBy,
                             gradedByName,
                             submission != null ? submission.getGradedAt() : null,
-                            submission != null ? submission.getTeacherComment() : null
+                            submission != null ? submission.getTeacherComment() : null,
+                            buildStoredProcedureTestCaseResults(q, submission)
                     );
                 }).toList();
 
@@ -99,5 +104,105 @@ public class GetExamResultDetailUsecase {
                         .map(User::getFullName)
                         .orElse(null)
         );
+    }
+
+    private List<GetExamResultDetailResponse.TestCaseResultDetail> buildStoredProcedureTestCaseResults(
+            ExamQuestion question,
+            ExamSubmission submission) {
+        if (question.getQuestionType() != QuestionType.STORED_PROCEDURE || submission == null) {
+            return List.of();
+        }
+
+        List<TestCase> testCases = testCaseRepository.findByQuestionId(question.getId());
+        if (testCases == null || testCases.isEmpty()) {
+            return List.of();
+        }
+
+        List<TestCase> sortedCases = testCases.stream()
+                .sorted(Comparator
+                        .comparing((TestCase tc) -> tc.getOrderIndex() == null ? Integer.MAX_VALUE : tc.getOrderIndex())
+                        .thenComparing(tc -> tc.getId() == null ? Long.MAX_VALUE : tc.getId()))
+                .toList();
+
+        String errorMessage = submission.getErrorMessage();
+        Map<Long, String> failureMessages = extractCaseFailureMessages(errorMessage, sortedCases);
+        boolean hasGlobalFailure = errorMessage != null
+                && !errorMessage.isBlank()
+                && failureMessages.isEmpty();
+
+        BigDecimal questionPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        List<GetExamResultDetailResponse.TestCaseResultDetail> results = new ArrayList<>();
+
+        for (TestCase testCase : sortedCases) {
+            BigDecimal weight = testCase.getScoreWeight() != null ? testCase.getScoreWeight() : BigDecimal.ZERO;
+            BigDecimal maxPoints = questionPoints.multiply(weight);
+            String failure = testCase.getId() != null ? failureMessages.get(testCase.getId()) : null;
+            boolean passed = !hasGlobalFailure && failure == null;
+
+            results.add(new GetExamResultDetailResponse.TestCaseResultDetail(
+                    testCase.getId(),
+                    testCase.getOrderIndex(),
+                    resolveCaseName(testCase),
+                    passed,
+                    passed ? BigDecimal.ZERO : maxPoints,
+                    maxPoints,
+                    passed ? "Test case đúng, không bị trừ điểm"
+                            : cleanFailureMessage(failure != null ? failure : errorMessage)
+            ));
+        }
+
+        return results;
+    }
+
+    private Map<Long, String> extractCaseFailureMessages(String errorMessage, List<TestCase> testCases) {
+        if (errorMessage == null || errorMessage.isBlank()) {
+            return Map.of();
+        }
+
+        List<FailureMarker> markers = new ArrayList<>();
+        for (TestCase testCase : testCases) {
+            String marker = "[" + resolveCaseName(testCase) + "]";
+            int start = errorMessage.indexOf(marker);
+            if (start >= 0 && testCase.getId() != null) {
+                markers.add(new FailureMarker(testCase.getId(), start, start + marker.length()));
+            }
+        }
+        if (markers.isEmpty()) {
+            return Map.of();
+        }
+
+        markers.sort(Comparator.comparingInt(FailureMarker::start));
+        Map<Long, String> result = new HashMap<>();
+        for (int i = 0; i < markers.size(); i++) {
+            FailureMarker marker = markers.get(i);
+            int end = i + 1 < markers.size() ? markers.get(i + 1).start() : errorMessage.length();
+            result.put(marker.testCaseId(), cleanFailureMessage(errorMessage.substring(marker.contentStart(), end)));
+        }
+        return result;
+    }
+
+    private String resolveCaseName(TestCase testCase) {
+        if (testCase.getCaseName() != null && !testCase.getCaseName().isBlank()) {
+            return testCase.getCaseName();
+        }
+        Integer orderIndex = testCase.getOrderIndex();
+        return "TC" + (orderIndex != null ? orderIndex : "");
+    }
+
+    private String cleanFailureMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "Test case không đạt";
+        }
+        String cleaned = message.trim();
+        while (cleaned.startsWith(".") || cleaned.startsWith(":")) {
+            cleaned = cleaned.substring(1).trim();
+        }
+        while (cleaned.endsWith(".")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).trim();
+        }
+        return cleaned.isBlank() ? "Test case không đạt" : cleaned;
+    }
+
+    private record FailureMarker(Long testCaseId, int start, int contentStart) {
     }
 }

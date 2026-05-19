@@ -161,21 +161,21 @@ public class GeminiServiceImpl implements GeminiService {
             this.extractQuestionsFromPdfPromptTemplate = StreamUtils
                     .copyToString(extractQuestionsFromPdfPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.error("Failed to load Gemini prompt templates from resources/prompts", e);
-            throw new RuntimeException("Failed to load Gemini prompt templates", e);
+            log.error("Không thể nạp prompt template Gemini từ resources/prompts", e);
+            throw new RuntimeException("Không thể nạp prompt template Gemini", e);
         }
     }
 
     @Override
     public GeneratedQuestion generateSqlAnswer(String questionContent, String questionType, String schemaContext) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key is missing. Skipping AI generation.");
-            return new GeneratedQuestion("-- AI generation unavailable: missing Gemini API key", null);
+            log.warn("Thiếu Gemini API key. Bỏ qua bước sinh bằng AI.");
+            return new GeneratedQuestion("-- Không thể sinh bằng AI: thiếu Gemini API key", null);
         }
 
         HttpClient client = getOrCreateHttpClient();
         if (client == null) {
-            return new GeneratedQuestion("-- AI generation unavailable: HTTP client initialization failed", null);
+            return new GeneratedQuestion("-- Không thể sinh bằng AI: khởi tạo HTTP client thất bại", null);
         }
 
         String prompt = buildPrompt(questionContent, questionType, schemaContext);
@@ -192,15 +192,15 @@ public class GeminiServiceImpl implements GeminiService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                log.error("Gemini API error {}: {}", response.statusCode(), response.body());
-                return new GeneratedQuestion("-- AI generation failed", null);
+                log.error("Gemini API trả lỗi {}: {}", response.statusCode(), response.body());
+                return new GeneratedQuestion("-- Sinh bằng AI thất bại", null);
             }
 
             return parseResponse(response.body());
 
         } catch (Exception e) {
-            log.error("Failed to call Gemini API: {}", e.getMessage(), e);
-            return new GeneratedQuestion("-- AI generation failed: " + e.getMessage(), null);
+            log.error("Không thể gọi Gemini API: {}", e.getMessage(), e);
+            return new GeneratedQuestion("-- Sinh bằng AI thất bại: " + e.getMessage(), null);
         }
     }
 
@@ -219,7 +219,7 @@ public class GeminiServiceImpl implements GeminiService {
                         .build();
                 return httpClient;
             } catch (Exception e) {
-                log.error("Failed to initialize HTTP client for Gemini: {}", e.getMessage(), e);
+                log.error("Không thể khởi tạo HTTP client cho Gemini: {}", e.getMessage(), e);
                 return null;
             }
         }
@@ -251,7 +251,7 @@ public class GeminiServiceImpl implements GeminiService {
                     }
                     """, escaped, maxOutputTokens);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to build Gemini request body", e);
+            throw new RuntimeException("Không thể tạo request body cho Gemini", e);
         }
     }
 
@@ -268,14 +268,14 @@ public class GeminiServiceImpl implements GeminiService {
             text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
 
             JsonNode result = objectMapper.readTree(text);
-            String correctQuery = result.path("correctQuery").asText("-- no query generated");
+            String correctQuery = result.path("correctQuery").asText("-- AI không sinh câu truy vấn");
             String verifyScript = result.path("verifyScript").asText(null);
 
             return new GeneratedQuestion(correctQuery, verifyScript.isBlank() ? null : verifyScript);
 
         } catch (Exception e) {
-            log.error("Failed to parse Gemini response: {}", e.getMessage());
-            return new GeneratedQuestion("-- failed to parse AI response", null);
+            log.error("Không thể phân tích phản hồi Gemini: {}", e.getMessage());
+            return new GeneratedQuestion("-- Không thể phân tích phản hồi AI", null);
         }
     }
 
@@ -288,7 +288,7 @@ public class GeminiServiceImpl implements GeminiService {
             String priorQuestionContext,
             String schemaContext) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key is missing. Cannot generate rubric.");
+            log.warn("Thiếu Gemini API key. Không thể sinh rubric.");
             return null;
         }
 
@@ -343,14 +343,14 @@ public class GeminiServiceImpl implements GeminiService {
                     }
 
                     if (attempt == 2) {
-                        log.warn("CREATE_TABLE rubric still has structural issues after retries: {}", issues);
+                        log.warn("Rubric CREATE_TABLE vẫn còn lỗi cấu trúc sau khi thử lại: {}", issues);
                         logGeneratedRubric(questionType, latestJson);
                         return null;
                     }
 
-                    prompt = basePrompt + "\n\n=== REQUIRED FIXES ===\n"
+                    prompt = basePrompt + "\n\n=== CÁC LỖI BẮT BUỘC PHẢI SỬA ===\n"
                             + String.join("\n", issues)
-                            + "\nReturn corrected JSON only. Do not omit any tables, columns, PRIMARY_KEY, or FOREIGN_KEY that appear in the sample answer SQL.";
+                            + "\nChỉ trả về JSON đã sửa. Không bỏ sót bảng, cột, PRIMARY_KEY hoặc FOREIGN_KEY nào xuất hiện trong SQL đáp án mẫu.";
                 }
 
                 return latestJson;
@@ -380,7 +380,7 @@ public class GeminiServiceImpl implements GeminiService {
                     return rubricJson;
                 }
 
-                log.warn("STORED_PROCEDURE rubric executable validation failed, attempting one repair: {}", issues);
+                log.warn("Rubric STORED_PROCEDURE chạy kiểm tra thất bại, thử sửa một lần: {}", issues);
                 String repairPrompt = buildStoredProcedureRubricRepairPrompt(
                         questionContent, correctQuery, schemaContext, rubricJson, issues);
                 String repairedRubricJson = callGeminiForJson(client, repairPrompt);
@@ -396,7 +396,7 @@ public class GeminiServiceImpl implements GeminiService {
                     return repairedRubricJson;
                 }
 
-                log.warn("STORED_PROCEDURE rubric still needs review after one repair: {}", repairedIssues);
+                log.warn("Rubric STORED_PROCEDURE vẫn cần kiểm tra thủ công sau một lần sửa: {}", repairedIssues);
                 return buildNeedsReviewRubricResponse(repairedRubricJson, repairedIssues);
             }
 
@@ -418,15 +418,15 @@ public class GeminiServiceImpl implements GeminiService {
                     }
 
                     if (attempt == 2) {
-                        log.warn("ROUTINE rubric still has issues after retries: {}", issues);
+                        log.warn("Rubric ROUTINE vẫn còn lỗi sau khi thử lại: {}", issues);
                         logGeneratedRubric(questionType, latestJson);
                         logRoutineRubricDiagnostics(questionType, latestJson);
                         return null;
                     }
 
-                    prompt = basePrompt + "\n\n=== REQUIRED FIXES FOR ROUTINE RUBRIC ===\n"
+                    prompt = basePrompt + "\n\n=== CÁC LỖI BẮT BUỘC PHẢI SỬA CHO RUBRIC ROUTINE ===\n"
                             + String.join("\n", issues)
-                            + "\nReturn corrected JSON only. Do not use markdown.";
+                            + "\nChỉ trả về JSON đã sửa. Không dùng markdown.";
                 }
                 return latestJson;
             }
@@ -449,15 +449,15 @@ public class GeminiServiceImpl implements GeminiService {
                     }
 
                     if (attempt == 2) {
-                        log.warn("TRIGGER rubric still has issues after retries: {}", issues);
+                        log.warn("Rubric TRIGGER vẫn còn lỗi sau khi thử lại: {}", issues);
                         String wrappedRubric = wrapTriggerRubric(latestJson, totalPoints);
                         logGeneratedRubric(questionType, wrappedRubric);
                         return wrappedRubric;
                     }
 
-                    prompt = basePrompt + "\n\n=== REQUIRED FIXES FOR TRIGGER RUBRIC ===\n"
+                    prompt = basePrompt + "\n\n=== CÁC LỖI BẮT BUỘC PHẢI SỬA CHO RUBRIC TRIGGER ===\n"
                             + String.join("\n", issues)
-                            + "\nReturn corrected JSON only. Do not use markdown. Read DDL schema context carefully for exact column names and data types.";
+                            + "\nChỉ trả về JSON đã sửa. Không dùng markdown. Đọc kỹ DDL schema context để dùng đúng tên cột và kiểu dữ liệu.";
                 }
                 String wrappedRubric = wrapTriggerRubric(latestJson, totalPoints);
                 logGeneratedRubric(questionType, wrappedRubric);
@@ -486,7 +486,7 @@ public class GeminiServiceImpl implements GeminiService {
                 }
 
                 if (attempt == 2) {
-                    log.warn("SELECT rubric still has heuristic issues after retries: {}", issues);
+                    log.warn("Rubric SELECT vẫn còn lỗi kiểm tra tự động sau khi thử lại: {}", issues);
                     logGeneratedRubric(questionType, latestJson);
                     return latestJson;
                 }
@@ -499,7 +499,7 @@ public class GeminiServiceImpl implements GeminiService {
             return latestJson;
 
         } catch (Exception e) {
-            log.error("Failed to generate grading rubric: {}", e.getMessage(), e);
+            log.error("Không thể sinh rubric chấm điểm: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -515,7 +515,7 @@ public class GeminiServiceImpl implements GeminiService {
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            log.error("Gemini API error {}: {}", response.statusCode(), response.body());
+            log.error("Gemini API trả lỗi {}: {}", response.statusCode(), response.body());
             return null;
         }
 
@@ -531,7 +531,7 @@ public class GeminiServiceImpl implements GeminiService {
         text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
 
         log.info(
-                "Gemini response: finishReason={} promptTokens={} candidatesTokens={} thoughtsTokens={} totalTokens={} textLength={}\n--- BEGIN RAW TEXT ---\n{}\n--- END RAW TEXT ---",
+                "Phản hồi Gemini: finishReason={} promptTokens={} candidatesTokens={} thoughtsTokens={} totalTokens={} textLength={}\n--- BẮT ĐẦU RAW TEXT ---\n{}\n--- KẾT THÚC RAW TEXT ---",
                 finishReason,
                 usage.path("promptTokenCount").asInt(-1),
                 usage.path("candidatesTokenCount").asInt(-1),
@@ -544,7 +544,7 @@ public class GeminiServiceImpl implements GeminiService {
             objectMapper.readTree(text);
         } catch (Exception parseErr) {
             log.error(
-                    "Gemini returned invalid JSON. finishReason={} textLength={} parseError={}\nFull wrapper response:\n{}",
+                    "Gemini trả về JSON không hợp lệ. finishReason={} textLength={} parseError={}\nPhản hồi wrapper đầy đủ:\n{}",
                     finishReason, text.length(), parseErr.getMessage(), response.body());
             if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) {
                 throw new RuntimeException(
@@ -559,16 +559,16 @@ public class GeminiServiceImpl implements GeminiService {
 
     private void logGeneratedRubric(String questionType, String rubricJson) {
         if (rubricJson == null || rubricJson.isBlank()) {
-            log.warn("Gemini returned empty rubric for questionType={}", questionType);
+            log.warn("Gemini trả về rubric rỗng cho questionType={}", questionType);
             return;
         }
 
         try {
             JsonNode rubricNode = objectMapper.readTree(rubricJson);
             String prettyJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(rubricNode);
-            log.info("Gemini generated rubric for questionType={}:\n{}", questionType, prettyJson);
+            log.info("Gemini đã sinh rubric cho questionType={}:\n{}", questionType, prettyJson);
         } catch (Exception e) {
-            log.warn("Gemini generated rubric for questionType={} but pretty logging failed. Raw rubric: {}",
+            log.warn("Gemini đã sinh rubric cho questionType={} nhưng không thể định dạng log đẹp. Rubric gốc: {}",
                     questionType, rubricJson);
         }
     }
@@ -591,7 +591,7 @@ public class GeminiServiceImpl implements GeminiService {
                     testCases.isArray() ? testCases.size() : 0);
 
             if (!testCases.isArray()) {
-                log.warn("[ROUTINE_RUBRIC_INVALID][{}] grading_payload.test_cases is missing or not an array",
+                log.warn("[ROUTINE_RUBRIC_INVALID][{}] grading_payload.test_cases bị thiếu hoặc không phải mảng",
                         questionType);
                 return;
             }
@@ -615,7 +615,7 @@ public class GeminiServiceImpl implements GeminiService {
 
                 if (validation.isBlank()
                         && !"PRINT_OUTPUT".equalsIgnoreCase(tc.path("verification_type").asText(""))) {
-                    log.warn("[ROUTINE_RUBRIC_TC_INVALID][{}][{}] validation_query is blank for caseName='{}'",
+                    log.warn("[ROUTINE_RUBRIC_TC_INVALID][{}][{}] validation_query đang trống với caseName='{}'",
                             questionType, i + 1, caseName);
                 }
 
@@ -623,7 +623,7 @@ public class GeminiServiceImpl implements GeminiService {
                         || combinedSql.matches("(?is).*\\[\\s*THIS\\s*\\].*")
                         || combinedSql.matches("(?is).*\\bdbo\\s*\\..*")) {
                     log.warn(
-                            "[ROUTINE_RUBRIC_TC_SCHEMA_WARNING][{}][{}] caseName='{}' may contain invalid schema placeholder. setup='{}' invocation='{}' validation='{}'",
+                            "[ROUTINE_RUBRIC_TC_SCHEMA_WARNING][{}][{}] caseName='{}' có thể chứa giá trị thay thế schema không hợp lệ. setup='{}' invocation='{}' validation='{}'",
                             questionType,
                             i + 1,
                             caseName,
@@ -633,7 +633,8 @@ public class GeminiServiceImpl implements GeminiService {
                 }
             }
         } catch (Exception e) {
-            log.warn("[ROUTINE_RUBRIC_DIAGNOSTICS_FAILED][{}] {}", questionType, e.getMessage());
+            log.warn("[ROUTINE_RUBRIC_DIAGNOSTICS_FAILED][{}] Không thể ghi log chẩn đoán: {}", questionType,
+                    e.getMessage());
         }
     }
 
@@ -643,7 +644,7 @@ public class GeminiServiceImpl implements GeminiService {
         JsonNode testCases = rubricNode.path("grading_payload").path("test_cases");
 
         if (!testCases.isArray() || testCases.isEmpty()) {
-            issues.add("- grading_payload.test_cases must be a non-empty array.");
+            issues.add("- grading_payload.test_cases phải là mảng không rỗng.");
             return issues;
         }
 
@@ -677,136 +678,133 @@ public class GeminiServiceImpl implements GeminiService {
             hasSideEffectFailureCase |= sideEffect && looksLikeFailureScenario(scenarioText);
 
             if (!"PRINT_OUTPUT".equalsIgnoreCase(verificationType) && validation.isBlank()) {
-                issues.add("- " + label + ": validation_query is required unless verification_type is PRINT_OUTPUT.");
+                issues.add("- " + label + ": validation_query là bắt buộc trừ khi verification_type là PRINT_OUTPUT.");
             }
 
             if ("PRINT_OUTPUT".equalsIgnoreCase(verificationType) && !validation.isBlank()) {
-                issues.add("- " + label + ": PRINT_OUTPUT must leave validation_query empty. "
-                        + "The engine captures SQL Server PRINT messages directly; do not query PRINT_LOG.");
+                issues.add("- " + label + ": PRINT_OUTPUT phải để trống validation_query. "
+                        + "Engine tự bắt thông báo PRINT của SQL Server; không truy vấn PRINT_LOG.");
             }
 
             if (combined.matches("(?is).*\\bPRINT_LOG\\b.*")) {
                 issues.add("- " + label
-                        + ": do not use PRINT_LOG. No such table is provided; PRINT_OUTPUT is captured by the engine.");
+                        + ": không dùng PRINT_LOG. Hệ thống không cung cấp bảng này; PRINT_OUTPUT được engine bắt trực tiếp.");
             }
 
             if (combined.matches("(?is).*\\bdbo\\s*\\..*")
                     || combined.matches("(?is).*\\[\\s*dbo\\s*\\]\\s*\\..*")) {
-                issues.add("- " + label + ": do not use dbo.; use [{SCHEMA}].ObjectName everywhere.");
+                issues.add("- " + label + ": không dùng dbo.; hãy dùng [{SCHEMA}].ObjectName ở mọi nơi.");
             }
 
             if (combined.matches("(?is).*\\bTHIS\\s*\\..*") || combined.matches("(?is).*\\[\\s*THIS\\s*\\].*")) {
-                issues.add("- " + label + ": do not use THIS as schema placeholder; use [{SCHEMA}] only.");
+                issues.add("- " + label + ": không dùng THIS làm giá trị thay thế schema; chỉ dùng [{SCHEMA}].");
             }
 
             addRoutineSchemaQualificationIssues(issues, label, combined);
 
             if (invocation.matches("(?is).*@([A-Za-z0-9_]+)\\s*=\\s*@\\1\\b.*")
                     && !invocation.matches("(?is).*\\bDECLARE\\s+@\\w+\\b.*")) {
-                issues.add("- " + label + ": invocation_query uses an undeclared variable as an argument value "
-                        + "(for example @MaXe = @MaXe). Use a literal value directly, "
-                        + "such as @MaXe = 'XE001', or declare the variable first in invocation_query.");
+                issues.add("- " + label + ": invocation_query dùng biến chưa DECLARE làm giá trị tham số "
+                        + "(ví dụ @MaXe = @MaXe). Hãy dùng giá trị literal trực tiếp, "
+                        + "như @MaXe = 'XE001', hoặc DECLARE biến trước trong invocation_query.");
             }
 
             if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {
-                issues.add("- " + label + ": setup_script must not CREATE/ALTER/DROP base tables. "
-                        + "The exam specification DDL is already loaded; only seed rows with DELETE/INSERT/UPDATE.");
+                issues.add("- " + label + ": setup_script không được CREATE/ALTER/DROP bảng nền. "
+                        + "DDL của đặc tả đề thi đã được nạp; chỉ seed dữ liệu bằng DELETE/INSERT/UPDATE.");
             }
 
             if (setup.matches("(?is).*\\bINSERT\\s+INTO\\b.*")
                     && !setup.matches("(?is).*\\bDELETE\\s+FROM\\b.*")) {
-                issues.add("- " + label + ": setup_script inserts test rows but does not delete those keys first. "
-                        + "Make setup idempotent because the specification DDL may already contain seed data.");
+                issues.add("- " + label + ": setup_script INSERT dữ liệu test nhưng chưa DELETE các khóa đó trước. "
+                        + "Hãy làm setup có thể chạy lặp lại vì DDL đặc tả có thể đã có dữ liệu seed.");
             }
 
             addRoutineSetupIdentityIssues(issues, label, setup, setupInsertColumnsByTable, identityColumnsByTable);
-            addRoutineSetupForeignKeyIssues(issues, label, setupInsertColumnsByTable, foreignKeys);
+            addRoutineSetupForeignKeyIssues(issues, label, setupInserts, setupInsertColumnsByTable, foreignKeys);
             addRoutineSetupForeignKeyOrderIssues(issues, label, setupInserts, foreignKeys);
             // Do not block on missing parent rows inferred only from invocation/validation.
             // Many valid failure cases intentionally pass a missing FK-like input
             // (for example CustomerId does not exist) and should be judged by the
             // executable gate against the reference procedure instead of this heuristic.
 
-            if (setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[?\\{SCHEMA\\}\\]?\\.\\[?ChuyenXe\\]?.*")
-                    || setup.matches("(?is).*\\bINSERT\\s+INTO\\s+\\[[^\\]]+\\]\\.\\[?ChuyenXe\\]?.*")) {
-                if (setup.matches("(?is).*\\bTuyenXe\\b.*")
-                        && !setup.matches(
-                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?TuyenXe\\]?.*")) {
-                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
-                            + "parent TuyenXe rows first. ChuyenXe.TuyenXe has a foreign key to TuyenXe.MaTuyen.");
+            if (setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("ChuyenXe"))) {
+                if (setupInsertsNonNullForeignKey(setupInserts, "ChuyenXe", List.of("TuyenXe"))
+                        && !setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("TuyenXe"))) {
+                    issues.add("- " + label + ": setup_script INSERT dòng ChuyenXe nhưng chưa INSERT dòng cha "
+                            + "TuyenXe tương ứng trước. ChuyenXe.TuyenXe có khóa ngoại tới TuyenXe.MaTuyen.");
                 }
-                if (setup.matches("(?is).*\\bMaXe\\b.*")
-                        && !setup.matches(
-                                "(?is).*\\bINSERT\\s+INTO\\s+(?:\\[?\\{SCHEMA\\}\\]?|\\[[^\\]]+\\])\\.\\[?Xe\\]?.*")) {
-                    issues.add("- " + label + ": setup_script inserts ChuyenXe rows but does not insert matching "
-                            + "parent Xe rows first. ChuyenXe.MaXe has a foreign key to Xe.MaXe.");
+                if (setupInsertsNonNullForeignKey(setupInserts, "ChuyenXe", List.of("MaXe"))
+                        && !setupInsertColumnsByTable.containsKey(normalizeIdentifierKey("Xe"))) {
+                    issues.add("- " + label + ": setup_script INSERT dòng ChuyenXe nhưng chưa INSERT dòng cha "
+                            + "Xe tương ứng trước. ChuyenXe.MaXe có khóa ngoại tới Xe.MaXe.");
                 }
             }
 
             if (storedProcedure) {
                 if (!"RESULT_SET".equalsIgnoreCase(verificationType)
                         && invocation.matches("(?is).*\\bSELECT\\b.*")) {
-                    issues.add("- " + label + ": invocation_query must not return a result set with SELECT. "
-                            + "It should only DECLARE variables and EXEC the stored procedure. Move SELECT @out AS ... "
-                            + "or SELECT @rc AS ... into validation_query.");
+                    issues.add("- " + label + ": invocation_query không được trả result set bằng SELECT. "
+                            + "Nó chỉ nên DECLARE biến và EXEC stored procedure. Chuyển SELECT @out AS ... "
+                            + "hoặc SELECT @rc AS ... sang validation_query.");
                 }
 
                 if (validation.matches("(?is).*\\b(?:CROSS|OUTER)\\s+APPLY\\b.*")) {
-                    issues.add("- " + label + ": validation_query must not use CROSS APPLY/OUTER APPLY for SIDE_EFFECT "
-                            + "checks. It can fail with unnamed columns and can return zero rows when the target row "
-                            + "does not exist. Use scalar subqueries instead, for example SELECT @Result AS return_value, "
+                    issues.add("- " + label + ": validation_query không nên dùng CROSS APPLY/OUTER APPLY để kiểm tra SIDE_EFFECT. "
+                            + "Cách này có thể lỗi với cột không tên và có thể trả 0 dòng khi dòng mục tiêu "
+                            + "không tồn tại. Hãy dùng scalar subquery, ví dụ SELECT @Result AS return_value, "
                             + "(SELECT COUNT(*) FROM [{SCHEMA}].<table> WHERE <condition>) AS affected_count.");
                 }
 
                 if (validation.matches("(?is).*@result_table.*")
                         && !(invocation + "\n" + validation)
                                 .matches("(?is).*DECLARE\\s+@result_table\\s+TABLE\\s*\\(.*")) {
-                    issues.add("- " + label + ": validation_query references @result_table but the test case does not "
-                            + "declare it. If using @result_table, put DECLARE @result_table TABLE (...) and INSERT EXEC "
-                            + "in invocation_query before validation_query SELECTs from it.");
+                    issues.add("- " + label + ": validation_query tham chiếu @result_table nhưng test case chưa "
+                            + "DECLARE nó. Nếu dùng @result_table, hãy đặt DECLARE @result_table TABLE (...) và INSERT EXEC "
+                            + "trong invocation_query trước khi validation_query SELECT từ biến bảng này.");
                 }
 
                 if (validation.matches("(?is).*SELECT\\s+return_value\\s+FROM\\s+@\\w+.*")) {
-                    issues.add("- " + label + ": invalid validation_query. @rc is a scalar variable, not a table. "
-                            + "Use SELECT @rc AS return_value, never SELECT return_value FROM @rc.");
+                    issues.add("- " + label + ": validation_query không hợp lệ. @rc là biến scalar, không phải bảng. "
+                            + "Dùng SELECT @rc AS return_value, không dùng SELECT return_value FROM @rc.");
                 }
 
                 if (validation.matches("(?is).*SELECT\\s+RETURN_VALUE\\s+FROM\\s+.*")) {
-                    issues.add("- " + label + ": invalid SQL Server stored procedure validation_query. "
-                            + "Never use SELECT RETURN_VALUE FROM <stored_procedure>. "
-                            + "Use DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value, "
-                            + "or use SIDE_EFFECT validation_query that SELECTs from affected tables.");
+                    issues.add("- " + label + ": validation_query cho stored procedure SQL Server không hợp lệ. "
+                            + "Không dùng SELECT RETURN_VALUE FROM <stored_procedure>. "
+                            + "Hãy dùng DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value, "
+                            + "hoặc dùng validation_query SIDE_EFFECT SELECT từ các bảng bị tác động.");
                 }
 
                 if ("RETURN_VALUE".equalsIgnoreCase(verificationType)
                         && !invocation.matches("(?is).*EXEC\\s+@\\w+\\s*=.*")
                         && !invocation.matches("(?is).*SELECT\\s+@\\w+\\s+AS\\s+return_value.*")) {
                     issues.add("- " + label
-                            + ": STORED_PROCEDURE RETURN_VALUE must capture return code in invocation_query, "
-                            + "for example DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value.");
+                            + ": STORED_PROCEDURE RETURN_VALUE phải bắt return code trong invocation_query, "
+                            + "ví dụ DECLARE @rc INT; EXEC @rc = [{SCHEMA}].<sp> ...; SELECT @rc AS return_value.");
                 }
 
                 if (sideEffect
                         && looksLikeSuccessScenario(scenarioText)
                         && !looksLikeDeleteScenario(scenarioText)
                         && sideEffectValidationOnlyCountsRows(validation)) {
-                    issues.add("- " + label + ": DML INSERT/UPDATE success SIDE_EFFECT must select affected business "
-                            + "columns, not only COUNT(*). Include @rc AS return_value plus columns such as keys, "
-                            + "foreign keys, and updated/input values.");
+                    issues.add("- " + label + ": SIDE_EFFECT thành công của DML INSERT/UPDATE phải SELECT các cột nghiệp vụ "
+                            + "bị tác động, không chỉ COUNT(*). Nên có @rc AS return_value cùng các cột như khóa, "
+                            + "khóa ngoại, và giá trị input/đã cập nhật.");
                 }
             }
         }
 
         if (Math.abs(totalScoreWeight - 1.0d) > 0.01d) {
-            issues.add("- test_cases score_weight values must sum to 1.0. Current sum is "
+            issues.add("- Tổng score_weight của test_cases phải bằng 1.0. Tổng hiện tại là "
                     + String.format(Locale.ROOT, "%.2f", totalScoreWeight) + ".");
         }
 
         if (storedProcedure && hasSideEffectCase && hasPrintOutputCase && !hasSideEffectFailureCase) {
             issues.add(
-                    "- DML stored procedure rubric has PRINT_OUTPUT failure cases but no SIDE_EFFECT failure/no-change case. "
-                            + "Add at least one invalid-input SIDE_EFFECT test that captures @rc AS return_value and proves no unintended "
-                            + "INSERT/UPDATE/DELETE occurred.");
+                    "- Rubric stored procedure DML có test case lỗi dạng PRINT_OUTPUT nhưng chưa có test case lỗi/không đổi dữ liệu dạng SIDE_EFFECT. "
+                            + "Hãy thêm ít nhất một test SIDE_EFFECT với input không hợp lệ, bắt @rc AS return_value và chứng minh không có "
+                            + "INSERT/UPDATE/DELETE ngoài ý muốn.");
         }
 
         return issues;
@@ -836,7 +834,7 @@ public class GeminiServiceImpl implements GeminiService {
         String ddlScript = buildExecutableDdlFromSchemaContext(schemaContext);
         if (ddlScript == null || ddlScript.isBlank()) {
             issues.add(new RoutineRubricIssue("RUBRIC", "SCHEMA", "SCHEMA_CONTEXT_NOT_EXECUTABLE",
-                    "Cannot build executable DDL from schemaContext, so generated SP rubric cannot be run-tested.",
+                    "Không thể dựng DDL thực thi từ schemaContext nên không thể chạy kiểm tra rubric SP đã sinh.",
                     null));
             return issues;
         }
@@ -844,7 +842,7 @@ public class GeminiServiceImpl implements GeminiService {
         JsonNode testCases = rubricNode.path("grading_payload").path("test_cases");
         if (!testCases.isArray() || testCases.isEmpty()) {
             issues.add(new RoutineRubricIssue("RUBRIC", "STATIC_VALIDATION", "NO_TEST_CASES",
-                    "grading_payload.test_cases must be a non-empty array.", null));
+                    "grading_payload.test_cases phải là mảng không rỗng.", null));
             return issues;
         }
 
@@ -855,7 +853,7 @@ public class GeminiServiceImpl implements GeminiService {
                 examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
             } catch (Exception e) {
                 issues.add(new RoutineRubricIssue("RUBRIC", "SCHEMA", classifySqlError(e),
-                        "Failed to load schemaContext DDL: " + rootMessage(e), truncateForLog(ddlScript, 1200)));
+                        "Không thể nạp DDL từ schemaContext: " + rootMessage(e), truncateForLog(ddlScript, 1200)));
                 return issues;
             }
 
@@ -863,7 +861,7 @@ public class GeminiServiceImpl implements GeminiService {
                 executeSqlScriptBatches(schemaName, correctQuery);
             } catch (Exception e) {
                 issues.add(new RoutineRubricIssue("RUBRIC", "REFERENCE_SQL", classifySqlError(e),
-                        "Reference SQL failed on validation schema: " + rootMessage(e),
+                        "SQL đáp án chạy thất bại trên schema kiểm tra: " + rootMessage(e),
                         truncateForLog(correctQuery, 1200)));
                 return issues;
             }
@@ -881,7 +879,7 @@ public class GeminiServiceImpl implements GeminiService {
             try {
                 examSchemaService.dropSchema(schemaName);
             } catch (Exception e) {
-                log.warn("Failed to drop SP rubric validation schema {}: {}", schemaName, e.getMessage());
+                log.warn("Không thể xóa schema kiểm tra rubric SP {}: {}", schemaName, e.getMessage());
             }
         }
 
@@ -902,13 +900,13 @@ public class GeminiServiceImpl implements GeminiService {
 
         if (!printOutput && (validation == null || validation.isBlank())) {
             return new RoutineRubricIssue(caseId, "VALIDATION", "MISSING_VALIDATION_QUERY",
-                    "validation_query is required unless verification_type is PRINT_OUTPUT.", null);
+                    "validation_query là bắt buộc trừ khi verification_type là PRINT_OUTPUT.", null);
         }
         if (!printOutput && validationCallsExpectedRoutine(validation, expectedRoutineNames)) {
             return new RoutineRubricIssue(caseId, "VALIDATION", "VALIDATION_REEXECUTES_ROUTINE",
-                    "validation_query must not EXEC/EXECUTE the stored procedure under test again. "
-                            + "Call the procedure exactly once in invocation_query, then validate output variables "
-                            + "and side effects with SELECT only.",
+                    "validation_query không được EXEC/EXECUTE lại stored procedure đang kiểm tra. "
+                            + "Chỉ gọi procedure đúng một lần trong invocation_query, sau đó kiểm tra output variable "
+                            + "và side effect chỉ bằng SELECT.",
                     truncateForLog(validation, 1200));
         }
 
@@ -937,7 +935,7 @@ public class GeminiServiceImpl implements GeminiService {
             SqlExecutionResult result = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
             if (!printOutput && (result == null || result.getResultSet() == null || result.getResultSet().isEmpty())) {
                 return new RoutineRubricIssue(caseId, "VALIDATION", "VALIDATION_RETURNED_NO_ROWS",
-                        "validation_query should return at least one deterministic row for comparison.",
+                        "validation_query nên trả ít nhất một dòng ổn định để so sánh.",
                         truncateForLog(validation, 1200));
             }
             return null;
@@ -1065,7 +1063,7 @@ public class GeminiServiceImpl implements GeminiService {
             String ddl = createTables.append(foreignKeys).toString().trim();
             return ddl.isBlank() ? null : ddl;
         } catch (Exception e) {
-            log.warn("Failed to synthesize executable DDL from schemaContext: {}", e.getMessage());
+            log.warn("Không thể dựng DDL thực thi từ schemaContext: {}", e.getMessage());
             return null;
         }
     }
@@ -1158,10 +1156,10 @@ public class GeminiServiceImpl implements GeminiService {
             String currentRubricJson,
             List<RoutineRubricIssue> issues) throws Exception {
         return String.format(storedProcedureRubricRepairPromptTemplate,
-                questionContent != null ? questionContent : "Khong co noi dung cau hoi",
+                questionContent != null ? questionContent : "Không có nội dung câu hỏi",
                 correctQuery != null ? correctQuery : "",
                 schemaContext != null && !schemaContext.isBlank() ? truncateForLog(schemaContext, 8000)
-                        : "No schema context was provided.",
+                        : "Không có schema context.",
                 currentRubricJson != null ? currentRubricJson : "",
                 objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(issues));
     }
@@ -1292,7 +1290,7 @@ public class GeminiServiceImpl implements GeminiService {
         JsonNode testCases = rubricNode.path("test_cases");
 
         if (!testCases.isArray() || testCases.isEmpty()) {
-            issues.add("- test_cases must be a non-empty array.");
+            issues.add("- test_cases phải là mảng không rỗng.");
             return issues;
         }
 
@@ -1311,27 +1309,27 @@ public class GeminiServiceImpl implements GeminiService {
             }
 
             if (invocation.isBlank()) {
-                issues.add("- " + label + ": invocation_query is required (DML that fires the trigger).");
+                issues.add("- " + label + ": invocation_query là bắt buộc (DML kích hoạt trigger).");
             }
 
             if (combined.matches("(?is).*\\{SCHEMA\\}.*") && !combined.matches("(?is).*\\[\\{SCHEMA\\}\\].*")) {
-                issues.add("- " + label + ": use [{SCHEMA}] not {SCHEMA} for schema placeholder.");
+                issues.add("- " + label + ": dùng [{SCHEMA}], không dùng {SCHEMA} làm giá trị thay thế schema.");
             }
 
             if (combined.matches("(?is).*\\bdbo\\s*\\..*")
                     || combined.matches("(?is).*\\[\\s*dbo\\s*\\]\\s*\\..*")) {
-                issues.add("- " + label + ": do not use dbo.; use [{SCHEMA}].ObjectName everywhere.");
+                issues.add("- " + label + ": không dùng dbo.; hãy dùng [{SCHEMA}].ObjectName ở mọi nơi.");
             }
 
             if (setup.matches("(?is).*\\bINSERT\\s+INTO\\b.*")
                     && !setup.matches("(?is).*\\bDELETE\\s+FROM\\b.*")) {
-                issues.add("- " + label + ": setup_script inserts test rows but does not DELETE those keys first. "
-                        + "Make setup idempotent to avoid duplicate primary key errors.");
+                issues.add("- " + label + ": setup_script INSERT dữ liệu test nhưng chưa DELETE các khóa đó trước. "
+                        + "Hãy làm setup có thể chạy lặp lại để tránh lỗi trùng khóa chính.");
             }
 
             if (setup.matches("(?is).*\\b(?:CREATE|ALTER|DROP)\\s+TABLE\\b.*")) {
-                issues.add("- " + label + ": setup_script must not CREATE/ALTER/DROP base tables. "
-                        + "The exam specification DDL is already loaded; only seed rows with DELETE/INSERT/UPDATE.");
+                issues.add("- " + label + ": setup_script không được CREATE/ALTER/DROP bảng nền. "
+                        + "DDL của đặc tả đề thi đã được nạp; chỉ seed dữ liệu bằng DELETE/INSERT/UPDATE.");
             }
 
             // Check if INSERT has correct number of VALUES
@@ -1350,8 +1348,8 @@ public class GeminiServiceImpl implements GeminiService {
                         int columnCount = columns.split(",").length;
                         int valueCount = values.split(",").length;
                         if (columnCount != valueCount) {
-                            issues.add("- " + label + ": INSERT INTO " + tableName + " has " + columnCount
-                                    + " columns but " + valueCount + " values. They must match.");
+                            issues.add("- " + label + ": INSERT INTO " + tableName + " có " + columnCount
+                                    + " cột nhưng có " + valueCount + " giá trị. Hai số lượng này phải khớp.");
                         }
                     }
                 }
@@ -1359,7 +1357,7 @@ public class GeminiServiceImpl implements GeminiService {
         }
 
         if (Math.abs(totalScoreWeight - 1.0d) > 0.01d) {
-            issues.add("- test_cases score_weight values must sum to 1.0. Current sum is "
+            issues.add("- Tổng score_weight của test_cases phải bằng 1.0. Tổng hiện tại là "
                     + String.format(Locale.ROOT, "%.2f", totalScoreWeight) + ".");
         }
 
@@ -1487,12 +1485,12 @@ public class GeminiServiceImpl implements GeminiService {
                 boolean hasOn = hasIdentityInsertState(setup, tableName, "ON");
                 boolean hasOff = hasIdentityInsertState(setup, tableName, "OFF");
                 if (!hasOn || !hasOff) {
-                    issues.add("- " + label + ": setup_script inserts explicit value into IDENTITY column "
+                    issues.add("- " + label + ": setup_script INSERT giá trị tường minh vào cột IDENTITY "
                             + tableName + "." + identityColumn
-                            + " but does not wrap that table's INSERT with both "
+                            + " nhưng chưa bọc INSERT của bảng đó bằng cả "
                             + "SET IDENTITY_INSERT [{SCHEMA}]." + tableName + " ON and OFF. "
-                            + "Either omit the identity column and capture the generated id, or turn IDENTITY_INSERT "
-                            + "ON only for this table, insert valid rows, then turn it OFF before another table.");
+                            + "Hãy bỏ cột identity và lấy id được sinh, hoặc bật IDENTITY_INSERT "
+                            + "ON chỉ cho bảng này, INSERT dòng hợp lệ, rồi tắt OFF trước khi xử lý bảng khác.");
                 }
             }
         }
@@ -1501,6 +1499,7 @@ public class GeminiServiceImpl implements GeminiService {
     private void addRoutineSetupForeignKeyIssues(
             List<String> issues,
             String label,
+            List<RoutineSetupInsert> setupInserts,
             Map<String, Set<String>> setupInsertColumnsByTable,
             List<RoutineForeignKey> foreignKeys) {
         if (setupInsertColumnsByTable.isEmpty() || foreignKeys.isEmpty()) {
@@ -1509,27 +1508,32 @@ public class GeminiServiceImpl implements GeminiService {
 
         Set<String> reported = new HashSet<>();
         for (RoutineForeignKey foreignKey : foreignKeys) {
-            Set<String> childColumns = setupInsertColumnsByTable.get(foreignKey.tableName());
-            if (childColumns == null) {
+            if (setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
                 continue;
             }
 
-            boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
-                    || childColumns.containsAll(foreignKey.columns());
-            if (!insertsForeignKeyColumns || setupInsertColumnsByTable.containsKey(foreignKey.referencesTable())) {
-                continue;
-            }
+            for (RoutineSetupInsert setupInsert : setupInserts) {
+                if (!setupInsert.tableName().equals(foreignKey.tableName())) {
+                    continue;
+                }
 
-            String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable()
-                    + ":" + String.join(",", foreignKey.columns());
-            if (!reported.add(reportKey)) {
-                continue;
-            }
+                boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
+                        || setupInsert.columns().containsAll(foreignKey.columns());
+                if (!insertsForeignKeyColumns || !insertHasNonNullValuesForColumns(setupInsert, foreignKey.columns())) {
+                    continue;
+                }
 
-            issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
-                    + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
-                    + " but does not insert matching parent table " + foreignKey.referencesTable()
-                    + " in the same setup. Insert parent rows first and do not rely on seed data or invalid FK rows.");
+                String reportKey = foreignKey.tableName() + "->" + foreignKey.referencesTable()
+                        + ":" + String.join(",", foreignKey.columns());
+                if (!reported.add(reportKey)) {
+                    continue;
+                }
+
+                issues.add("- " + label + ": setup_script INSERT bảng con " + foreignKey.tableName()
+                        + " với cột FK " + formatIdentifierList(foreignKey.columns())
+                        + " nhưng chưa INSERT bảng cha tương ứng " + foreignKey.referencesTable()
+                        + " trong cùng setup. Hãy INSERT dòng cha trước và không phụ thuộc vào seed data hoặc dòng FK không hợp lệ.");
+            }
         }
     }
 
@@ -1556,7 +1560,9 @@ public class GeminiServiceImpl implements GeminiService {
 
                 boolean insertsForeignKeyColumns = foreignKey.columns().isEmpty()
                         || insert.columns().containsAll(foreignKey.columns());
-                if (!insertsForeignKeyColumns || !tablesInSetup.contains(foreignKey.referencesTable())) {
+                if (!insertsForeignKeyColumns
+                        || !insertHasNonNullValuesForColumns(insert, foreignKey.columns())
+                        || !tablesInSetup.contains(foreignKey.referencesTable())) {
                     continue;
                 }
 
@@ -1570,11 +1576,11 @@ public class GeminiServiceImpl implements GeminiService {
                     continue;
                 }
 
-                issues.add("- " + label + ": setup_script inserts child table " + foreignKey.tableName()
-                        + " with FK column(s) " + formatIdentifierList(foreignKey.columns())
-                        + " before inserting parent table " + foreignKey.referencesTable()
-                        + ". Insert parent rows first. For cyclic FK relationships, omit/null the cyclic FK column first,"
-                        + " insert both rows, then UPDATE the FK column if that state is required.");
+                issues.add("- " + label + ": setup_script INSERT bảng con " + foreignKey.tableName()
+                        + " với cột FK " + formatIdentifierList(foreignKey.columns())
+                        + " trước khi INSERT bảng cha " + foreignKey.referencesTable()
+                        + ". Hãy INSERT dòng cha trước. Với quan hệ FK vòng, hãy bỏ/null cột FK vòng trước,"
+                        + " INSERT cả hai dòng, rồi UPDATE cột FK nếu trạng thái đó là cần thiết.");
             }
 
             firstSeenInsertByTable.putIfAbsent(insert.tableName(), insert.position());
@@ -1612,11 +1618,11 @@ public class GeminiServiceImpl implements GeminiService {
                 continue;
             }
 
-            issues.add("- " + label + ": failure SIDE_EFFECT case targets child table "
-                    + foreignKey.tableName() + " but setup_script does not insert valid parent table "
-                    + foreignKey.referencesTable() + ". Unless this case explicitly tests a missing parent/FK, "
-                    + "insert all parent rows used by invocation_query so the procedure reaches the intended "
-                    + "business rule instead of returning early on an unrelated FK/precondition guard.");
+            issues.add("- " + label + ": test case lỗi dạng SIDE_EFFECT tác động bảng con "
+                    + foreignKey.tableName() + " nhưng setup_script chưa INSERT bảng cha hợp lệ "
+                    + foreignKey.referencesTable() + ". Trừ khi case này chủ đích kiểm tra thiếu parent/FK, "
+                    + "hãy INSERT toàn bộ dòng cha được invocation_query dùng để procedure đi tới đúng "
+                    + "business rule mong muốn thay vì trả sớm do guard FK/precondition không liên quan.");
         }
     }
 
@@ -1691,18 +1697,86 @@ public class GeminiServiceImpl implements GeminiService {
                 continue;
             }
 
+            List<String> orderedColumns = new ArrayList<>();
             Set<String> columns = new LinkedHashSet<>();
             for (String column : splitIdentifiers(matcher.group(2))) {
                 String normalizedColumn = normalizeIdentifierKey(column);
                 if (!normalizedColumn.isBlank()) {
+                    orderedColumns.add(normalizedColumn);
                     columns.add(normalizedColumn);
                 }
             }
 
-            inserts.add(new RoutineSetupInsert(tableName, columns, matcher.start()));
+            inserts.add(new RoutineSetupInsert(
+                    tableName,
+                    columns,
+                    extractInsertValuesByColumn(setup, matcher.end(), orderedColumns),
+                    matcher.start()));
         }
 
         return inserts;
+    }
+
+    private Map<String, String> extractInsertValuesByColumn(String setup, int searchStart, List<String> columns) {
+        if (setup == null || columns.isEmpty() || searchStart < 0 || searchStart >= setup.length()) {
+            return Map.of();
+        }
+
+        Matcher valuesMatcher = Pattern.compile("(?is)\\bVALUES\\s*\\(").matcher(setup);
+        if (!valuesMatcher.find(searchStart)) {
+            return Map.of();
+        }
+
+        int openParenIndex = setup.indexOf('(', valuesMatcher.start());
+        int closeParenIndex = findMatchingParen(setup, openParenIndex);
+        if (openParenIndex < 0 || closeParenIndex <= openParenIndex) {
+            return Map.of();
+        }
+
+        List<String> values = splitTopLevelComma(setup.substring(openParenIndex + 1, closeParenIndex));
+        Map<String, String> valuesByColumn = new LinkedHashMap<>();
+        for (int i = 0; i < Math.min(columns.size(), values.size()); i++) {
+            valuesByColumn.put(columns.get(i), values.get(i).trim());
+        }
+        return valuesByColumn;
+    }
+
+    private boolean setupInsertsNonNullForeignKey(
+            List<RoutineSetupInsert> setupInserts,
+            String tableName,
+            List<String> columns) {
+        String normalizedTableName = normalizeIdentifierKey(tableName);
+        List<String> normalizedColumns = columns.stream()
+                .map(this::normalizeIdentifierKey)
+                .filter(column -> !column.isBlank())
+                .toList();
+
+        for (RoutineSetupInsert setupInsert : setupInserts) {
+            if (setupInsert.tableName().equals(normalizedTableName)
+                    && setupInsert.columns().containsAll(normalizedColumns)
+                    && insertHasNonNullValuesForColumns(setupInsert, normalizedColumns)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean insertHasNonNullValuesForColumns(RoutineSetupInsert setupInsert, List<String> columns) {
+        if (columns.isEmpty()) {
+            return true;
+        }
+
+        for (String column : columns) {
+            String value = setupInsert.valuesByColumn().get(normalizeIdentifierKey(column));
+            if (value == null || !isSqlNullLiteral(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isSqlNullLiteral(String value) {
+        return value != null && value.trim().matches("(?is)^NULL$");
     }
 
     private boolean hasIdentityInsertState(String setup, String tableName, String state) {
@@ -1749,8 +1823,8 @@ public class GeminiServiceImpl implements GeminiService {
             String objectRef = objectMatcher.group(1);
             if (!isAllowedRoutineSqlObjectReference(objectRef)) {
                 issues.add("- " + label + ": object reference '" + objectRef
-                        + "' is not schema-qualified. Use [{SCHEMA}].ObjectName in setup_script, "
-                        + "invocation_query, and validation_query.");
+                        + "' chưa có schema. Hãy dùng [{SCHEMA}].ObjectName trong setup_script, "
+                        + "invocation_query và validation_query.");
                 return;
             }
         }
@@ -1760,7 +1834,7 @@ public class GeminiServiceImpl implements GeminiService {
             String routineRef = execMatcher.group(1);
             if (!isAllowedRoutineSqlObjectReference(routineRef)) {
                 issues.add("- " + label + ": EXEC target '" + routineRef
-                        + "' is not schema-qualified. Use EXEC ... = [{SCHEMA}].<procedure_name>.");
+                        + "' chưa có schema. Hãy dùng EXEC ... = [{SCHEMA}].<procedure_name>.");
                 return;
             }
         }
@@ -1890,45 +1964,45 @@ public class GeminiServiceImpl implements GeminiService {
 
         if (expectedTables.isEmpty()) {
             issues.add(
-                    "- Could not parse CREATE TABLE structure from the sample answer SQL. Return every table and every column from the SQL.");
+                    "- Không thể phân tích cấu trúc CREATE TABLE từ SQL đáp án mẫu. Hãy trả về đầy đủ mọi bảng và mọi cột trong SQL.");
             return issues;
         }
 
         if (!rubricTables.isArray()) {
-            issues.add("- grading_payload.tables must be an array.");
+            issues.add("- grading_payload.tables phải là mảng.");
             return issues;
         }
 
         for (ParsedCreateTable expectedTable : expectedTables.values()) {
             JsonNode rubricTable = findRubricTable(rubricTables, expectedTable.tableName());
             if (rubricTable == null) {
-                issues.add("- Missing table in rubric: " + expectedTable.tableName());
+                issues.add("- Rubric thiếu bảng: " + expectedTable.tableName());
                 continue;
             }
 
             JsonNode rubricColumns = rubricTable.path("columns");
             if (!rubricColumns.isArray()) {
-                issues.add("- Table " + expectedTable.tableName() + " must contain a columns array.");
+                issues.add("- Bảng " + expectedTable.tableName() + " phải có mảng columns.");
                 continue;
             }
 
             if (!expectedTable.columns().isEmpty() && rubricColumns.size() == 0) {
-                issues.add("- Table " + expectedTable.tableName()
-                        + " has columns in the sample SQL but columns[] is empty in the rubric.");
+                issues.add("- Bảng " + expectedTable.tableName()
+                        + " có cột trong SQL mẫu nhưng columns[] trong rubric đang rỗng.");
             }
 
             for (String expectedColumn : expectedTable.columns()) {
                 if (!rubricHasColumn(rubricColumns, expectedColumn)) {
-                    issues.add("- Table " + expectedTable.tableName()
-                            + " is missing column in rubric: " + expectedColumn);
+                    issues.add("- Bảng " + expectedTable.tableName()
+                            + " thiếu cột trong rubric: " + expectedColumn);
                 }
             }
 
             JsonNode rubricConstraints = rubricTable.path("constraints");
             for (List<String> primaryKeyColumns : expectedTable.primaryKeys()) {
                 if (!rubricHasConstraint(rubricConstraints, "PRIMARY_KEY", primaryKeyColumns, null, null)) {
-                    issues.add("- Table " + expectedTable.tableName()
-                            + " is missing PRIMARY_KEY in rubric for columns: "
+                    issues.add("- Bảng " + expectedTable.tableName()
+                            + " thiếu PRIMARY_KEY trong rubric cho các cột: "
                             + String.join(", ", primaryKeyColumns));
                 }
             }
@@ -1940,8 +2014,8 @@ public class GeminiServiceImpl implements GeminiService {
                         foreignKey.columns(),
                         foreignKey.referencesTable(),
                         foreignKey.referencesColumns())) {
-                    issues.add("- Table " + expectedTable.tableName()
-                            + " is missing FOREIGN_KEY in rubric for columns: "
+                    issues.add("- Bảng " + expectedTable.tableName()
+                            + " thiếu FOREIGN_KEY trong rubric cho các cột: "
                             + String.join(", ", foreignKey.columns()));
                 }
             }
@@ -2410,6 +2484,7 @@ public class GeminiServiceImpl implements GeminiService {
     private record RoutineSetupInsert(
             String tableName,
             Set<String> columns,
+            Map<String, String> valuesByColumn,
             int position) {
     }
 
@@ -2708,7 +2783,7 @@ public class GeminiServiceImpl implements GeminiService {
     @Override
     public JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key is missing. Cannot generate schema.");
+            log.warn("Thiếu Gemini API key. Không thể sinh schema.");
             return null;
         }
 
@@ -2728,7 +2803,7 @@ public class GeminiServiceImpl implements GeminiService {
 
         try {
             String requestBody = buildSchemaJsonRequestBody(prompt, 64000);
-            log.info("Calling Gemini for specification schema generation. Description length={}",
+            log.info("Đang gọi Gemini để sinh schema đặc tả. Độ dài mô tả={}",
                     specificationDescription == null ? 0 : specificationDescription.length());
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(geminiEndpoint()))
@@ -2740,7 +2815,7 @@ public class GeminiServiceImpl implements GeminiService {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
                 String body = response.body();
-                log.error("Gemini API error {} while generating schema. Response snippet: {}",
+                log.error("Gemini API trả lỗi {} khi sinh schema. Đoạn phản hồi: {}",
                         response.statusCode(), safeSnippet(body, 1200));
                 throw mapGeminiSchemaError(response.statusCode(), body);
             }
@@ -2748,7 +2823,7 @@ public class GeminiServiceImpl implements GeminiService {
             JsonNode root = objectMapper.readTree(response.body());
             JsonNode candidate = root.path("candidates").get(0);
             if (candidate == null || candidate.isMissingNode()) {
-                log.error("Gemini schema response does not contain candidates. Raw response snippet: {}",
+                log.error("Phản hồi sinh schema của Gemini không có candidates. Đoạn phản hồi gốc: {}",
                         safeSnippet(response.body(), 1200));
                 return null;
             }
@@ -2759,7 +2834,7 @@ public class GeminiServiceImpl implements GeminiService {
                     .path("text").asText();
 
             if (text == null || text.isBlank()) {
-                log.error("Gemini schema response text is empty. Raw candidate: {}",
+                log.error("Phần text trong phản hồi sinh schema của Gemini đang rỗng. Candidate gốc: {}",
                         safeSnippet(candidate.toString(), 1200));
                 return null;
             }
@@ -2767,18 +2842,18 @@ public class GeminiServiceImpl implements GeminiService {
             text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
             JsonNode parsed = objectMapper.readTree(text);
             if (!parsed.isArray()) {
-                log.error("Gemini schema response is not JSON array. Parsed snippet: {}",
+                log.error("Phản hồi sinh schema của Gemini không phải JSON array. Đoạn đã parse: {}",
                         safeSnippet(parsed.toString(), 1200));
                 return null;
             }
 
-            log.info("Gemini schema generation succeeded. tables={}", parsed.size());
+            log.info("Gemini sinh schema thành công. Số bảng={}", parsed.size());
             return parsed;
         } catch (Exception e) {
             if (e instanceof BadRequestException badRequestException) {
                 throw badRequestException;
             }
-            log.error("Failed to generate specification schema: {}", e.getMessage(), e);
+            log.error("Không thể sinh schema đặc tả: {}", e.getMessage(), e);
             return null;
         }
     }
@@ -2855,7 +2930,7 @@ public class GeminiServiceImpl implements GeminiService {
 
             return objectMapper.writeValueAsString(root);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to build Gemini schema request body", e);
+            throw new RuntimeException("Không thể tạo request body sinh schema cho Gemini", e);
         }
     }
 

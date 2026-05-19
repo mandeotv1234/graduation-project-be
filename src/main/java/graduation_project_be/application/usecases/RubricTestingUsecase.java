@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
@@ -371,12 +372,12 @@ public class RubricTestingUsecase {
             examSchemaService.resetSchema(caseSchema, false);
 
             List<Map<String, Object>> details = new ArrayList<>();
-            int bootstrappedTables = executeExistingAnswersForSchema(
+            bootstrapSelectSchema(
+                    request.examId(),
                     examQuestions,
                     caseSchema,
                     details,
-                    "RUN_TC",
-                    true);
+                    "RUN_TC");
 
             if (setupDependencyId != null && !setupDependencyId.isBlank()) {
                 if (setupDependencyId.matches("\\d+")) {
@@ -535,7 +536,7 @@ public class RubricTestingUsecase {
 
     public BuildCreateTablesResponse buildCreateTablesFromAnswer(Long examId, String correctQuery) {
         if (correctQuery == null || correctQuery.isBlank()) {
-            throw new IllegalArgumentException("Script dap an giao vien (correctQuery) khong duoc de trong.");
+            throw new IllegalArgumentException("Script đáp án giáo viên (correctQuery) không được để trống.");
         }
 
         List<ExamQuestionResponse> examQuestions = getExamQuestionsUsecase.execute(examId);
@@ -547,7 +548,7 @@ public class RubricTestingUsecase {
 
             String normalizedCorrectSql = normalizeSqlForExecution(correctQuery);
             if (normalizedCorrectSql.isBlank()) {
-                throw new IllegalArgumentException("SQL dap an khong hop le sau khi chuan hoa.");
+                throw new IllegalArgumentException("SQL đáp án không hợp lệ sau khi chuẩn hóa.");
             }
 
             List<Map<String, Object>> details = new ArrayList<>();
@@ -600,7 +601,7 @@ public class RubricTestingUsecase {
 
             if (targetTables.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "Khong nhan dien duoc bang CREATE TABLE tu SQL dap an. Vui long kiem tra lai correctQuery.");
+                        "Không nhận diện được bảng CREATE TABLE từ SQL đáp án. Vui lòng kiểm tra lại correctQuery.");
             }
 
             List<BuildCreateTablesResponse.CreateTableConfig> tables = new ArrayList<>();
@@ -731,12 +732,12 @@ public class RubricTestingUsecase {
                 try {
                     examSchemaService.resetSchema(caseSchema, false);
 
-                    int bootstrappedTables = executeExistingAnswersForSchema(
+                    int bootstrappedTables = bootstrapSelectSchema(
+                            request.examId(),
                             examQuestions,
                             caseSchema,
                             details,
-                            caseId,
-                            true);
+                            caseId);
                     if (bootstrappedTables > 0) {
                         details.add(Map.of(
                                 "type", "info",
@@ -1000,7 +1001,7 @@ public class RubricTestingUsecase {
                     studentSchema, teacherSchema, gradingRubric, totalPoints);
 
         } catch (Exception e) {
-            System.err.println("[DEBUG] testGradeRoutine error: " + e.getMessage());
+            System.err.println("[DEBUG] Lỗi chấm thử routine: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException("Lỗi chấm thử Routine: " + e.getMessage(), e);
         } finally {
@@ -1033,6 +1034,67 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    private int bootstrapSelectSchema(
+            Long examId,
+            List<ExamQuestionResponse> examQuestions,
+            String schemaName,
+            List<Map<String, Object>> details,
+            String caseId) {
+        SelectExamBootstrap bootstrap = resolveSelectExamBootstrap(examId);
+        if (bootstrap.useExamDdl()) {
+            examSchemaService.loadTemplateIntoSchema(
+                    schemaName,
+                    bootstrap.ddlScript(),
+                    null);
+            String prefix = caseId == null || caseId.isBlank() ? "" : "[" + caseId + "] ";
+            details.add(Map.of(
+                    "type", "info",
+                    "message", prefix + "Đã nạp DDL của đặc tả đề thi",
+                    "points", 0));
+            return 0;
+        }
+
+        return executeExistingAnswersForSchema(
+                examQuestions,
+                schemaName,
+                details,
+                caseId,
+                true);
+    }
+
+    private SelectExamBootstrap resolveSelectExamBootstrap(Long examId) {
+        if (examId == null) {
+            return SelectExamBootstrap.disabled();
+        }
+
+        Exam exam = examRepository.findById(examId).orElse(null);
+        if (exam == null || exam.getSettings() == null || !Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl())) {
+            return SelectExamBootstrap.disabled();
+        }
+
+        Long specificationId = exam.getSpecificationId();
+        if (specificationId == null) {
+            throw new BadRequestException("Đề thi đã bật nạp DDL nhưng không có specificationId.");
+        }
+
+        ExamSpecification specification = examSpecificationRepository.findById(specificationId)
+                .orElseThrow(() -> new BadRequestException(
+                        "Không tìm thấy specification " + specificationId + " của đề thi."));
+
+        String ddlScript = specification.getDdlScript();
+        if (ddlScript == null || ddlScript.isBlank()) {
+            throw new BadRequestException("Đặc tả của đề thi không có DDL script để chạy test SELECT.");
+        }
+
+        return new SelectExamBootstrap(true, ddlScript);
+    }
+
+    private record SelectExamBootstrap(boolean useExamDdl, String ddlScript) {
+        private static SelectExamBootstrap disabled() {
+            return new SelectExamBootstrap(false, "");
         }
     }
 
@@ -1378,7 +1440,7 @@ public class RubricTestingUsecase {
                     details.add(Map.of(
                             "type", "warning",
                             "message", "[" + caseId
-                                    + "] setup_custom_script chứa lệnh CHECK CONSTRAINT gây lỗi FK khi retry. "
+                                    + "] setup_custom_script chứa lệnh CHECK CONSTRAINT gây lỗi FK khi thử lại. "
                                     + "Hệ thống tự bỏ lệnh CHECK để tiếp tục dựng dữ liệu test case.",
                             "points", 0));
 
@@ -2157,12 +2219,12 @@ public class RubricTestingUsecase {
 
         String ruleLabel = target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
         if (decision.ignore()) {
-            String message = "Rule " + ruleLabel + " bo qua vi pham (" + violationSummary + ").";
+            String message = "Quy tắc " + ruleLabel + " bỏ qua vi phạm (" + violationSummary + ").";
             return SelectRuleApplication.matchedViolation(false, BigDecimal.ZERO, message);
         }
 
         if (decision.failAll()) {
-            String message = "Rule " + ruleLabel + " kich hoat FAIL_ALL (" + violationSummary + ").";
+            String message = "Quy tắc " + ruleLabel + " kích hoạt FAIL_ALL (" + violationSummary + ").";
             return SelectRuleApplication.matchedViolation(true, BigDecimal.ZERO, message);
         }
 
@@ -2632,7 +2694,7 @@ public class RubricTestingUsecase {
                     0,
                     totalPoints,
                     false,
-                    List.of(Map.of("type", "error", "message", "Rubric JSON khong hop le", "points", 0)),
+                    List.of(Map.of("type", "error", "message", "Rubric JSON không hợp lệ", "points", 0)),
                     0d);
         }
 
@@ -2861,7 +2923,7 @@ public class RubricTestingUsecase {
 
     private String safeIdentifier(String identifier, String fieldName) {
         if (identifier == null || identifier.isBlank() || !IDENTIFIER_PATTERN.matcher(identifier).matches()) {
-            throw new IllegalArgumentException("Invalid SQL identifier for " + fieldName);
+            throw new IllegalArgumentException("Định danh SQL không hợp lệ cho " + fieldName);
         }
         return identifier;
     }
@@ -3149,7 +3211,7 @@ public class RubricTestingUsecase {
                     allPassed = false;
                     details.add(Map.of(
                             "type", "error",
-                            "message", String.format("Test case '%s': expected='%s', actual='%s'",
+                            "message", String.format("Test case '%s': mong đợi='%s', thực tế='%s'",
                                     caseName, truncateForDetail(expected), truncateForDetail(actual)),
                             "points", 0));
                 }
@@ -3519,7 +3581,7 @@ public class RubricTestingUsecase {
                     details.add(Map.of(
                             "type", "error",
                             "message",
-                            String.format("Trigger %s: sai Event (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
+                            String.format("Trigger %s: sai sự kiện (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
                             "points", -eventPoints));
                     if (!positiveOnlyScoring) {
                         earnedPoints -= eventPoints;
@@ -3532,13 +3594,13 @@ public class RubricTestingUsecase {
                     details.add(Map.of(
                             "type", "success",
                             "message",
-                            String.format("Trigger %s: đúng Timing", expected.getTriggerName()),
+                            String.format("Trigger %s: đúng thời điểm chạy", expected.getTriggerName()),
                             "points", 0));
                 } else {
                     details.add(Map.of(
                             "type", "error",
                             "message",
-                            String.format("Trigger %s: sai Timing (AFTER/INSTEAD OF)", expected.getTriggerName()),
+                            String.format("Trigger %s: sai thời điểm chạy (AFTER/INSTEAD OF)", expected.getTriggerName()),
                             "points", -timingPoints));
                     if (!positiveOnlyScoring) {
                         earnedPoints -= timingPoints;
@@ -3554,17 +3616,8 @@ public class RubricTestingUsecase {
                     String caseName = tc.path("case_name").asText("Unnamed");
                     String setupScript = tc.path("setup_script").asText("");
 
-                    // Support both old and new structure
                     String invocationQuery = tc.path("invocation_query").asText("");
-                    if (invocationQuery.isBlank()) {
-                        invocationQuery = tc.path("trigger_sql").asText(""); // fallback to old structure
-                    }
-
                     String validationQuery = tc.path("validation_query").asText("");
-                    if (validationQuery.isBlank()) {
-                        validationQuery = tc.path("expected_result").asText(""); // fallback to old structure
-                    }
-
                     String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
 
                     // Support both score_weight (new) and penalty_value (old)
@@ -3577,7 +3630,7 @@ public class RubricTestingUsecase {
                         details.add(Map.of(
                                 "type", "info",
                                 "message",
-                                String.format("Test case '%s': bỏ qua (thiếu invocation_query/trigger_sql)", caseName),
+                                String.format("Test case '%s': bỏ qua (thiếu invocation_query)", caseName),
                                 "points", 0));
                         continue;
                     }
@@ -3719,7 +3772,7 @@ public class RubricTestingUsecase {
                                             "type", "success",
                                             "message",
                                             String.format(
-                                                    "Test case '%s': PASS (trigger correctly rejected transaction)",
+                                                    "Test case '%s': Đạt (trigger đã từ chối giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
                                 } else if (!teacherInvocationFailed && !studentInvocationFailed) {
@@ -3727,20 +3780,20 @@ public class RubricTestingUsecase {
                                             "type", "success",
                                             "message",
                                             String.format(
-                                                    "Test case '%s': PASS (trigger correctly accepted transaction)",
+                                                    "Test case '%s': Đạt (trigger đã chấp nhận giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
                                 } else {
                                     details.add(Map.of(
                                             "type", "success",
-                                            "message", String.format("Test case '%s': PASS", caseName),
+                                            "message", String.format("Test case '%s': Đạt", caseName),
                                             "points", 0));
                                 }
                             } else {
                                 details.add(Map.of(
                                         "type", "error",
                                         "message",
-                                        String.format("Test case '%s': FAIL (execution status mismatch)", caseName),
+                                        String.format("Test case '%s': Không đạt (trạng thái thực thi không khớp)", caseName),
                                         "points", -scoreWeight));
                                 if (!positiveOnlyScoring) {
                                     earnedPoints -= scoreWeight;
@@ -3773,12 +3826,12 @@ public class RubricTestingUsecase {
                             if (testPassed) {
                                 details.add(Map.of(
                                         "type", "success",
-                                        "message", String.format("Test case '%s': PASS", caseName),
+                                        "message", String.format("Test case '%s': Đạt", caseName),
                                         "points", 0));
                             } else {
                                 details.add(Map.of(
                                         "type", "error",
-                                        "message", String.format("Test case '%s': FAIL (kết quả không khớp)", caseName),
+                                        "message", String.format("Test case '%s': Không đạt (kết quả không khớp)", caseName),
                                         "points", -scoreWeight));
                                 if (!positiveOnlyScoring) {
                                     earnedPoints -= scoreWeight;

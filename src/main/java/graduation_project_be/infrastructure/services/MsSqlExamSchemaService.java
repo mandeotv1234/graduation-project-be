@@ -81,10 +81,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     userName);
             jdbcTemplate.execute(grantCreate);
 
-            log.info("Ensured schema [{}] and user [{}] exist with full permissions", schemaName, userName);
+            log.info("Đã đảm bảo schema [{}] và user [{}] tồn tại với đầy đủ quyền", schemaName, userName);
         } catch (Exception e) {
-            log.error("Failed to create schema/user for {}", schemaName, e);
-            throw new RuntimeException("Failed to prepare exam schema: " + e.getMessage(), e);
+            log.error("Không thể tạo schema/user cho {}", schemaName, e);
+            throw new RuntimeException("Không thể chuẩn bị schema bài thi: " + e.getMessage(), e);
         }
     }
 
@@ -184,10 +184,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Reset schema [{}] — all objects dropped", schemaName);
+            log.info("Đã reset schema [{}] — toàn bộ object đã bị xóa", schemaName);
         } catch (Exception e) {
-            log.error("Failed to reset schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Failed to reset schema: " + e.getMessage(), e);
+            log.error("Không thể reset schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Không thể reset schema: " + e.getMessage(), e);
         }
     }
 
@@ -214,10 +214,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Dropped schema [{}] and user [{}]", schemaName, userName);
+            log.info("Đã xóa schema [{}] và user [{}]", schemaName, userName);
         } catch (Exception e) {
-            log.error("Failed to drop schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Failed to drop schema: " + e.getMessage(), e);
+            log.error("Không thể xóa schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Không thể xóa schema: " + e.getMessage(), e);
         }
     }
 
@@ -234,21 +234,25 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 try {
                     if (ddlScript != null && !ddlScript.isBlank()) {
-                        try (Statement stmt = conn.createStatement()) {
-                            stmt.execute(ddlScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                        for (String ddlBatch : splitExecutableBatches(ddlScript)) {
+                            try (Statement stmt = conn.createStatement()) {
+                                stmt.execute(ddlBatch);
+                                while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                                }
                             }
                         }
-                        log.info("Loaded DDL into schema: {}", schemaName);
+                        log.info("Đã nạp DDL vào schema: {}", schemaName);
                     }
 
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
-                        try (Statement stmt = conn.createStatement()) {
-                            stmt.execute(defaultDataScript);
-                            while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                        for (String dataBatch : splitExecutableBatches(defaultDataScript)) {
+                            try (Statement stmt = conn.createStatement()) {
+                                stmt.execute(dataBatch);
+                                while (stmt.getMoreResults() || stmt.getUpdateCount() != -1) {
+                                }
                             }
                         }
-                        log.info("Loaded default data into schema: {}", schemaName);
+                        log.info("Đã nạp dữ liệu mặc định vào schema: {}", schemaName);
                     }
                 } finally {
                     try (Statement stmt = conn.createStatement()) {
@@ -258,8 +262,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
         } catch (Exception e) {
-            log.error("Failed to load template into schema: {}", schemaName, e);
-            throw new RuntimeException("Failed to load template into schema: " + e.getMessage(), e);
+            log.error("Không thể nạp template vào schema: {}", schemaName, e);
+            throw new RuntimeException("Không thể nạp template vào schema: " + e.getMessage(), e);
         }
     }
 
@@ -374,7 +378,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
     private String formatDataType(String dataType, int maxLength) {
         if (dataType == null)
-            return "Unknown";
+            return "Không rõ";
         String lower = dataType.toLowerCase();
 
         switch (lower) {
@@ -429,7 +433,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         ensureSchemaAndUser(schemaName);
 
         // Sanitize SQL — block privilege escalation keywords
-        validateStudentSql(sql);
+        List<String> executableBatches = splitExecutableBatches(sql);
+        for (String batch : executableBatches) {
+            validateStudentSql(batch);
+        }
 
         try {
             return jdbcTemplate.execute((Connection conn) -> {
@@ -444,79 +451,26 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                 List<String> printMessages = new ArrayList<>();
                 try {
-                    try (Statement stmt = conn.createStatement()) {
-                        stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                        stmt.setMaxRows(1000);
+                    long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
 
-                        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+                    for (String batch : executableBatches) {
+                        try (Statement stmt = conn.createStatement()) {
+                            stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                            stmt.setMaxRows(1000);
 
-                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
-                            try {
-                                return stmt.execute(sql);
-                            } catch (Exception e) {
-                                throw new CompletionException(e);
-                            }
-                        });
+                            int[] updateCountState = new int[] { totalUpdateCount };
+                            boolean[] hasUpdateCountState = new boolean[] { hasUpdateCount };
 
-                        boolean isResultSet;
-                        try {
-                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                        } catch (TimeoutException e) {
-                            try {
-                                stmt.cancel();
-                            } catch (Exception ignore) {
-                            }
-                            throw new RuntimeException(
-                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
-                        } catch (Exception e) {
-                            Throwable cause = e.getCause() != null ? e.getCause() : e;
-                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                            executeSingleBatch(stmt, batch, results, updateCountState, hasUpdateCountState,
+                                    absoluteTimeoutMs);
+
+                            totalUpdateCount = updateCountState[0];
+                            hasUpdateCount = hasUpdateCountState[0];
+
+                            // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
+                            // the Statement is closed by try-with-resources.
+                            printMessages.addAll(collectPrintMessages(stmt));
                         }
-
-                        // Walk through ALL results using correct JDBC pattern
-                        // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
-                        while (true) {
-                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                stmt.cancel();
-                                throw new RuntimeException("Query processing exceeded hard timeout of "
-                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
-                            }
-
-                            if (isResultSet) {
-                                try (ResultSet rs = stmt.getResultSet()) {
-                                    ResultSetMetaData meta = rs.getMetaData();
-                                    int colCount = meta.getColumnCount();
-                                    while (rs.next()) {
-                                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                            stmt.cancel();
-                                            throw new RuntimeException("Result set fetching exceeded hard timeout of "
-                                                    + QUERY_TIMEOUT_SECONDS + " seconds.");
-                                        }
-
-                                        Map<String, Object> row = new LinkedHashMap<>();
-                                        for (int i = 1; i <= colCount; i++) {
-                                            row.put(meta.getColumnLabel(i), rs.getObject(i));
-                                        }
-                                        results.add(row);
-                                    }
-                                }
-                            } else {
-                                // Current result is an update count
-                                int updateCount = stmt.getUpdateCount();
-                                if (updateCount == -1) {
-                                    // No more results of any kind
-                                    break;
-                                }
-                                totalUpdateCount += updateCount;
-                                hasUpdateCount = true;
-                            }
-                            // Advance to next result (only call ONCE per iteration!)
-                            isResultSet = stmt.getMoreResults();
-                        }
-
-                        // Capture PRINT output (T-SQL PRINT / RAISERROR sev<=10) before
-                        // the Statement is closed by try-with-resources.
-                        printMessages.addAll(collectPrintMessages(stmt));
                     }
 
                     String statusMessage = null;
@@ -524,7 +478,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Commands completed successfully.";
+                            statusMessage = "Các lệnh đã chạy thành công.";
                         }
                     }
 
@@ -542,9 +496,142 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
+    }
+
+    private void executeSingleBatch(
+            Statement stmt,
+            String sql,
+            List<Map<String, Object>> results,
+            int[] totalUpdateCount,
+            boolean[] hasUpdateCount,
+            long absoluteTimeoutMs) {
+        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return stmt.execute(sql);
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        });
+
+        boolean isResultSet;
+        try {
+            long remainingMs = Math.max(1, absoluteTimeoutMs - System.currentTimeMillis());
+            isResultSet = executeFuture.get(remainingMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            try {
+                stmt.cancel();
+            } catch (Exception ignore) {
+            }
+            throw new RuntimeException(
+                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
+        }
+
+        // Walk through ALL results using correct JDBC pattern
+        // (handles BEGIN TRY...CATCH, EXEC+SELECT, etc.)
+        while (true) {
+            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                try {
+                    stmt.cancel();
+                } catch (Exception ignore) {
+                }
+                throw new RuntimeException("Xử lý truy vấn vượt quá thời gian tối đa "
+                        + QUERY_TIMEOUT_SECONDS + " giây.");
+            }
+
+            if (isResultSet) {
+                try (ResultSet rs = stmt.getResultSet()) {
+                    ResultSetMetaData meta = rs.getMetaData();
+                    int colCount = meta.getColumnCount();
+                    while (rs.next()) {
+                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                            try {
+                                stmt.cancel();
+                            } catch (Exception ignore) {
+                            }
+                            throw new RuntimeException("Lấy result set vượt quá thời gian tối đa "
+                                    + QUERY_TIMEOUT_SECONDS + " giây.");
+                        }
+
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        for (int i = 1; i <= colCount; i++) {
+                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                        }
+                        results.add(row);
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException("SQL result processing error: " + e.getMessage(), e);
+                }
+            } else {
+                int updateCount;
+                try {
+                    updateCount = stmt.getUpdateCount();
+                } catch (Exception e) {
+                    throw new RuntimeException("SQL update count processing error: " + e.getMessage(), e);
+                }
+                if (updateCount == -1) {
+                    break;
+                }
+                totalUpdateCount[0] += updateCount;
+                hasUpdateCount[0] = true;
+            }
+
+            try {
+                isResultSet = stmt.getMoreResults();
+            } catch (Exception e) {
+                throw new RuntimeException("SQL result processing error: " + e.getMessage(), e);
+            }
+        }
+    }
+
+    private List<String> splitExecutableBatches(String sqlScript) {
+        if (sqlScript == null || sqlScript.isBlank()) {
+            return List.of();
+        }
+
+        String normalized = sqlScript
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+
+        List<String> batches = new ArrayList<>();
+        for (String goBatch : normalized.split("(?im)^\\s*GO\\s*;?\\s*$")) {
+            for (String batch : splitBatchBeforeCreateRoutine(goBatch)) {
+                String executable = batch.trim();
+                if (!executable.isBlank()) {
+                    batches.add(executable);
+                }
+            }
+        }
+        return batches;
+    }
+
+    private List<String> splitBatchBeforeCreateRoutine(String batch) {
+        if (batch == null || batch.isBlank()) {
+            return List.of();
+        }
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?is)\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?(?:PROCEDURE|PROC|FUNCTION|TRIGGER)\\b")
+                .matcher(batch);
+        if (!matcher.find()) {
+            return List.of(batch);
+        }
+
+        String prefix = batch.substring(0, matcher.start()).trim();
+        String routine = batch.substring(matcher.start()).trim();
+        if (prefix.isBlank()) {
+            return List.of(routine);
+        }
+        return List.of(prefix, routine);
     }
 
     /**
@@ -608,17 +695,17 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             } catch (Exception ignore) {
                             }
                             throw new RuntimeException(
-                                    "Query execution exceeded hard timeout of " + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
                         } catch (Exception e) {
                             Throwable cause = e.getCause() != null ? e.getCause() : e;
-                            throw new RuntimeException("SQL execution error: " + cause.getMessage(), cause);
+                            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
                         }
 
                         while (true) {
                             if (System.currentTimeMillis() > absoluteTimeoutMs) {
                                 stmt.cancel();
-                                throw new RuntimeException("Batch processing exceeded hard timeout of "
-                                        + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                throw new RuntimeException("Xử lý batch vượt quá thời gian tối đa "
+                                        + QUERY_TIMEOUT_SECONDS + " giây.");
                             }
 
                             if (isResultSet) {
@@ -630,8 +717,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                             if (System.currentTimeMillis() > absoluteTimeoutMs) {
                                                 stmt.cancel();
                                                 throw new RuntimeException(
-                                                        "Result fetch exceeded hard timeout of "
-                                                                + QUERY_TIMEOUT_SECONDS + " seconds.");
+                                                        "Lấy result vượt quá thời gian tối đa "
+                                                                + QUERY_TIMEOUT_SECONDS + " giây.");
                                             }
                                             Map<String, Object> row = new LinkedHashMap<>();
                                             for (int i = 1; i <= colCount; i++) {
@@ -660,7 +747,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Batch executed successfully.";
+                            statusMessage = "Batch đã chạy thành công.";
                         }
                     }
 
@@ -674,13 +761,13 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.execute("REVERT");
                     } catch (Exception e) {
-                        log.warn("REVERT failed for schema [{}]: {}", schemaName, e.getMessage());
+                        log.warn("REVERT thất bại cho schema [{}]: {}", schemaName, e.getMessage());
                     }
                 }
             });
         } catch (Exception e) {
-            log.error("Batch SQL execution error on schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi batch SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
     }
 
@@ -707,7 +794,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             }
             stmt.clearWarnings();
         } catch (Exception e) {
-            log.warn("Failed to collect PRINT messages from statement: {}", e.getMessage());
+            log.warn("Không thể thu thập thông báo PRINT từ câu lệnh: {}", e.getMessage());
         }
         return messages;
     }
@@ -828,7 +915,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Admin statement executed successfully.";
+                            statusMessage = "Câu lệnh admin đã chạy thành công.";
                         }
                     }
 
@@ -841,8 +928,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("Admin SQL execution error: {}", e.getMessage());
-            throw new RuntimeException("Admin SQL execution error: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL admin: {}", e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL admin: " + e.getMessage(), e);
         }
     }
 

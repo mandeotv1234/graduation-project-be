@@ -37,6 +37,17 @@ public record GetExamResultDetailResponse(
         Long gradedBy,
         String gradedByName,
         LocalDateTime gradedAt,
-        String teacherComment
+        String teacherComment,
+        List<TestCaseResultDetail> testCaseResults
+    ) {}
+
+    public record TestCaseResultDetail(
+        Long testCaseId,
+        Integer orderIndex,
+        String caseName,
+        boolean passed,
+        BigDecimal scoreEarned,
+        BigDecimal maxPoints,
+        String message
     ) {}
 }

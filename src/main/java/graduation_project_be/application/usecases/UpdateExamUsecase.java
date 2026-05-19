@@ -3,10 +3,12 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.request.UpdateExamRequest;
 import graduation_project_be.application.usecases.response.UpdateExamResponse;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSettings;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ public class UpdateExamUsecase {
     private final ExamRepository examRepository;
     private final ClassRepository classRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSpecificationRepository examSpecificationRepository;
 
     public UpdateExamResponse execute(UpdateExamRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -77,6 +80,11 @@ public class UpdateExamUsecase {
             exam.setOriginalPdfFileName(request.originalPdfFileName());
             exam.setSpecificationId(null);
         }
+
+        ExamSettingsValidator.validateDatabaseInitialization(
+                examSpecificationRepository,
+                exam.getSpecificationId(),
+                exam.getSettings());
 
         Exam savedExam = examRepository.save(exam);
         log.info("Exam updated successfully: {}", savedExam.getId());
@@ -139,6 +147,20 @@ public class UpdateExamUsecase {
                         patch.getIsLoadDdl() != null
                                 ? patch.getIsLoadDdl()
                                 : current.getIsLoadDdl())
+                .seedDatasetId(resolveSeedDatasetId(current, patch))
                 .build();
+    }
+
+    private Long resolveSeedDatasetId(ExamSettings current, ExamSettings patch) {
+        if (Boolean.FALSE.equals(patch.getIsLoadDdl())) {
+            return null;
+        }
+        if (patch.getSeedDatasetId() != null) {
+            return patch.getSeedDatasetId();
+        }
+        if (Boolean.TRUE.equals(patch.getIsLoadDdl())) {
+            return null;
+        }
+        return current.getSeedDatasetId();
     }
 }

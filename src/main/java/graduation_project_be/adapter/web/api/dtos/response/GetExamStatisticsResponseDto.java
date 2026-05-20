@@ -13,6 +13,7 @@ public record GetExamStatisticsResponseDto(
         int suspiciousCount,
         List<ScoreDistributionBucketDto> scoreDistribution,
         List<QuestionTypeAccuracyDto> questionTypeAccuracy,
+        List<QuestionAccuracyDto> perQuestionAccuracy,
         double avgCompletionTimeMinutes,
         List<SuspiciousStudentDto> suspiciousStudents
 ) {
@@ -33,6 +34,16 @@ public record GetExamStatisticsResponseDto(
             int violationCount
     ) {}
 
+    public record QuestionAccuracyDto(
+            Long questionId,
+            int orderIndex,
+            String content,
+            String questionType,
+            int totalAttempts,
+            int correctCount,
+            double accuracy
+    ) {}
+
     public static GetExamStatisticsResponseDto fromResponse(GetExamStatisticsResponse r) {
         List<ScoreDistributionBucketDto> dist = r.scoreDistribution().stream()
                 .map(b -> new ScoreDistributionBucketDto(b.range(), b.count()))
@@ -48,6 +59,12 @@ public record GetExamStatisticsResponseDto(
                         s.studentId(), s.studentName(), s.studentEmail(), s.violationCount()))
                 .toList();
 
+        List<QuestionAccuracyDto> perQuestion = r.perQuestionAccuracy().stream()
+                .map(q -> new QuestionAccuracyDto(
+                        q.questionId(), q.orderIndex(), q.content(), q.questionType(),
+                        q.totalAttempts(), q.correctCount(), q.accuracy()))
+                .toList();
+
         return new GetExamStatisticsResponseDto(
                 r.totalSubmissions(),
                 r.averageScore(),
@@ -57,6 +74,7 @@ public record GetExamStatisticsResponseDto(
                 r.suspiciousCount(),
                 dist,
                 accuracy,
+                perQuestion,
                 r.avgCompletionTimeMinutes(),
                 suspicious
         );

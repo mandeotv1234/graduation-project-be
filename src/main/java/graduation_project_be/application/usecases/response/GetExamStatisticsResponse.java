@@ -17,6 +17,9 @@ public record GetExamStatisticsResponse(
         // ===== Skill Analysis per QuestionType =====
         List<QuestionTypeAccuracy> questionTypeAccuracy,
 
+        // ===== Per-Question Accuracy =====
+        List<QuestionAccuracy> perQuestionAccuracy,
+
         // ===== Behavior =====
         double avgCompletionTimeMinutes,
         List<SuspiciousStudent> suspiciousStudents
@@ -36,5 +39,15 @@ public record GetExamStatisticsResponse(
             String studentName,
             String studentEmail,
             int violationCount
+    ) {}
+
+    public record QuestionAccuracy(
+            Long questionId,
+            int orderIndex,
+            String content,
+            String questionType,
+            int totalAttempts,
+            int correctCount,
+            double accuracy
     ) {}
 }

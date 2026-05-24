@@ -98,7 +98,7 @@ public class GetExamResultsUsecase {
                     if ("all".equalsIgnoreCase(scoreFilter)) {
                         return true;
                     }
-                    if (item.status() == GradingStatus.PENDING) {
+                    if (item.status() != GradingStatus.COMPLETED && item.status() != GradingStatus.FAILED) {
                         return false;
                     }
                     BigDecimal score = item.totalScore();

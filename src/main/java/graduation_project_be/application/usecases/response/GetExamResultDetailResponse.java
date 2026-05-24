@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases.response;
 
+import graduation_project_be.domain.models.GradingTrace;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,7 +39,8 @@ public record GetExamResultDetailResponse(
         String gradedByName,
         LocalDateTime gradedAt,
         String teacherComment,
-        List<TestCaseResultDetail> testCaseResults
+        List<TestCaseResultDetail> testCaseResults,
+        GradingTrace gradingTrace
     ) {}
 
     public record TestCaseResultDetail(

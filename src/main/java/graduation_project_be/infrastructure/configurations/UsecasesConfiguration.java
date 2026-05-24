@@ -381,9 +381,10 @@ public class UsecasesConfiguration {
             ExamSubmissionRepository examSubmissionRepository,
             ExamQuestionRepository examQuestionRepository,
             UserRepository userRepository,
-            TestCaseRepository testCaseRepository) {
+            TestCaseRepository testCaseRepository,
+            ObjectMapper objectMapper) {
         return new GetExamResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository,
-                userRepository, testCaseRepository);
+                userRepository, testCaseRepository, objectMapper);
     }
 
     @Bean

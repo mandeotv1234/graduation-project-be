@@ -61,3 +61,5 @@ databaseChangeLog:
       file: db/changelog/grad-changelog-GRAD-146.yaml
   - include:
       file: db/changelog/grad-changelog-GRAD-149.yaml
+  - include:
+      file: db/changelog/grad-changelog-GRAD-165.yaml

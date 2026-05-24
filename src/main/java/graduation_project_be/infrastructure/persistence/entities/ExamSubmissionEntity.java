@@ -75,6 +75,9 @@ public class ExamSubmissionEntity {
     @Column(name = "teacher_comment", columnDefinition = "TEXT")
     private String teacherComment;
 
+    @Column(name = "grading_trace_json", columnDefinition = "TEXT")
+    private String gradingTraceJson;
+
     public ExamSubmission toModel() {
         return ExamSubmission.builder()
                 .id(id)
@@ -94,6 +97,7 @@ public class ExamSubmissionEntity {
                 .gradedBy(gradedBy)
                 .gradedAt(gradedAt)
                 .teacherComment(teacherComment)
+                .gradingTraceJson(gradingTraceJson)
                 .build();
     }
 
@@ -116,6 +120,7 @@ public class ExamSubmissionEntity {
                 .gradedBy(model.getGradedBy())
                 .gradedAt(model.getGradedAt())
                 .teacherComment(model.getTeacherComment())
+                .gradingTraceJson(model.getGradingTraceJson())
                 .build();
     }
 }

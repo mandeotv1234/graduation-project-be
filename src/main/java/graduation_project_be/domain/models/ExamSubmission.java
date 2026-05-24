@@ -33,4 +33,5 @@ public class ExamSubmission {
     private Long gradedBy;
     private LocalDateTime gradedAt;
     private String teacherComment;
+    private String gradingTraceJson;
 }

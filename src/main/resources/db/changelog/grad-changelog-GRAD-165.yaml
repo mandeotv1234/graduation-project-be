@@ -16,7 +16,6 @@ databaseChangeLog:
       id: 2305261718
       author: manhuynh
       comment: "GRAD-165: Backfill completed status for legacy graded exam results"
-      validCheckSum: ANY
       changes:
         - sql:
             dbms: postgresql
@@ -38,33 +37,6 @@ databaseChangeLog:
               --     score_earned = NULL, so the NOT EXISTS subquery fails.
               --   * Only attempts where the grader populated score_earned for ALL
               --     submissions pass — those are completed grading runs.
-              UPDATE exam_results r
-              SET status = 'COMPLETED',
-                  last_graded_at = COALESCE(last_graded_at, submitted_at)
-              WHERE r.status = 'PENDING'
-                AND EXISTS (
-                  SELECT 1 FROM exam_submissions s
-                  WHERE s.exam_id = r.exam_id
-                    AND s.student_id = r.student_id
-                    AND s.attempt_number = r.attempt_number
-                )
-                AND NOT EXISTS (
-                  SELECT 1 FROM exam_submissions s
-                  WHERE s.exam_id = r.exam_id
-                    AND s.student_id = r.student_id
-                    AND s.attempt_number = r.attempt_number
-                    AND s.score_earned IS NULL
-                );
-  - changeSet:
-      id: 2305261800
-      author: manhuynh
-      comment: "GRAD-165: Backfill legacy zero-score graded exam results"
-      changes:
-        - sql:
-            dbms: postgresql
-            sql: |
-              -- Follow-up backfill for environments that already executed an
-              -- earlier GRAD-165 backfill before zero-score attempts were covered.
               UPDATE exam_results r
               SET status = 'COMPLETED',
                   last_graded_at = COALESCE(last_graded_at, submitted_at)

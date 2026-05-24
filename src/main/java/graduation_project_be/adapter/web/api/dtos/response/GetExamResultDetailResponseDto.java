@@ -1,5 +1,6 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import graduation_project_be.application.usecases.response.GetExamResultDetailResponse;
 import graduation_project_be.domain.models.GradingTrace;
 import graduation_project_be.domain.models.GradingTraceItem;
@@ -63,7 +64,7 @@ public record GetExamResultDetailResponseDto(
         LocalDateTime gradedAt,
         String teacherComment,
         List<TestCaseResultDetailDto> testCaseResults,
-        GradingTraceDto gradingTrace
+        @JsonInclude(JsonInclude.Include.NON_NULL) GradingTraceDto gradingTrace
     ) {
         public static QuestionResultDetailDto fromResponse(GetExamResultDetailResponse.QuestionResultDetail d) {
             return new QuestionResultDetailDto(

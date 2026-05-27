@@ -73,6 +73,9 @@ public class ExamController {
         private final GetExamStatisticsUsecase getExamStatisticsUsecase;
         private final ExportExamPdfUsecase exportExamPdfUsecase;
         private final ExtractQuestionsFromPdfUsecase extractQuestionsFromPdfUsecase;
+        private final TeacherExecuteSqlOnResultUsecase teacherExecuteSqlOnResultUsecase;
+        private final TeacherResetResultSchemaUsecase teacherResetResultSchemaUsecase;
+        private final DropAllExamSchemasUsecase dropAllExamSchemasUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -845,5 +848,36 @@ public class ExamController {
                 return ResponseEntity.ok()
                                 .headers(headers)
                                 .body(response.content());
+        }
+
+        // ===== TEACHER REVIEW SCHEMA ENDPOINTS =====
+
+        @PostMapping("/{examId}/results/{resultId}/execute-sql")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> teacherExecuteSqlOnResult(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("resultId") @Positive Long resultId,
+                        @RequestBody @Valid TeacherExecuteSqlOnResultRequestDto requestDto) {
+                ExecuteSqlResponse response = teacherExecuteSqlOnResultUsecase.execute(
+                                requestDto.toRequest(examId, resultId));
+                return ResponseEntity.ok(ResponseDto.of(
+                                ExecuteSqlResponseDto.fromResponse(response), "OK", "SQL executed"));
+        }
+
+        @PostMapping("/{examId}/results/{resultId}/reset-schema")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> teacherResetResultSchema(
+                        @PathVariable("examId") @Positive Long examId,
+                        @PathVariable("resultId") @Positive Long resultId) {
+                teacherResetResultSchemaUsecase.execute(new TeacherResetResultSchemaRequest(examId, resultId));
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Schema đã được reset thành công"));
+        }
+
+        @DeleteMapping("/{examId}/schemas")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> dropAllExamSchemas(
+                        @PathVariable("examId") @Positive Long examId) {
+                dropAllExamSchemasUsecase.execute(new DropAllExamSchemasRequest(examId));
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Đã xóa toàn bộ schema của bài thi"));
         }
 }

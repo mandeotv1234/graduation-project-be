@@ -40,7 +40,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 @Slf4j
 @RequiredArgsConstructor
 public class StartExamSessionUsecase {
-    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d";
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d_att_%d";
 
     private final ExamRepository examRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
@@ -137,6 +137,10 @@ public class StartExamSessionUsecase {
                     "Tài khoản của bạn đang trong phiên thi ở một thiết bị khác. Vui lòng chờ giáo viên duyệt.");
         }
 
+        // Compute next attempt number (completed attempts + 1)
+        long completedAttempts = examResultRepository.countByExamIdAndStudentId(request.examId(), studentId);
+        int nextAttempt = (int) completedAttempts + 1;
+
         // 6. Session started or same-device reconnect
         LocalDateTime examStartedAt;
         if (existingStartTime.isPresent()) {
@@ -146,7 +150,7 @@ public class StartExamSessionUsecase {
             }
             boolean stillValid = Duration.between(now, candidateDeadline).getSeconds() > 0;
             if (stillValid) {
-                String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId);
+                String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId, nextAttempt);
                 boolean hasSchemaObjects = !examSchemaService.extractMetadata(schemaName).isEmpty();
                 boolean shouldInitializeDb = shouldInitializeDatabase(exam);
 
@@ -154,7 +158,7 @@ public class StartExamSessionUsecase {
                     examStartedAt = existingStartTime.get();
                 } else {
                     examStartedAt = now;
-                    initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
+                    initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
                     examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
                     examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
                     log.info("Đã khởi tạo lại schema trống của sinh viên khi start-session: exam={}, student={}",
@@ -162,13 +166,13 @@ public class StartExamSessionUsecase {
                 }
             } else {
                 examStartedAt = now;
-                initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
+                initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
                 examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
                 examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
             }
         } else {
             examStartedAt = now;
-            initializeStudentSchemaForFreshStart(request.examId(), studentId, exam);
+            initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
             examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
             examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
         }
@@ -199,7 +203,7 @@ public class StartExamSessionUsecase {
                 now, examStartedAt, examDeadline, remainingSeconds, exam.getDurationMinutes());
     }
 
-    private void initializeStudentSchemaForFreshStart(Long examId, Long studentId, Exam exam) {
+    private void initializeStudentSchemaForFreshStart(Long examId, Long studentId, Exam exam, int attemptNumber) {
         Long specificationId = exam.getSpecificationId();
         if (specificationId == null) {
             return;
@@ -214,7 +218,7 @@ public class StartExamSessionUsecase {
                 ? resolveSeedDatasetScript(specification, exam.getSettings().getSeedDatasetId())
                 : null;
 
-        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId);
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId, attemptNumber);
         examSchemaService.resetSchema(schemaName, false);
         examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
     }

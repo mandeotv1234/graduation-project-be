@@ -276,9 +276,10 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
-            ExamSessionService examSessionService) {
+            ExamSessionService examSessionService,
+            ExamResultRepository examResultRepository) {
         return new ClearExamSchemaUsecase(examRepository, classEnrollmentRepository,
-                currentUserService, examSchemaService, examSessionService);
+                currentUserService, examSchemaService, examSessionService, examResultRepository);
     }
 
     @Bean
@@ -288,9 +289,10 @@ public class UsecasesConfiguration {
             ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
             ExamSchemaService examSchemaService,
-            ExamSessionService examSessionService) {
+            ExamSessionService examSessionService,
+            ExamResultRepository examResultRepository) {
         return new ExecuteSqlUsecase(examRepository, classRepository, classEnrollmentRepository,
-                currentUserService, examSchemaService, examSessionService);
+                currentUserService, examSchemaService, examSessionService, examResultRepository);
     }
 
     @Bean
@@ -935,6 +937,57 @@ public class UsecasesConfiguration {
                 examRepository, classRepository, examQuestionRepository,
                 examSpecificationRepository, specEntityRepository, currentUserService,
                 geminiService, pdfRenderService, geminiExecutor);
+    }
+
+    // ===== TEACHER REVIEW SCHEMA USECASES =====
+
+    @Bean
+    TeacherExecuteSqlOnResultUsecase teacherExecuteSqlOnResultUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new TeacherExecuteSqlOnResultUsecase(
+                examRepository,
+                classRepository,
+                examResultRepository,
+                examSubmissionRepository,
+                currentUserService,
+                examSchemaService);
+    }
+
+    @Bean
+    TeacherResetResultSchemaUsecase teacherResetResultSchemaUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new TeacherResetResultSchemaUsecase(
+                examRepository,
+                classRepository,
+                examResultRepository,
+                examSubmissionRepository,
+                examSpecificationRepository,
+                currentUserService,
+                examSchemaService);
+    }
+
+    @Bean
+    DropAllExamSchemasUsecase dropAllExamSchemasUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new DropAllExamSchemasUsecase(
+                examRepository,
+                classRepository,
+                currentUserService,
+                examSchemaService);
     }
 
 }

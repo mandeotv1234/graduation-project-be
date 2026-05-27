@@ -158,7 +158,7 @@ public class SubmitExamUsecase {
         }
 
         int attemptNumber = (int) previousAttempts + 1;
-        String schemaName = String.format("exam_%d_student_%d", examId, studentId);
+        String schemaName = String.format("exam_%d_student_%d_att_%d", examId, studentId, attemptNumber);
 
         // 7. Save all answers to DB with status PENDING (fast — only text INSERT)
         for (ExamQuestion question : allQuestions) {

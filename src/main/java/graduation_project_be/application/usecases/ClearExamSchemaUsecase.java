@@ -6,6 +6,7 @@ import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.ExamSessionService;
@@ -20,13 +21,14 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ClearExamSchemaUsecase {
 
-    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d";
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d_att_%d";
 
     private final ExamRepository examRepository;
     private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
+    private final ExamResultRepository examResultRepository;
 
     public void execute(ClearExamSchemaRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -52,7 +54,9 @@ public class ClearExamSchemaUsecase {
 
         validateExamTime(request.examId(), currentUserId, exam);
 
-        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId);
+        long completedAttempts = examResultRepository.countByExamIdAndStudentId(request.examId(), currentUserId);
+        int currentAttempt = (int) completedAttempts + 1;
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId, currentAttempt);
         
         boolean keepTables = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
         examSchemaService.resetSchema(schemaName, keepTables);

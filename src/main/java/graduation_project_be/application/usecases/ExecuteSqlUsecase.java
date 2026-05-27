@@ -7,6 +7,7 @@ import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.ExamSessionService;
@@ -28,7 +29,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ExecuteSqlUsecase {
 
-    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d";
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d_att_%d";
     private static final String TEACHER_SCHEMA_FORMAT = "exam_%d_teacher_%d";
 
     private final ExamRepository examRepository;
@@ -37,6 +38,7 @@ public class ExecuteSqlUsecase {
     private final CurrentUserService currentUserService;
     private final ExamSchemaService examSchemaService;
     private final ExamSessionService examSessionService;
+    private final ExamResultRepository examResultRepository;
 
     public ExecuteSqlResponse execute(ExecuteSqlRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -74,7 +76,9 @@ public class ExecuteSqlUsecase {
         }
 
         validateExamTime(request.examId(), currentUserId, exam);
-        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId);
+        long completed = examResultRepository.countByExamIdAndStudentId(request.examId(), currentUserId);
+        int currentAttempt = (int) completed + 1;
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), currentUserId, currentAttempt);
         return new ExecutionContext(schemaName);
     }
 

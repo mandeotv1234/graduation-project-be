@@ -1,0 +1,56 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2305261600
+      author: manhuynh
+      comment: "GRAD-165: Add grading_trace_json column to exam_submissions"
+      changes:
+        - addColumn:
+            tableName: exam_submissions
+            columns:
+              - column:
+                  name: grading_trace_json
+                  type: TEXT
+                  constraints:
+                    nullable: true
+  - changeSet:
+      id: 2305261718
+      author: manhuynh
+      comment: "GRAD-165: Backfill completed status for legacy graded exam results"
+      changes:
+        - sql:
+            dbms: postgresql
+            sql: |
+              -- Backfill exam_results that finished grading but were left at PENDING.
+              -- Truth signal: every submission of the attempt has score_earned set
+              -- (grader populated it), even if submission.status was never flipped
+              -- to 'GRADED' on legacy data.
+              --
+              -- Safe condition: result.status='PENDING' AND submissions exist for
+              -- (exam_id, student_id, attempt_number) tuple AND every submission of
+              -- that attempt has score_earned IS NOT NULL.
+              --
+              -- Why placeholder PENDING from SubmitExamUsecase is not affected:
+              --   * SubmitExamUsecase inserts a submission row per question on
+              --     submit, but those rows have score_earned = NULL until the
+              --     grader runs. The NOT EXISTS subquery filters them out.
+              --   * Mid-grade attempts have at least one submission with
+              --     score_earned = NULL, so the NOT EXISTS subquery fails.
+              --   * Only attempts where the grader populated score_earned for ALL
+              --     submissions pass — those are completed grading runs.
+              UPDATE exam_results r
+              SET status = 'COMPLETED',
+                  last_graded_at = COALESCE(last_graded_at, submitted_at)
+              WHERE r.status = 'PENDING'
+                AND EXISTS (
+                  SELECT 1 FROM exam_submissions s
+                  WHERE s.exam_id = r.exam_id
+                    AND s.student_id = r.student_id
+                    AND s.attempt_number = r.attempt_number
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM exam_submissions s
+                  WHERE s.exam_id = r.exam_id
+                    AND s.student_id = r.student_id
+                    AND s.attempt_number = r.attempt_number
+                    AND s.score_earned IS NULL
+                );

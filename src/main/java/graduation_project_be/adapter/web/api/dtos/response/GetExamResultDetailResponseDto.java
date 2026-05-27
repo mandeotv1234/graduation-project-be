@@ -1,6 +1,9 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import graduation_project_be.application.usecases.response.GetExamResultDetailResponse;
+import graduation_project_be.domain.models.GradingTrace;
+import graduation_project_be.domain.models.GradingTraceItem;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -60,7 +63,8 @@ public record GetExamResultDetailResponseDto(
         String gradedByName,
         LocalDateTime gradedAt,
         String teacherComment,
-        List<TestCaseResultDetailDto> testCaseResults
+        List<TestCaseResultDetailDto> testCaseResults,
+        @JsonInclude(JsonInclude.Include.NON_NULL) GradingTraceDto gradingTrace
     ) {
         public static QuestionResultDetailDto fromResponse(GetExamResultDetailResponse.QuestionResultDetail d) {
             return new QuestionResultDetailDto(
@@ -73,7 +77,8 @@ public record GetExamResultDetailResponseDto(
                     ? List.of()
                     : d.testCaseResults().stream()
                         .map(TestCaseResultDetailDto::fromResponse)
-                        .toList()
+                        .toList(),
+                GradingTraceDto.fromDomain(d.gradingTrace())
             );
         }
     }
@@ -96,6 +101,72 @@ public record GetExamResultDetailResponseDto(
                 d.scoreEarned(),
                 d.maxPoints(),
                 d.message()
+            );
+        }
+    }
+
+    public record GradingTraceDto(
+        int traceSchemaVersion,
+        String gradingRunVersion,
+        LocalDateTime generatedAt,
+        int attemptNumber,
+        String rubricHash,
+        List<GradingTraceItemDto> items
+    ) {
+        public static GradingTraceDto fromDomain(GradingTrace trace) {
+            if (trace == null) return null;
+            return new GradingTraceDto(
+                trace.traceSchemaVersion(),
+                trace.gradingRunVersion(),
+                trace.generatedAt(),
+                trace.attemptNumber(),
+                trace.rubricHash(),
+                trace.items() == null
+                    ? List.of()
+                    : trace.items().stream()
+                        .map(GradingTraceItemDto::fromDomain)
+                        .toList()
+            );
+        }
+    }
+
+    public record GradingTraceItemDto(
+        String kind,
+        String status,
+        String label,
+        String message,
+        String caseId,
+        String caseName,
+        String ruleTarget,
+        String ruleCondition,
+        String action,
+        BigDecimal configuredPenalty,
+        BigDecimal earnedPoints,
+        BigDecimal maxPoints,
+        BigDecimal deductedPoints,
+        String expected,
+        String actual,
+        String configSummary
+    ) {
+        public static GradingTraceItemDto fromDomain(GradingTraceItem item) {
+            if (item == null) return null;
+            return new GradingTraceItemDto(
+                item.kind(),
+                item.status(),
+                item.label(),
+                item.message(),
+                item.caseId(),
+                item.caseName(),
+                item.ruleTarget(),
+                item.ruleCondition(),
+                item.action(),
+                item.configuredPenalty(),
+                item.earnedPoints(),
+                item.maxPoints(),
+                item.deductedPoints(),
+                item.expected(),
+                item.actual(),
+                item.configSummary()
             );
         }
     }

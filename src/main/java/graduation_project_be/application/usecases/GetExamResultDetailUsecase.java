@@ -1,11 +1,13 @@
 package graduation_project_be.application.usecases;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.usecases.response.GetExamResultDetailResponse;
 import graduation_project_be.domain.models.*;
 import graduation_project_be.domain.models.enums.GradingType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.math.BigDecimal;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RequiredArgsConstructor
 public class GetExamResultDetailUsecase {
 
@@ -23,6 +26,7 @@ public class GetExamResultDetailUsecase {
     private final ExamQuestionRepository examQuestionRepository;
     private final UserRepository userRepository;
     private final TestCaseRepository testCaseRepository;
+    private final ObjectMapper objectMapper;
 
     public GetExamResultDetailResponse execute(Long examId, Long resultId) {
         ExamResult result = examResultRepository.findById(resultId)
@@ -71,7 +75,8 @@ public class GetExamResultDetailUsecase {
                             gradedByName,
                             submission != null ? submission.getGradedAt() : null,
                             submission != null ? submission.getTeacherComment() : null,
-                            buildStoredProcedureTestCaseResults(q, submission)
+                            buildStoredProcedureTestCaseResults(q, submission),
+                            parseGradingTrace(submission != null ? submission.getGradingTraceJson() : null)
                     );
                 }).toList();
 
@@ -95,6 +100,16 @@ public class GetExamResultDetailUsecase {
                 result.getLastGradedAt(),
                 details
         );
+    }
+
+    private GradingTrace parseGradingTrace(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return objectMapper.readValue(json, GradingTrace.class);
+        } catch (Exception e) {
+            log.warn("Failed to parse grading trace: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String resolveTeacherName(Long teacherId, Map<Long, String> cache) {

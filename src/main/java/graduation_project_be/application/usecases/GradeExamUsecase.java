@@ -1,8 +1,11 @@
 package graduation_project_be.application.usecases;
 
 import graduation_project_be.shared.utils.TimeUtils;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graduation_project_be.domain.models.GradingTrace;
+import graduation_project_be.domain.models.GradingTraceItem;
 import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.TriggerMetadata;
@@ -33,7 +36,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.text.Normalizer;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -287,8 +293,16 @@ public class GradeExamUsecase {
                 int executionTimeMs = 0;
                 boolean hasExecutionError = false;
 
+                try {
+                    GradingTraceCollector.start();
+
                 if (studentQuery == null || studentQuery.isBlank()) {
                     errorMessage = "Sinh viên chưa nộp câu trả lời.";
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                            "Không nộp bài", "Sinh viên chưa nộp câu trả lời.",
+                            null, null, null, null, null, null,
+                            BigDecimal.ZERO, question.getPoints(), null, null, null, null));
                 } else if (teacherSetupErrors.containsKey(question.getId())) {
                     // Teacher's correctQuery failed to load — this is a question-design bug,
                     // not the student's fault. Mark with a clear "[ĐỀ LỖI]" prefix so a
@@ -298,6 +312,12 @@ public class GradeExamUsecase {
                             + teacherSetupErrors.get(question.getId())
                             + ". Câu hỏi cần được giáo viên kiểm tra lại — điểm chấm tự động không tin cậy.";
                     log.warn("Bỏ qua chấm câu {} vì thiết lập đáp án giáo viên thất bại", question.getId());
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                            "Lỗi đề bài", errorMessage,
+                            null, null, null, null, null, null,
+                            BigDecimal.ZERO, question.getPoints(), null, null, null,
+                            "Đáp án giáo viên thất bại: " + teacherSetupErrors.get(question.getId())));
                     if (submission != null) {
                         submission.setScoreEarned(BigDecimal.ZERO);
                     }
@@ -334,6 +354,11 @@ public class GradeExamUsecase {
                                 } catch (Exception execErr) {
                                     errorMessage = "Cảnh báo lỗi thực thi: " + execErr.getMessage();
                                     hasExecutionError = true;
+                                    GradingTraceCollector.add(new GradingTraceItem(
+                                            GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                                            "Lỗi thực thi SQL", errorMessage,
+                                            null, null, null, null, null, null,
+                                            null, null, null, null, null, null));
                                 }
 
                                 if (hasExecutionError && isSyntaxErrorFailAllMode(question)) {
@@ -342,6 +367,12 @@ public class GradeExamUsecase {
                                         submission.setErrorMessage(
                                                 "SQL lỗi thực thi và rubric đang để FAIL_ALL nên câu này bị 0 điểm.");
                                     }
+                                    GradingTraceCollector.add(new GradingTraceItem(
+                                            GradingTraceItem.KIND_TEACHER_CONFIG, GradingTraceItem.STATUS_FAIL,
+                                            "FAIL_ALL kích hoạt", "SQL lỗi thực thi và rubric đang để FAIL_ALL nên câu này bị 0 điểm.",
+                                            null, null, null, "SYNTAX_ERROR", "FAIL_ALL", null,
+                                            BigDecimal.ZERO, question.getPoints(), question.getPoints(),
+                                            null, null, "syntax_error_action=FAIL_ALL"));
                                     isCorrect = false;
                                 } else if (submission != null) {
                                     isCorrect = gradeAnswer(routineSchemaName, teacherSchemaName, question, submission,
@@ -391,6 +422,11 @@ public class GradeExamUsecase {
                                         } catch (Exception retryErr) {
                                             errorMessage = "Lỗi Execute (sau khi tắt FK): " + retryErr.getMessage();
                                             hasExecutionError = true;
+                                            GradingTraceCollector.add(new GradingTraceItem(
+                                                    GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                                                    "Lỗi FK (sau retry)", errorMessage,
+                                                    null, null, null, null, null, null,
+                                                    null, null, null, null, null, null));
                                         }
                                         try {
                                             setAllConstraintsEnabled(schemaName, true);
@@ -399,10 +435,20 @@ public class GradeExamUsecase {
                                     } else {
                                         errorMessage = "Cảnh báo Lỗi Execute: " + compileError;
                                         hasExecutionError = true;
+                                        GradingTraceCollector.add(new GradingTraceItem(
+                                                GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                                                "Lỗi thực thi SQL", errorMessage,
+                                                null, null, null, null, null, null,
+                                                null, null, null, null, null, null));
                                     }
                                 } else {
                                     errorMessage = "Cảnh báo Lỗi Execute: " + compileError;
                                     hasExecutionError = true;
+                                    GradingTraceCollector.add(new GradingTraceItem(
+                                            GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                                            "Lỗi thực thi SQL", errorMessage,
+                                            null, null, null, null, null, null,
+                                            null, null, null, null, null, null));
                                 }
                             }
                             if (hasExecutionError && isSyntaxErrorFailAllMode(question)) {
@@ -411,6 +457,12 @@ public class GradeExamUsecase {
                                     submission.setErrorMessage(
                                             "SQL lỗi thực thi và rubric đang để FAIL_ALL nên câu này bị 0 điểm.");
                                 }
+                                GradingTraceCollector.add(new GradingTraceItem(
+                                        GradingTraceItem.KIND_TEACHER_CONFIG, GradingTraceItem.STATUS_FAIL,
+                                        "FAIL_ALL kích hoạt", "SQL lỗi thực thi và rubric đang để FAIL_ALL nên câu này bị 0 điểm.",
+                                        null, null, null, "SYNTAX_ERROR", "FAIL_ALL", null,
+                                        BigDecimal.ZERO, question.getPoints(), question.getPoints(),
+                                        null, null, "syntax_error_action=FAIL_ALL"));
                                 isCorrect = false;
                             } else if (submission != null) {
                                 isCorrect = gradeAnswer(schemaName, teacherSchemaName, question, submission,
@@ -434,6 +486,11 @@ public class GradeExamUsecase {
                         executionTimeMs = (int) (System.currentTimeMillis() - startTime);
                         errorMessage = e.getMessage();
                         log.warn("Câu {} chạy thất bại: {}", question.getId(), e.getMessage());
+                        GradingTraceCollector.add(new GradingTraceItem(
+                                GradingTraceItem.KIND_EXECUTION_ERROR, GradingTraceItem.STATUS_FAIL,
+                                "Lỗi ngoại lệ", errorMessage,
+                                null, null, null, null, null, null,
+                                null, null, null, null, null, null));
                     }
                 }
 
@@ -460,14 +517,27 @@ public class GradeExamUsecase {
                 }
                 totalScore = totalScore.add(scoreEarned);
 
-                // Update submission with grading result
+                // Finalize trace and save submission
+                List<GradingTraceItem> traceItems = GradingTraceCollector.finish();
                 if (submission != null) {
                     submission.setIsCorrect(isCorrect);
                     submission.setScoreEarned(scoreEarned);
                     submission.setErrorMessage(errorMessage);
                     submission.setExecutionTimeMs(executionTimeMs);
                     submission.setStatus(SubmissionStatus.GRADED);
+                    submission.setGradingTraceJson(serializeTrace(
+                            traceItems, attemptNumber,
+                            question.getGradingRubric()));
                     examSubmissionRepository.save(submission);
+                }
+                } finally {
+                    // Ensure ThreadLocal is cleared even if anything above throws
+                    // before the explicit finish() call. Safe to call twice — finish()
+                    // already does ITEMS.remove(); isActive() will be false here on
+                    // happy path so this is a no-op cleanup for that case.
+                    if (GradingTraceCollector.isActive()) {
+                        GradingTraceCollector.finish();
+                    }
                 }
             }
 
@@ -581,6 +651,41 @@ public class GradeExamUsecase {
             default:
                 log.warn("Loại câu hỏi không xác định: {}", type);
                 return false;
+        }
+    }
+
+    private String serializeTrace(List<GradingTraceItem> items, int attemptNumber, String rubricJson) {
+        try {
+            String rubricHash = rubricJson != null && !rubricJson.isBlank()
+                    ? computeShortHash(rubricJson) : null;
+            GradingTrace trace = new GradingTrace(
+                    GradingTrace.CURRENT_SCHEMA_VERSION,
+                    GradingTrace.CURRENT_RUN_VERSION,
+                    LocalDateTime.now(),
+                    attemptNumber,
+                    rubricHash,
+                    items
+            );
+            return objectMapper.writeValueAsString(trace);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize grading trace: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String computeShortHash(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder("sha256:");
+            for (int i = 0; i < 8; i++) {
+                sb.append(String.format("%02x", hash[i]));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed available in standard JRE — log if not.
+            log.warn("SHA-256 algorithm unavailable for rubric hash: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -702,6 +807,18 @@ public class GradeExamUsecase {
             }
         }
 
+        if (GradingTraceCollector.isActive()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_SUMMARY,
+                    allPassed ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
+                    "Kiểm tra cấu trúc bảng",
+                    allPassed ? "Tất cả bảng và cột đúng cấu trúc" : errorBuilder.toString().trim(),
+                    null, null, null, null, null, null,
+                    earnedTotal, totalPoints, allPassed ? null : totalPoints.subtract(earnedTotal),
+                    null, null,
+                    "So sánh metadata bảng/cột/khóa giữa schema SV và schema GV"));
+        }
+
         return allPassed;
     }
 
@@ -743,6 +860,44 @@ public class GradeExamUsecase {
         if (submission != null) {
             submission.setScoreEarned(result.earnedPoints());
             submission.setErrorMessage(result.errorMessage());
+        }
+
+        if (GradingTraceCollector.isActive()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_SUMMARY,
+                    result.allPassed() ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
+                    "Kiểm tra CREATE TABLE (rubric)",
+                    result.allPassed() ? "Tất cả kiểm tra rubric đạt"
+                            : (result.errorMessage() != null ? result.errorMessage() : "Rubric kiểm tra thất bại"),
+                    null, null, null, null, null, null,
+                    result.earnedPoints(), totalPoints,
+                    result.allPassed() ? null : totalPoints.subtract(result.earnedPoints()),
+                    null, null,
+                    "Chấm theo rubric CREATE TABLE"));
+
+            if (result.details() != null) {
+                for (Map<String, Object> detail : result.details()) {
+                    String type = String.valueOf(detail.getOrDefault("type", "info"));
+                    String msg = String.valueOf(detail.getOrDefault("message", ""));
+                    Object pts = detail.get("points");
+                    BigDecimal pointsVal = pts != null ? new BigDecimal(pts.toString()) : null;
+                    boolean isError = "error".equals(type);
+
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_RUBRIC_RULE,
+                            isError ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_INFO,
+                            msg.length() > 60 ? msg.substring(0, 57) + "..." : msg,
+                            msg,
+                            null, null,
+                            null, null,
+                            isError ? "DEDUCT_POINTS" : null,
+                            isError && pointsVal != null ? pointsVal.abs() : null,
+                            null, null,
+                            isError && pointsVal != null ? pointsVal.abs() : null,
+                            null, null,
+                            "CREATE TABLE rubric rule"));
+                }
+            }
         }
 
         return result.allPassed();
@@ -929,6 +1084,16 @@ public class GradeExamUsecase {
         if (fallbackTriggered && fkRule != null && fkRule.isObject()) {
             InsertRuleDecision fkDecision = resolveInsertRuleDecision(fkRule, totalPoints.doubleValue(), 0d);
             if (!fkDecision.ignore()) {
+                BigDecimal questionMaxPoints = totalPoints;
+                addInsertRuleTrace(
+                        "schema",
+                        "FOREIGN_KEY",
+                        "REFERENCE_ERROR",
+                        1,
+                        fkDecision,
+                        0d,
+                        questionMaxPoints,
+                        "Vi phạm khóa ngoại/ràng buộc, hệ thống tự động chạy lại theo cấu hình rubric.");
                 allPassed = false;
                 if (fkDecision.failAll()) {
                     failAllTriggered = true;
@@ -1077,6 +1242,15 @@ public class GradeExamUsecase {
             } catch (Exception e) {
                 allPassed = false;
                 errorBuilder.append(String.format("Bảng %s bị lỗi hoặc không tồn tại. ", tableName));
+                addInsertRuleTrace(
+                        tableName,
+                        "TABLE",
+                        "IS_MISSING",
+                        1,
+                        new InsertRuleDecision("FAIL_ALL", tablePoints, false, true),
+                        tablePoints,
+                        BigDecimal.valueOf(tablePoints),
+                        "Không đọc được bảng sinh viên: " + e.getMessage());
                 continue;
             }
 
@@ -1086,7 +1260,14 @@ public class GradeExamUsecase {
 
             int missingRows = 0;
             int wrongCells = 0;
+            int notEqualCells = 0;
+            int nullCells = 0;
             int outOfOrderRows = 0;
+            InsertRuleDecision missingDecisionForTrace = null;
+            InsertRuleDecision cellNotEqualDecisionForTrace = null;
+            InsertRuleDecision cellNullDecisionForTrace = null;
+            InsertRuleDecision rowOrderDecisionForTrace = null;
+            InsertRuleDecision extraDecisionForTrace = null;
 
             for (int r = 0; r < expectedRows.size(); r++) {
                 JsonNode expectedRow = expectedRows.get(r);
@@ -1143,6 +1324,7 @@ public class GradeExamUsecase {
                     InsertRuleDecision missingDecision = resolveInsertRuleDecision(missingRowRule, tablePoints,
                             rowPenalty);
                     if (!missingDecision.ignore()) {
+                        missingDecisionForTrace = missingDecision;
                         allPassed = false;
                         missingRows++;
                         if (missingDecision.failAll()) {
@@ -1203,6 +1385,13 @@ public class GradeExamUsecase {
 
                     allPassed = false;
                     wrongCells++;
+                    if (nullViolation) {
+                        nullCells++;
+                        cellNullDecisionForTrace = cellDecision;
+                    } else {
+                        notEqualCells++;
+                        cellNotEqualDecisionForTrace = cellDecision;
+                    }
 
                     if (cellDecision.failAll()) {
                         rowFailAll = true;
@@ -1234,6 +1423,7 @@ public class GradeExamUsecase {
                     InsertRuleDecision rowOrderDecision = resolveInsertRuleDecision(rowOrderRule, tablePoints,
                             rowPenalty);
                     if (!rowOrderDecision.ignore()) {
+                        rowOrderDecisionForTrace = rowOrderDecision;
                         allPassed = false;
                         if (rowOrderDecision.failAll()) {
                             failAllTriggered = true;
@@ -1260,6 +1450,7 @@ public class GradeExamUsecase {
                             defaultExtraPenalty);
 
                     if (!extraDecision.ignore()) {
+                        extraDecisionForTrace = extraDecision;
                         allPassed = false;
                         if (extraDecision.failAll()) {
                             failAllTriggered = true;
@@ -1271,13 +1462,61 @@ public class GradeExamUsecase {
                 } else {
                     allPassed = false;
                     if (allowExtraRows) {
-                        double penalty = tablePoints * penaltyPerExtraRow * extraRows;
-                        earnedTable = applyInsertPenalty(earnedTable, penalty, 1);
+                        double penaltyPerExtra = tablePoints * penaltyPerExtraRow;
+                        extraDecisionForTrace = new InsertRuleDecision("DEDUCT_POINTS", penaltyPerExtra, false, false);
+                        earnedTable = applyInsertPenalty(earnedTable, penaltyPerExtra * extraRows, 1);
                     } else {
+                        extraDecisionForTrace = new InsertRuleDecision("FAIL_ALL", tablePoints, false, true);
                         earnedTable = 0d;
                     }
                 }
             }
+
+            addInsertRuleTrace(
+                    tableName,
+                    "ROW",
+                    "IS_MISSING",
+                    missingRows,
+                    missingDecisionForTrace,
+                    rowPenalty,
+                    BigDecimal.valueOf(tablePoints),
+                    null);
+            addInsertRuleTrace(
+                    tableName,
+                    "CELL_VALUE",
+                    "NOT_EQUAL",
+                    notEqualCells,
+                    cellNotEqualDecisionForTrace,
+                    fallbackColPenalty,
+                    BigDecimal.valueOf(tablePoints),
+                    null);
+            addInsertRuleTrace(
+                    tableName,
+                    "CELL_VALUE",
+                    "IS_NULL",
+                    nullCells,
+                    cellNullDecisionForTrace,
+                    fallbackColPenalty,
+                    BigDecimal.valueOf(tablePoints),
+                    null);
+            addInsertRuleTrace(
+                    tableName,
+                    "ROW_ORDER",
+                    "OUT_OF_ORDER",
+                    outOfOrderRows,
+                    rowOrderDecisionForTrace,
+                    rowPenalty,
+                    BigDecimal.valueOf(tablePoints),
+                    null);
+            addInsertRuleTrace(
+                    tableName,
+                    "ROW",
+                    "IS_EXTRA",
+                    extraRows,
+                    extraDecisionForTrace,
+                    Math.max(rowPenalty, tablePoints * penaltyPerExtraRow),
+                    BigDecimal.valueOf(tablePoints),
+                    null);
 
             if (missingRows > 0 || wrongCells > 0 || extraRows > 0 || outOfOrderRows > 0) {
                 double tableDeduction = Math.max(0d, tablePoints - Math.max(0d, earnedTable));
@@ -1317,10 +1556,80 @@ public class GradeExamUsecase {
             }
         }
 
-        return allPassed && !failAllTriggered;
+        boolean insertPassed = allPassed && !failAllTriggered;
+        if (GradingTraceCollector.isActive()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_SUMMARY,
+                    insertPassed ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
+                    "Kiểm tra INSERT DATA",
+                    insertPassed ? "Tất cả dữ liệu khớp"
+                            : (errorBuilder.length() > 0 ? errorBuilder.toString().trim() : "Dữ liệu không khớp"),
+                    null, null, null, null, null, null,
+                    earnedTotal, totalPoints,
+                    insertPassed ? null : totalPoints.subtract(earnedTotal),
+                    null, null,
+                    "So sánh dữ liệu INSERT giữa schema SV và GV"));
+
+        }
+
+        return insertPassed;
     }
 
     private record InsertRuleDecision(String action, double penaltyPoints, boolean ignore, boolean failAll) {
+    }
+
+    private void addInsertRuleTrace(
+            String tableName,
+            String target,
+            String condition,
+            int violationCount,
+            InsertRuleDecision decision,
+            double defaultPenaltyPoints,
+            BigDecimal tableMaxPoints,
+            String overrideMessage) {
+        if (!GradingTraceCollector.isActive() || violationCount <= 0 || decision == null || decision.ignore()) {
+            return;
+        }
+
+        BigDecimal safeMaxPoints = tableMaxPoints != null ? tableMaxPoints : BigDecimal.ZERO;
+        BigDecimal configuredPenalty = BigDecimal.valueOf(Math.max(0d,
+                decision.penaltyPoints() > 0d ? decision.penaltyPoints() : defaultPenaltyPoints))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal deductedPoints = decision.failAll()
+                ? safeMaxPoints
+                : configuredPenalty.multiply(BigDecimal.valueOf(violationCount));
+        if (deductedPoints.compareTo(safeMaxPoints) > 0) {
+            deductedPoints = safeMaxPoints;
+        }
+
+        String ruleLabel = target + "/" + condition;
+        String message = overrideMessage != null && !overrideMessage.isBlank()
+                ? overrideMessage
+                : String.format(
+                        Locale.ROOT,
+                        "Bảng %s có %d vi phạm %s, action=%s.",
+                        tableName,
+                        violationCount,
+                        ruleLabel,
+                        decision.action());
+
+        GradingTraceCollector.add(new GradingTraceItem(
+                GradingTraceItem.KIND_RUBRIC_RULE,
+                GradingTraceItem.STATUS_FAIL,
+                "Bảng " + tableName + ": " + ruleLabel,
+                message,
+                null,
+                null,
+                target,
+                condition,
+                decision.action(),
+                configuredPenalty,
+                null,
+                safeMaxPoints,
+                deductedPoints.setScale(2, RoundingMode.HALF_UP),
+                null,
+                null,
+                "INSERT DATA rubric rule"));
     }
 
     private InsertRuleDecision resolveInsertRuleDecision(JsonNode ruleNode, double tablePoints,
@@ -1898,6 +2207,7 @@ public class GradeExamUsecase {
                     }
 
                     casePhase = "grading";
+                    int issuesBefore = issues.length();
                     BigDecimal caseDeduction = calculateSelectCaseDeductionForTestCase(
                             caseId,
                             caseName,
@@ -1913,11 +2223,44 @@ public class GradeExamUsecase {
                         allPassed = false;
                         totalDeduction = totalDeduction.add(caseDeduction);
                     }
+                    if (GradingTraceCollector.isActive()) {
+                        boolean casePassed = caseDeduction.compareTo(BigDecimal.ZERO) <= 0;
+                        String traceMessage;
+                        if (casePassed) {
+                            traceMessage = "Test case đạt";
+                        } else {
+                            String addedIssues = issues.substring(issuesBefore).trim();
+                            traceMessage = addedIssues.isEmpty() ? "Kết quả không khớp với đáp án mẫu" : addedIssues;
+                        }
+                        GradingTraceCollector.add(new GradingTraceItem(
+                                GradingTraceItem.KIND_TEST_CASE,
+                                casePassed ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
+                                caseName,
+                                traceMessage,
+                                caseId, caseName,
+                                null, null, casePassed ? null : "DEDUCT_POINTS",
+                                casePassed ? null : caseMaxPenalty,
+                                null, caseMaxPenalty,
+                                casePassed ? null : caseDeduction,
+                                null, null,
+                                "SELECT rubric test case"));
+                    }
                 } catch (Exception caseEx) {
                     String message = caseEx.getMessage() != null ? caseEx.getMessage() : caseEx.getClass().getSimpleName();
                     if ("setup".equals(casePhase)) {
                         appendSelectIssue(issues,
                                 "[" + caseId + "] Setup thất bại, bỏ qua không trừ điểm: " + message);
+                        if (GradingTraceCollector.isActive()) {
+                            GradingTraceCollector.add(new GradingTraceItem(
+                                    GradingTraceItem.KIND_TEACHER_CONFIG, GradingTraceItem.STATUS_WARN,
+                                    caseId + " (setup)",
+                                    message,
+                                    caseId, caseName,
+                                    null, null, null, null,
+                                    null, caseMaxPenalty, null,
+                                    null, null,
+                                    "SELECT rubric test case — setup error"));
+                        }
                         continue;
                     }
 
@@ -1927,6 +2270,17 @@ public class GradeExamUsecase {
                             "[" + caseId + "] Giai đoạn " + casePhase + " thất bại, trừ "
                                     + caseMaxPenalty.setScale(2, RoundingMode.HALF_UP).toPlainString()
                                     + " điểm: " + message);
+                    if (GradingTraceCollector.isActive()) {
+                        GradingTraceCollector.add(new GradingTraceItem(
+                                GradingTraceItem.KIND_TEST_CASE, GradingTraceItem.STATUS_FAIL,
+                                caseId + " (" + casePhase + ")",
+                                message,
+                                caseId, caseName,
+                                null, null, null, null,
+                                null, caseMaxPenalty, caseMaxPenalty,
+                                null, null,
+                                "SELECT rubric test case — " + casePhase + " error"));
+                    }
                 } finally {
                     try {
                         examSchemaService.dropSchema(caseSchema);
@@ -2137,6 +2491,12 @@ public class GradeExamUsecase {
             if (!application.violationPresent()) {
                 continue;
             }
+            addSelectRuleTrace(
+                    null,
+                    "Cấu trúc cột SELECT",
+                    application,
+                    maxTotalPoints,
+                    "SELECT structural rubric");
             if (application.failAllTriggered()) {
                 failAll = true;
             }
@@ -2247,6 +2607,12 @@ public class GradeExamUsecase {
             if (!application.violationPresent()) {
                 continue;
             }
+            addSelectRuleTrace(
+                    caseId,
+                    caseName,
+                    application,
+                    caseMaxPenalty,
+                    "SELECT test case rubric");
             if (application.ruleMatched()) {
                 matchedRuleCount++;
             }
@@ -2499,8 +2865,32 @@ public class GradeExamUsecase {
                         question,
                         studentQuery);
                 if (!decision.allChecksPassed()) {
+                    if (GradingTraceCollector.isActive()) {
+                        GradingTraceCollector.add(new GradingTraceItem(
+                                GradingTraceItem.KIND_SUMMARY,
+                                GradingTraceItem.STATUS_FAIL,
+                                "Kiểm tra SELECT (so sánh dataset)",
+                                decision.errorMessage() != null ? decision.errorMessage() : "Kết quả không khớp",
+                                null, null, null, null, null, null,
+                                BigDecimal.ZERO, totalPoints,
+                                totalPoints,
+                                null, null,
+                                "So sánh kết quả SELECT qua dataset(s)"));
+                    }
                     return GradeDecision.fail(decision.errorMessage());
                 }
+            }
+            if (GradingTraceCollector.isActive()) {
+                GradingTraceCollector.add(new GradingTraceItem(
+                        GradingTraceItem.KIND_SUMMARY,
+                        GradingTraceItem.STATUS_PASS,
+                        "Kiểm tra SELECT (so sánh dataset)",
+                        "Kết quả SELECT khớp",
+                        null, null, null, null, null, null,
+                        totalPoints, totalPoints,
+                        null,
+                        null, null,
+                        "So sánh kết quả SELECT qua dataset(s)"));
             }
             return GradeDecision.pass(totalPoints);
         }
@@ -2571,12 +2961,36 @@ public class GradeExamUsecase {
         earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
 
         if (allPassed && earnedTotal.compareTo(totalPoints.setScale(2, RoundingMode.HALF_UP)) >= 0) {
+            if (GradingTraceCollector.isActive()) {
+                GradingTraceCollector.add(new GradingTraceItem(
+                        GradingTraceItem.KIND_SUMMARY,
+                        GradingTraceItem.STATUS_PASS,
+                        "Kiểm tra SELECT (so sánh dataset)",
+                        "Kết quả SELECT khớp",
+                        null, null, null, null, null, null,
+                        earnedTotal, totalPoints,
+                        null,
+                        null, null,
+                        "So sánh kết quả SELECT qua dataset(s)"));
+            }
             return GradeDecision.pass(earnedTotal);
         }
 
         String errorMessage = errorBuilder.length() > 0
                 ? errorBuilder.toString().trim()
                 : "Kết quả SELECT không khớp rubric chấm điểm.";
+        if (GradingTraceCollector.isActive()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_SUMMARY,
+                    GradingTraceItem.STATUS_FAIL,
+                    "Kiểm tra SELECT (so sánh dataset)",
+                    errorMessage,
+                    null, null, null, null, null, null,
+                    earnedTotal, totalPoints,
+                    totalPoints.subtract(earnedTotal),
+                    null, null,
+                    "So sánh kết quả SELECT qua dataset(s)"));
+        }
         return GradeDecision.partial(earnedTotal, errorMessage);
     }
 
@@ -2606,13 +3020,46 @@ public class GradeExamUsecase {
             if (!hasRuleBasedScoring) {
                 // Simple strict comparison
                 if (compareResultSetsStrict(actual, expected, requireStrictOrder)) {
+                    if (GradingTraceCollector.isActive()) {
+                        GradingTraceCollector.add(new GradingTraceItem(
+                                GradingTraceItem.KIND_SUMMARY,
+                                GradingTraceItem.STATUS_PASS,
+                                "Kiểm tra SELECT (so sánh trực tiếp)",
+                                "Kết quả SELECT khớp hoàn toàn với đáp án.",
+                                null, null, null, null, null, null,
+                                totalPoints, totalPoints, null,
+                                null, null,
+                                "So sánh kết quả SELECT trên schema hiện tại"));
+                    }
                     return GradeDecision.pass(totalPoints);
+                }
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_FAIL,
+                            "Kiểm tra SELECT (so sánh trực tiếp)",
+                            "Kết quả SELECT không khớp với đáp án.",
+                            null, null, null, null, null, null,
+                            BigDecimal.ZERO, totalPoints, totalPoints,
+                            null, null,
+                            "So sánh kết quả SELECT trên schema hiện tại"));
                 }
                 return GradeDecision.fail("Kết quả SELECT không khớp với đáp án.");
             }
 
             // Exact match → full points immediately
             if (compareResultSetsStrict(actual, expected, requireStrictOrder)) {
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_PASS,
+                            "Kiểm tra SELECT (so sánh trực tiếp)",
+                            "Kết quả SELECT khớp hoàn toàn với đáp án (exact match).",
+                            null, null, null, null, null, null,
+                            totalPoints, totalPoints, null,
+                            null, null,
+                            "So sánh kết quả SELECT trên schema hiện tại"));
+                }
                 return GradeDecision.pass(totalPoints);
             }
 
@@ -2621,9 +3068,31 @@ public class GradeExamUsecase {
                     actual, expected, question, studentQuery, selectRules, totalPoints, requireStrictOrder);
 
             if (decision.executionFailed()) {
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_FAIL,
+                            "Kiểm tra SELECT (so sánh trực tiếp)",
+                            decision.errorMessage(),
+                            null, null, null, null, null, null,
+                            BigDecimal.ZERO, totalPoints, totalPoints,
+                            null, null,
+                            "So sánh kết quả SELECT trên schema hiện tại"));
+                }
                 return GradeDecision.fail(decision.errorMessage());
             }
             if (decision.failAllTriggered()) {
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_FAIL,
+                            "Kiểm tra SELECT (so sánh trực tiếp)",
+                            "Rubric SELECT có rule FAIL_ALL: câu này bị 0 điểm toàn bộ.",
+                            null, null, null, null, null, null,
+                            BigDecimal.ZERO, totalPoints, totalPoints,
+                            null, null,
+                            "So sánh kết quả SELECT trên schema hiện tại"));
+                }
                 return GradeDecision.fail(
                         "Rubric SELECT có rule FAIL_ALL: câu này bị 0 điểm toàn bộ.");
             }
@@ -2637,14 +3106,47 @@ public class GradeExamUsecase {
 
             if (decision.allChecksPassed()
                     && earned.compareTo(totalPoints.setScale(2, RoundingMode.HALF_UP)) >= 0) {
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_PASS,
+                            "Kiểm tra SELECT (so sánh trực tiếp)",
+                            "Tất cả kiểm tra rubric SELECT đạt.",
+                            null, null, null, null, null, null,
+                            earned, totalPoints, null,
+                            null, null,
+                            "So sánh kết quả SELECT trên schema hiện tại"));
+                }
                 return GradeDecision.pass(earned);
             }
 
             String errorMessage = decision.errorMessage() != null && !decision.errorMessage().isBlank()
                     ? decision.errorMessage()
                     : "Kết quả SELECT không khớp rubric chấm điểm.";
+            if (GradingTraceCollector.isActive()) {
+                GradingTraceCollector.add(new GradingTraceItem(
+                        GradingTraceItem.KIND_SUMMARY,
+                        GradingTraceItem.STATUS_FAIL,
+                        "Kiểm tra SELECT (so sánh trực tiếp)",
+                        errorMessage,
+                        null, null, null, null, null, null,
+                        earned, totalPoints, totalPoints.setScale(2, RoundingMode.HALF_UP).subtract(earned),
+                        null, null,
+                        "So sánh kết quả SELECT trên schema hiện tại"));
+            }
             return GradeDecision.partial(earned, errorMessage);
         } catch (Exception e) {
+            if (GradingTraceCollector.isActive()) {
+                GradingTraceCollector.add(new GradingTraceItem(
+                        GradingTraceItem.KIND_SUMMARY,
+                        GradingTraceItem.STATUS_FAIL,
+                        "Kiểm tra SELECT (so sánh trực tiếp)",
+                        "Lỗi khi chấm SELECT: " + e.getMessage(),
+                        null, null, null, null, null, null,
+                        BigDecimal.ZERO, totalPoints, totalPoints,
+                        null, null,
+                        "So sánh kết quả SELECT trên schema hiện tại"));
+            }
             return GradeDecision.fail("Lỗi khi chấm SELECT: " + e.getMessage());
         }
     }
@@ -2745,6 +3247,12 @@ public class GradeExamUsecase {
             for (SelectRuleApplication application : applications) {
                 if (!application.violationPresent())
                     continue;
+                addSelectRuleTrace(
+                        null,
+                        "Kết quả SELECT",
+                        application,
+                        datasetMaxPoints,
+                        "SELECT result rubric");
                 if (application.ruleMatched())
                     matchedRuleCount++;
                 if (application.failAllTriggered())
@@ -2935,6 +3443,12 @@ public class GradeExamUsecase {
                 if (!application.violationPresent()) {
                     continue;
                 }
+                addSelectRuleTrace(
+                        null,
+                        datasetLabel,
+                        application,
+                        datasetMaxPoints,
+                        "SELECT dataset rubric: " + datasetLabel);
 
                 if (application.ruleMatched()) {
                     matchedRuleCount++;
@@ -3355,7 +3869,7 @@ public class GradeExamUsecase {
 
         JsonNode ruleNode = findInsertRule(gradingRules, target, condition);
         if (ruleNode == null) {
-            return SelectRuleApplication.unmatchedViolation();
+            return SelectRuleApplication.unmatchedViolation(target, condition, violationSummary);
         }
 
         SelectRuleDecision decision = resolveSelectRuleDecision(
@@ -3364,13 +3878,24 @@ public class GradeExamUsecase {
                 defaultPenaltyPerViolation);
 
         String ruleLabel = selectRuleLabel(target, condition);
+        BigDecimal configuredPenalty = decision.failAll()
+                ? datasetMaxPoints
+                : BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()));
         if (decision.ignore()) {
             String message = String.format(
                     Locale.ROOT,
                     "Rule %s bỏ qua vi phạm (%s).",
                     ruleLabel,
                     violationSummary);
-            return SelectRuleApplication.matchedViolation(false, BigDecimal.ZERO, message);
+            return SelectRuleApplication.matchedViolation(
+                    target,
+                    condition,
+                    decision.action(),
+                    configuredPenalty,
+                    false,
+                    BigDecimal.ZERO,
+                    message,
+                    violationSummary);
         }
 
         if (decision.failAll()) {
@@ -3379,7 +3904,15 @@ public class GradeExamUsecase {
                     "Rule %s kích hoạt FAIL_ALL (%s).",
                     ruleLabel,
                     violationSummary);
-            return SelectRuleApplication.matchedViolation(true, BigDecimal.ZERO, message);
+            return SelectRuleApplication.matchedViolation(
+                    target,
+                    condition,
+                    decision.action(),
+                    configuredPenalty,
+                    true,
+                    BigDecimal.ZERO,
+                    message,
+                    violationSummary);
         }
 
         BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
@@ -3390,7 +3923,15 @@ public class GradeExamUsecase {
                 violationSummary,
                 deduction,
                 decision.action());
-        return SelectRuleApplication.matchedViolation(false, deduction, message);
+        return SelectRuleApplication.matchedViolation(
+                target,
+                condition,
+                decision.action(),
+                configuredPenalty,
+                false,
+                deduction,
+                message,
+                violationSummary);
     }
 
     private SelectRuleDecision resolveSelectRuleDecision(
@@ -3451,6 +3992,47 @@ public class GradeExamUsecase {
                 formattedDeduction);
     }
 
+    private void addSelectRuleTrace(
+            String caseId,
+            String caseName,
+            SelectRuleApplication application,
+            BigDecimal maxPoints,
+            String configSummary) {
+        if (!GradingTraceCollector.isActive() || application == null || !application.violationPresent()) {
+            return;
+        }
+
+        String target = application.target() == null ? "UNKNOWN" : application.target();
+        String condition = application.condition() == null ? "UNKNOWN" : application.condition();
+        String ruleLabel = selectRuleLabel(target, condition);
+        String message = application.message();
+        if (message == null || message.isBlank()) {
+            message = "Phát hiện " + application.violationSummary()
+                    + " nhưng không có rule " + ruleLabel + " tương ứng trong cấu hình.";
+        }
+
+        BigDecimal deductedPoints = application.failAllTriggered()
+                ? maxPoints
+                : application.deduction();
+        GradingTraceCollector.add(new GradingTraceItem(
+                GradingTraceItem.KIND_RUBRIC_RULE,
+                application.ruleMatched() ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_WARN,
+                "Rule " + ruleLabel,
+                message,
+                caseId,
+                caseName,
+                target,
+                condition,
+                application.action(),
+                application.configuredPenalty(),
+                null,
+                maxPoints,
+                deductedPoints != null && deductedPoints.compareTo(BigDecimal.ZERO) > 0 ? deductedPoints : null,
+                null,
+                null,
+                configSummary));
+    }
+
     private void appendSelectIssue(StringBuilder builder, String message) {
         if (message == null || message.isBlank()) {
             return;
@@ -3477,18 +4059,51 @@ public class GradeExamUsecase {
             boolean violationPresent,
             boolean ruleMatched,
             boolean failAllTriggered,
+            String target,
+            String condition,
+            String action,
+            BigDecimal configuredPenalty,
             BigDecimal deduction,
-            String message) {
+            String message,
+            String violationSummary) {
         static SelectRuleApplication noViolation() {
-            return new SelectRuleApplication(false, false, false, BigDecimal.ZERO, null);
+            return new SelectRuleApplication(false, false, false, null, null, null, null, BigDecimal.ZERO, null, null);
         }
 
-        static SelectRuleApplication unmatchedViolation() {
-            return new SelectRuleApplication(true, false, false, BigDecimal.ZERO, null);
+        static SelectRuleApplication unmatchedViolation(String target, String condition, String violationSummary) {
+            return new SelectRuleApplication(
+                    true,
+                    false,
+                    false,
+                    target,
+                    condition,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    null,
+                    violationSummary);
         }
 
-        static SelectRuleApplication matchedViolation(boolean failAllTriggered, BigDecimal deduction, String message) {
-            return new SelectRuleApplication(true, true, failAllTriggered, deduction, message);
+        static SelectRuleApplication matchedViolation(
+                String target,
+                String condition,
+                String action,
+                BigDecimal configuredPenalty,
+                boolean failAllTriggered,
+                BigDecimal deduction,
+                String message,
+                String violationSummary) {
+            return new SelectRuleApplication(
+                    true,
+                    true,
+                    failAllTriggered,
+                    target,
+                    condition,
+                    action,
+                    configuredPenalty,
+                    deduction,
+                    message,
+                    violationSummary);
         }
     }
 
@@ -3533,6 +4148,35 @@ public class GradeExamUsecase {
         }
     }
 
+    private void addTeacherConfigTrace(
+            String status,
+            String label,
+            String message,
+            BigDecimal maxPoints,
+            String configSummary) {
+        if (!GradingTraceCollector.isActive()) {
+            return;
+        }
+
+        GradingTraceCollector.add(new GradingTraceItem(
+                GradingTraceItem.KIND_TEACHER_CONFIG,
+                status,
+                label,
+                message,
+                null,
+                null,
+                "TEACHER_CONFIG",
+                "MISSING",
+                "REVIEW_CONFIG",
+                null,
+                null,
+                maxPoints,
+                null,
+                null,
+                null,
+                configSummary));
+    }
+
     private boolean gradeByTestCases(String schemaName, String teacherSchemaName, ExamQuestion question,
             ExamSubmission submission) {
         List<TestCase> testCases = testCaseRepository.findByQuestionId(question.getId());
@@ -3543,6 +4187,13 @@ public class GradeExamUsecase {
             // Fail-loud for DDL types: surface the "missing rubric/test cases" reason
             // on the submission so the teacher knows the question needs setup.
             QuestionType type = question.getQuestionType();
+            BigDecimal questionPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+            addTeacherConfigTrace(
+                    GradingTraceItem.STATUS_WARN,
+                    "Thiếu test case",
+                    "[THIẾU TEST CASE] Câu hỏi này chưa có test case nào trong DB.",
+                    questionPoints,
+                    "Không có test case cho " + type + "; hệ thống fallback sang strict comparison nếu có thể.");
             if (submission != null && (type == QuestionType.STORED_PROCEDURE
                     || type == QuestionType.FUNCTION
                     || type == QuestionType.TRIGGER)) {
@@ -3588,6 +4239,24 @@ public class GradeExamUsecase {
                 errorBuilder.append(String.format("[%s] mong đợi='%s', thực tế='%s'. ",
                             tcLabel, truncateForLog(expected), truncateForLog(actualSerialized)));
                 }
+                if (GradingTraceCollector.isActive()) {
+                    String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_TEST_CASE,
+                            isTcCorrect ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
+                            tcLabel,
+                            isTcCorrect ? "Test case đạt" : "Kết quả không khớp",
+                            tc.getId() != null ? tc.getId().toString() : null,
+                            tcLabel,
+                            null, null, null, null,
+                            isTcCorrect ? caseWeight : BigDecimal.ZERO,
+                            caseWeight,
+                            isTcCorrect ? null : caseWeight,
+                            truncateForLog(expected),
+                            truncateForLog(actualSerialized),
+                            (tc.getVerificationType() != null ? tc.getVerificationType().name() : "")
+                                    + " (trọng số, điểm tuyệt đối = trọng số × điểm câu × tỷ lệ TC)"));
+                }
             } catch (Exception e) {
                 allPassed = false;
                 if (useDeductionScoring) {
@@ -3597,6 +4266,20 @@ public class GradeExamUsecase {
                 errorBuilder.append(String.format("[%s] lỗi khi chạy test case: %s. ", tcLabel, e.getMessage()));
                 log.error("[gradeByTestCases] Câu {} TC{} phát sinh lỗi: {}",
                         question.getId(), tcOrder, e.getMessage(), e);
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_TEST_CASE,
+                            GradingTraceItem.STATUS_FAIL,
+                            tcLabel,
+                            "Lỗi khi chạy test case: " + e.getMessage(),
+                            tc.getId() != null ? tc.getId().toString() : null,
+                            tcLabel,
+                            null, null, null, null,
+                            BigDecimal.ZERO, caseWeight, caseWeight,
+                            null, null,
+                            (tc.getVerificationType() != null ? tc.getVerificationType().name() : "")
+                                    + " (trọng số, điểm tuyệt đối = trọng số × điểm câu × tỷ lệ TC)"));
+                }
             }
         }
         if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) {
@@ -3956,7 +4639,19 @@ public class GradeExamUsecase {
         if (expectedRoutines == null || expectedRoutines.isEmpty()) {
             if (!hasTestCases) {
                 // Nothing to grade against
+                String message = "[THIẾU CẤU HÌNH] Câu hỏi không có metadata routine trong rubric/teacher schema "
+                        + "và cũng không có test case.";
                 log.warn("Câu {} không có metadata của routine và cũng không có test case", question.getId());
+                addTeacherConfigTrace(
+                        GradingTraceItem.STATUS_FAIL,
+                        "Thiếu routine metadata/test case",
+                        message,
+                        totalPoints,
+                        "Không có routines[] trong rubric, teacher schema không có routine, và DB không có test case.");
+                if (submission != null) {
+                    submission.setScoreEarned(BigDecimal.ZERO);
+                    submission.setErrorMessage(message);
+                }
                 return false;
             }
             boolean passed = gradeByTestCases(schemaName, teacherSchemaName, question, submission);
@@ -4002,6 +4697,17 @@ public class GradeExamUsecase {
                 allPassedMetadata = false;
                 errorBuilder
                         .append(String.format("Thiếu %s %s. ", expected.getRoutineType(), expected.getRoutineName()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Thiếu " + expected.getRoutineType(),
+                            String.format("Thiếu %s %s", expected.getRoutineType(), expected.getRoutineName()),
+                            null, null,
+                            "ROUTINE", "EXISTS", null, null,
+                            BigDecimal.ZERO, perRoutineMax, perRoutineMax,
+                            expected.getRoutineName(), null,
+                            "Kiểm tra sự tồn tại của " + expected.getRoutineType()));
+                }
                 continue;
             }
 
@@ -4018,6 +4724,16 @@ public class GradeExamUsecase {
                 errorBuilder.append(String.format("Sai loại routine %s (kỳ vọng: %s). ", expected.getRoutineName(),
                         expected.getRoutineType()));
                 allPassedMetadata = false;
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Sai loại routine",
+                            String.format("Sai loại routine %s (kỳ vọng: %s)", expected.getRoutineName(), expected.getRoutineType()),
+                            null, null, "ROUTINE_TYPE", "MISMATCH", null, null,
+                            null, null, null,
+                            expected.getRoutineType(), actual.getRoutineType(),
+                            "Kiểm tra loại routine"));
+                }
             }
 
             // Params check
@@ -4027,6 +4743,18 @@ public class GradeExamUsecase {
                 errorBuilder.append(String.format("%s %s sai số lượng tham số. ", expected.getRoutineType(),
                         expected.getRoutineName()));
                 allPassedMetadata = false;
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Sai số tham số",
+                            String.format("%s %s sai số lượng tham số (kỳ vọng: %d, thực tế: %d)",
+                                    expected.getRoutineType(), expected.getRoutineName(),
+                                    expected.getParameters().size(), actual.getParameters().size()),
+                            null, null, "ROUTINE_PARAMS", "COUNT_MISMATCH", null, null,
+                            null, null, null,
+                            String.valueOf(expected.getParameters().size()), String.valueOf(actual.getParameters().size()),
+                            "Kiểm tra số tham số routine"));
+                }
             }
 
             earnedMetadataScore = earnedMetadataScore.add(perRoutineMax.multiply(BigDecimal.valueOf(score)));
@@ -4034,6 +4762,18 @@ public class GradeExamUsecase {
 
         if (allPassedMetadata)
             earnedMetadataScore = maxMetadataScore;
+
+        if (GradingTraceCollector.isActive() && !allPassedMetadata) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_SUMMARY, GradingTraceItem.STATUS_FAIL,
+                    "Tổng kết metadata routine",
+                    errorBuilder.toString().trim(),
+                    null, null, null, null, null, null,
+                    earnedMetadataScore, maxMetadataScore,
+                    maxMetadataScore.subtract(earnedMetadataScore),
+                    null, null,
+                    metadataDiagnosticOnly ? "Metadata chỉ mang tính chẩn đoán (100% TC scoring)" : "Metadata 20% + TC 80%"));
+        }
 
         BigDecimal earnedTestCaseScore = BigDecimal.ZERO;
         boolean testCasesPassed = true;
@@ -4103,6 +4843,17 @@ public class GradeExamUsecase {
                 allPassedMetadata = false;
                 errorBuilder.append(String.format("Thiếu Trigger %s trên bảng %s. ", expected.getTriggerName(),
                         expected.getTableName()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Thiếu Trigger",
+                            String.format("Thiếu Trigger %s trên bảng %s", expected.getTriggerName(), expected.getTableName()),
+                            null, null,
+                            "TRIGGER", "EXISTS", null, null,
+                            BigDecimal.ZERO, perTriggerMax, perTriggerMax,
+                            expected.getTriggerName(), null,
+                            "Kiểm tra sự tồn tại của Trigger"));
+                }
                 continue;
             }
 
@@ -4113,6 +4864,17 @@ public class GradeExamUsecase {
             else {
                 allPassedMetadata = false;
                 errorBuilder.append(String.format("Trigger %s gắn sai bảng. ", expected.getTriggerName()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Trigger sai bảng",
+                            String.format("Trigger %s gắn sai bảng (kỳ vọng: %s, thực tế: %s)",
+                                    expected.getTriggerName(), expected.getTableName(), actual.getTableName()),
+                            null, null, "TRIGGER_TABLE", "MISMATCH", null, null,
+                            null, null, null,
+                            expected.getTableName(), actual.getTableName(),
+                            "Kiểm tra bảng gắn trigger"));
+                }
             }
 
             if (expected.isInsert() == actual.isInsert() && expected.isUpdate() == actual.isUpdate()
@@ -4122,6 +4884,16 @@ public class GradeExamUsecase {
                 allPassedMetadata = false;
                 errorBuilder.append(
                         String.format("Trigger %s bắt sai sự kiện (INSERT/UPDATE/DELETE). ", expected.getTriggerName()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Trigger sai sự kiện",
+                            String.format("Trigger %s bắt sai sự kiện (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
+                            null, null, "TRIGGER_EVENT", "MISMATCH", null, null,
+                            null, null, null,
+                            null, null,
+                            "Kiểm tra sự kiện trigger"));
+                }
             }
 
             if (expected.isAfter() == actual.isAfter()) {
@@ -4130,6 +4902,16 @@ public class GradeExamUsecase {
                 allPassedMetadata = false;
                 errorBuilder
                         .append(String.format("Trigger %s sai thời điểm chạy (AFTER/INSTEAD OF). ", expected.getTriggerName()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
+                            "Trigger sai thời điểm",
+                            String.format("Trigger %s sai thời điểm chạy (AFTER/INSTEAD OF)", expected.getTriggerName()),
+                            null, null, "TRIGGER_TIMING", "MISMATCH", null, null,
+                            null, null, null,
+                            null, null,
+                            "Kiểm tra thời điểm trigger"));
+                }
             }
 
             earnedMetadataScore = earnedMetadataScore.add(perTriggerMax.multiply(BigDecimal.valueOf(score)));

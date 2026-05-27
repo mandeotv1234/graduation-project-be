@@ -222,6 +222,24 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     }
 
     @Override
+    public void dropAllExamSchemas(Long examId) {
+        String prefix = String.format("exam_%d_", examId);
+        List<String> schemas = jdbcTemplate.queryForList(
+                "SELECT name FROM sys.schemas WHERE name LIKE ?",
+                String.class,
+                prefix + "%");
+        for (String schemaName : schemas) {
+            try {
+                dropSchema(schemaName);
+                log.info("Đã xóa schema [{}] cho exam {}", schemaName, examId);
+            } catch (Exception e) {
+                log.warn("Không thể xóa schema [{}]: {}", schemaName, e.getMessage());
+            }
+        }
+        log.info("Đã xóa {} schema cho exam {}", schemas.size(), examId);
+    }
+
+    @Override
     public void loadTemplateIntoSchema(String schemaName, String ddlScript, String defaultDataScript) {
         String userName = schemaName + "_user";
         ensureSchemaAndUser(schemaName);
@@ -423,6 +441,15 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             return upper + "(MAX)";
         }
         return upper;
+    }
+
+    @Override
+    public boolean schemaExists(String schemaName) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM sys.schemas WHERE name = ?",
+                Integer.class,
+                schemaName);
+        return count != null && count > 0;
     }
 
     @Override

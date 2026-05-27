@@ -21,6 +21,8 @@ public interface ExamSchemaService {
 
     List<TriggerMetadata> extractTriggerMetadata(String schemaName);
 
+    boolean schemaExists(String schemaName);
+
     SqlExecutionResult executeSql(String schemaName, String sql);
 
     SqlExecutionResult executeAdminSql(String sql);
@@ -38,4 +40,10 @@ public interface ExamSchemaService {
      * the per-TC transaction wrapper.
      */
     SqlExecutionResult executeSqlBatchAsSchemaUser(String schemaName, String batchSql);
+
+    /**
+     * Drops all schemas for a given exam (all students, all attempts).
+     * Schema names matching the pattern exam_{examId}_% will be dropped.
+     */
+    void dropAllExamSchemas(Long examId);
 }

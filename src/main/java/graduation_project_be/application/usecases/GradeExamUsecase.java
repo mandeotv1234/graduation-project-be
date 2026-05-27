@@ -249,7 +249,7 @@ public class GradeExamUsecase {
             Map<Long, ExamSubmission> submissionByQuestionId = submissions.stream()
                     .collect(Collectors.toMap(ExamSubmission::getQuestionId, Function.identity()));
 
-            String schemaName = String.format("exam_%d_student_%d", examId, studentId);
+            String schemaName = String.format("exam_%d_student_%d_att_%d", examId, studentId, attemptNumber);
             String teacherSchemaName = schemaName + "_teacher";
 
             // 6. Sort questions once — used both to populate the teacher schema and
@@ -574,12 +574,12 @@ public class GradeExamUsecase {
                 log.warn("Không thể tuần tự hóa kết quả câu hỏi sang JSON để gửi thông báo: {}", e.getMessage());
             }
 
-            // 9. Cleanup — drop schemas after grading
+            // 9. Cleanup — keep student schema for teacher review, only drop teacher schema
+            // examSchemaService.dropSchema(schemaName); // REMOVED - teacher needs this schema
             try {
-                examSchemaService.dropSchema(schemaName);
                 examSchemaService.dropSchema(teacherSchemaName);
             } catch (Exception e) {
-                log.warn("Không thể xóa schema [{}] sau khi chấm: {}", schemaName, e.getMessage());
+                log.warn("Không thể xóa schema [{}] sau khi chấm: {}", teacherSchemaName, e.getMessage());
             }
 
             // 10. End session — release Redis session lock

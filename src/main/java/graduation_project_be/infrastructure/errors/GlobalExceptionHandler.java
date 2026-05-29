@@ -215,6 +215,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
     }
 
+    @ExceptionHandler(BannedFromExamException.class)
+    public ResponseEntity<ErrorResponse> handleBannedFromExamException(BannedFromExamException ex) {
+        logger.error("Banned from exam exception", ex);
+
+        ErrorResponse error = ErrorResponse.builder()
+                .code(STUDENT_BANNED)
+                .message(ex.getMessage())
+                .build();
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<ErrorResponse> handleDomainException(ApplicationException ex) {
         logger.error("Application exception", ex);

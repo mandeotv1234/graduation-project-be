@@ -469,7 +469,8 @@ public class UsecasesConfiguration {
             UserRepository userRepository,
             ClassRepository classRepository,
             ExamDraftRepository examDraftRepository,
-            SimpMessagingTemplate simpMessagingTemplate) {
+            SimpMessagingTemplate simpMessagingTemplate,
+            ClassStudentBanRepository classStudentBanRepository) {
         return new StartExamSessionUsecase(
                 examRepository, classEnrollmentRepository,
                 currentUserService, examSessionService,
@@ -481,7 +482,8 @@ public class UsecasesConfiguration {
                 userRepository,
                 classRepository,
                 examDraftRepository,
-                simpMessagingTemplate);
+                simpMessagingTemplate,
+                classStudentBanRepository);
     }
 
     @Bean
@@ -988,6 +990,45 @@ public class UsecasesConfiguration {
                 classRepository,
                 currentUserService,
                 examSchemaService);
+    }
+
+    // ===== BAN USECASES =====
+
+    @Bean
+    BanStudentUsecase banStudentUsecase(
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ClassStudentBanRepository classStudentBanRepository,
+            CurrentUserService currentUserService) {
+        return new BanStudentUsecase(
+                classRepository,
+                classEnrollmentRepository,
+                classStudentBanRepository,
+                currentUserService);
+    }
+
+    @Bean
+    UnbanStudentUsecase unbanStudentUsecase(
+            ClassRepository classRepository,
+            ClassStudentBanRepository classStudentBanRepository,
+            CurrentUserService currentUserService) {
+        return new UnbanStudentUsecase(
+                classRepository,
+                classStudentBanRepository,
+                currentUserService);
+    }
+
+    @Bean
+    GetClassBansUsecase getClassBansUsecase(
+            ClassRepository classRepository,
+            ClassStudentBanRepository classStudentBanRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetClassBansUsecase(
+                classRepository,
+                classStudentBanRepository,
+                userRepository,
+                currentUserService);
     }
 
 }

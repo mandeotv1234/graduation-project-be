@@ -12,6 +12,10 @@ import graduation_project_be.domain.models.User;
 import lombok.RequiredArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 public class GetClassBansUsecase {
@@ -40,13 +44,20 @@ public class GetClassBansUsecase {
                 ? List.of()
                 : allBans.subList(fromIndex, toIndex);
 
+        List<Long> userIds = pageBans.stream()
+                .flatMap(ban -> Stream.of(ban.getStudentId(), ban.getBannedBy()))
+                .distinct()
+                .toList();
+        Map<Long, User> usersById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
         List<BannedStudentResponse> responses = pageBans.stream()
                 .map(ban -> {
-                    User student = userRepository.findById(ban.getStudentId()).orElse(null);
+                    User student = usersById.get(ban.getStudentId());
                     String email = student != null ? student.getEmail() : "";
                     String fullName = student != null ? student.getFullName() : "";
 
-                    User bannedBy = userRepository.findById(ban.getBannedBy()).orElse(null);
+                    User bannedBy = usersById.get(ban.getBannedBy());
                     String bannedByName = bannedBy != null ? bannedBy.getFullName() : "";
 
                     return BannedStudentResponse.fromModel(ban, email, fullName, bannedByName);

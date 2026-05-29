@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -215,6 +216,10 @@ class StartExamSessionUsecaseTest {
             // Other exceptions are expected (e.g., NullPointerException from mocked dependencies)
             // We're only verifying that BannedFromExamException is NOT thrown
         }
+
+        // Positively assert the ban lookup actually ran (guards against a future
+        // refactor reordering checks so the ban verification is skipped entirely).
+        verify(classStudentBanRepository).findActiveByClassIdAndStudentId(classId, studentId);
     }
 
     @Test

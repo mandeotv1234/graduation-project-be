@@ -17,10 +17,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -100,9 +100,8 @@ class GetClassBansUsecaseTest {
         when(classRepository.existsTeacherAccess(classId, currentUserId)).thenReturn(true);
         when(classStudentBanRepository.findActiveByClassId(classId))
                 .thenReturn(List.of(ban1, ban2));
-        when(userRepository.findById(2L)).thenReturn(Optional.of(student1));
-        when(userRepository.findById(3L)).thenReturn(Optional.of(student2));
-        when(userRepository.findById(10L)).thenReturn(Optional.of(teacher));
+        when(userRepository.findAllById(anyList()))
+                .thenReturn(List.of(student1, student2, teacher));
 
         // Act
         PaginationResponse<BannedStudentResponse> result = getClassBansUsecase.execute(classId, page, size);
@@ -176,8 +175,7 @@ class GetClassBansUsecaseTest {
         when(currentUserService.getCurrentUserId()).thenReturn(currentUserId);
         when(classRepository.existsTeacherAccess(classId, currentUserId)).thenReturn(true);
         when(classStudentBanRepository.findActiveByClassId(classId)).thenReturn(List.of(ban));
-        when(userRepository.findById(2L)).thenReturn(Optional.empty()); // Student not found
-        when(userRepository.findById(10L)).thenReturn(Optional.of(teacher));
+        when(userRepository.findAllById(anyList())).thenReturn(List.of(teacher)); // Student not found
 
         // Act
         PaginationResponse<BannedStudentResponse> result = getClassBansUsecase.execute(classId, page, size);
@@ -217,8 +215,7 @@ class GetClassBansUsecaseTest {
         when(currentUserService.getCurrentUserId()).thenReturn(currentUserId);
         when(classRepository.existsTeacherAccess(classId, currentUserId)).thenReturn(true);
         when(classStudentBanRepository.findActiveByClassId(classId)).thenReturn(List.of(ban));
-        when(userRepository.findById(2L)).thenReturn(Optional.of(student));
-        when(userRepository.findById(10L)).thenReturn(Optional.empty()); // Banned-by user not found
+        when(userRepository.findAllById(anyList())).thenReturn(List.of(student)); // Banned-by user not found
 
         // Act
         PaginationResponse<BannedStudentResponse> result = getClassBansUsecase.execute(classId, page, size);
@@ -276,9 +273,8 @@ class GetClassBansUsecaseTest {
         when(classRepository.existsTeacherAccess(classId, currentUserId)).thenReturn(true);
         when(classStudentBanRepository.findActiveByClassId(classId))
                 .thenReturn(List.of(ban1, ban2, ban3));
-        // Only student 4 (ban3) will be shown on page 2, so only mock that
-        when(userRepository.findById(4L)).thenReturn(Optional.of(student3));
-        when(userRepository.findById(10L)).thenReturn(Optional.of(teacher));
+        // Only student 4 (ban3) is on page 2, so only those ids are looked up
+        when(userRepository.findAllById(anyList())).thenReturn(List.of(student3, teacher));
 
         // Act
         PaginationResponse<BannedStudentResponse> result = getClassBansUsecase.execute(classId, page, size);
@@ -316,8 +312,7 @@ class GetClassBansUsecaseTest {
         when(currentUserService.getCurrentUserId()).thenReturn(currentUserId);
         when(classRepository.existsTeacherAccess(classId, currentUserId)).thenReturn(true);
         when(classStudentBanRepository.findActiveByClassId(classId)).thenReturn(List.of(ban));
-        when(userRepository.findById(2L)).thenReturn(Optional.of(student));
-        when(userRepository.findById(10L)).thenReturn(Optional.of(teacher));
+        when(userRepository.findAllById(anyList())).thenReturn(List.of(student, teacher));
 
         // Act
         PaginationResponse<BannedStudentResponse> result = getClassBansUsecase.execute(classId, page, size);

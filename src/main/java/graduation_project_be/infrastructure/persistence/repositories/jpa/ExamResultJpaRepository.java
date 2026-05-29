@@ -20,5 +20,7 @@ public interface ExamResultJpaRepository extends JpaRepository<ExamResultEntity,
 
     List<ExamResultEntity> findByExamId(Long examId);
 
+    List<ExamResultEntity> findByStudentIdAndExamIdIn(Long studentId, List<Long> examIds);
+
     Page<ExamResultEntity> findByStudentId(Long studentId, Pageable pageable);
 }

@@ -17,6 +17,7 @@ public interface ExamResultRepository {
 
     Long countByExamIdAndStudentId(Long examId, Long studentId);
     List<ExamResult> findByExamId(Long examId);
+    List<ExamResult> findByStudentIdAndExamIdIn(Long studentId, List<Long> examIds);
     
     PaginatedResult<ExamResult> findPaginatedByStudentId(Long studentId, PaginationParams params);
 }

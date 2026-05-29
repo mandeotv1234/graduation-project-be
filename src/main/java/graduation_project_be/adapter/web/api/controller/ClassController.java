@@ -11,10 +11,12 @@ import graduation_project_be.application.usecases.UpdateClassUsecase;
 import graduation_project_be.application.usecases.GetClassDetailUsecase;
 import graduation_project_be.application.usecases.GetClassesUsecase;
 import graduation_project_be.application.usecases.GetExamsByClassUsecase;
+import graduation_project_be.application.usecases.GetStudentProgressInClassUsecase;
 import graduation_project_be.application.usecases.GetStudentsInClassUsecase;
 import graduation_project_be.application.usecases.SoftDeleteClassUsecase;
 import graduation_project_be.application.usecases.RestoreClassUsecase;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
+import graduation_project_be.application.usecases.request.GetStudentProgressInClassRequest;
 import graduation_project_be.application.usecases.request.UpdateClassRequest;
 import graduation_project_be.application.usecases.request.GetStudentsInClassRequest;
 import graduation_project_be.application.usecases.response.*;
@@ -39,6 +41,7 @@ public class ClassController {
         private final GetStudentsInClassUsecase getStudentsInClassUsecase;
         private final GetClassDetailUsecase getClassDetailUsecase;
         private final GetExamsByClassUsecase getExamsByClassUsecase;
+        private final GetStudentProgressInClassUsecase getStudentProgressInClassUsecase;
         private final SoftDeleteClassUsecase softDeleteClassUsecase;
         private final RestoreClassUsecase restoreClassUsecase;
 
@@ -139,6 +142,20 @@ public class ClassController {
                                 .toList();
                 return ResponseEntity.ok(
                                 ResponseDto.of(dtos, "OK", "Exams retrieved successfully"));
+        }
+
+        @GetMapping("/{classId}/students/{studentId}/progress")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getStudentProgressInClass(
+                        @PathVariable("classId") Long classId,
+                        @PathVariable("studentId") Long studentId) {
+                GetStudentProgressInClassResponse response = getStudentProgressInClassUsecase.execute(
+                                new GetStudentProgressInClassRequest(classId, studentId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(
+                                                GetStudentProgressInClassResponseDto.fromResponse(response),
+                                                "OK",
+                                                "Student progress retrieved successfully"));
         }
 
         @DeleteMapping("/{classId}")

@@ -59,6 +59,13 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
     }
 
     @Override
+    public List<ExamResult> findByStudentIdAndExamIdIn(Long studentId, List<Long> examIds) {
+        return jpaRepository.findByStudentIdAndExamIdIn(studentId, examIds).stream()
+                .map(ExamResultEntity::toModel)
+                .toList();
+    }
+
+    @Override
     public PaginatedResult<ExamResult> findPaginatedByStudentId(Long studentId, PaginationParams params) {
         Sort sort = params.getSortOrder() == graduation_project_be.domain.models.enums.SortDirection.DESC
                 ? Sort.by(params.getSortBy().getFieldName()).descending()

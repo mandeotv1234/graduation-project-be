@@ -8,6 +8,7 @@ import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamViolationRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
+import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ViolationNotificationService;
 import graduation_project_be.application.usecases.request.ReportViolationRequest;
@@ -42,81 +43,110 @@ public class ReportViolationUsecase {
     private final ViolationNotificationService violationNotificationService;
     private final SubmitExamUsecase submitExamUsecase;
     private final ExamDraftRepository examDraftRepository;
+    private final UserRepository userRepository;
 
     public ReportViolationResponse execute(ReportViolationRequest request) {
         User currentUser = currentUserService.getCurrentUser();
         Long studentId = currentUser.getId();
         String studentName = currentUser.getFullName();
 
-        // Validate exam exists and is published
-        Exam exam = examRepository.findByIdAndIsPublished(request.examId(), true)
+        Exam exam = resolveEnrolledExam(request.examId(), studentId);
+
+        return raiseViolation(exam, studentId, studentName, request.violationType(),
+                request.description(), request.ipAddress(), request.userAgent());
+    }
+
+    /**
+     * System-raised violation (no request context) — used by the heartbeat sweep for
+     * INTEGRITY_TAMPERED. Resolves the student name from the repository instead of the
+     * current-user context.
+     */
+    public ReportViolationResponse executeAsSystem(Long examId, Long studentId, String violationType,
+                                                   String description) {
+        Exam exam = resolveEnrolledExam(examId, studentId);
+
+        User student = userRepository.findById(studentId).orElse(null);
+        String studentName = student != null ? student.getFullName() : "Unknown";
+
+        return raiseViolation(exam, studentId, studentName, violationType, description, null, null);
+    }
+
+    private Exam resolveEnrolledExam(Long examId, Long studentId) {
+        Exam exam = examRepository.findByIdAndIsPublished(examId, true)
                 .orElseThrow(() -> new IllegalArgumentException("Exam not found or not published"));
 
-        // Validate student is enrolled in the exam's class
         boolean isEnrolled = classEnrollmentRepository.existsByClassIdAndStudentId(
                 exam.getClassId(), studentId);
         if (!isEnrolled) {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
+        return exam;
+    }
 
-        // Determine current attempt
-        long previousAttempts = examResultRepository.countByExamIdAndStudentId(request.examId(), studentId);
+    private ReportViolationResponse raiseViolation(Exam exam, Long studentId, String studentName,
+                                                   String violationType, String description,
+                                                   String ipAddress, String userAgent) {
+        Long examId = exam.getId();
+
+        long previousAttempts = examResultRepository.countByExamIdAndStudentId(examId, studentId);
         int currentAttempt = (int) previousAttempts + 1;
 
-        // Determine max violations limit
         int maxViolationsLimit = exam.getSettings() != null && exam.getSettings().getMaxViolations() != null
                 ? exam.getSettings().getMaxViolations()
                 : DEFAULT_MAX_VIOLATIONS;
-        boolean enableAutoSubmit = exam.getSettings() != null && Boolean.TRUE.equals(exam.getSettings().getAutoSubmitOnViolation());
+        boolean enableAutoSubmit = exam.getSettings() != null
+                && Boolean.TRUE.equals(exam.getSettings().getAutoSubmitOnViolation());
 
-        // Check if already auto-submitted (prevent further violations only if auto-submit is enabled)
-        long existingCount = examViolationRepository.countByExamIdAndStudentIdAndAttemptNumber(request.examId(), studentId, currentAttempt);
+        // Block further violations once auto-submit already fired (only when auto-submit is enabled)
+        long existingCount = examViolationRepository.countByExamIdAndStudentIdAndAttemptNumber(
+                examId, studentId, currentAttempt);
         if (enableAutoSubmit && existingCount >= maxViolationsLimit) {
             throw new BadRequestException("Exam has already been auto-submitted due to maximum violations");
         }
 
-        // Save violation
         ExamViolation violation = ExamViolation.builder()
-                .examId(request.examId())
+                .examId(examId)
                 .studentId(studentId)
                 .attemptNumber(currentAttempt)
-                .violationType(request.violationType())
-                .description(request.description())
-                .ipAddress(request.ipAddress())
-                .userAgent(request.userAgent())
+                .violationType(violationType)
+                .description(description)
+                .ipAddress(ipAddress)
+                .userAgent(userAgent)
                 .build();
 
         ExamViolation saved = examViolationRepository.save(violation);
         long violationCount = existingCount + 1;
 
-        // Check if max violations reached -> auto-submit
         boolean autoSubmitted = false;
         if (enableAutoSubmit && violationCount >= maxViolationsLimit) {
             autoSubmitted = true;
             log.warn("Student {} ({}) reached {} violations for exam {} — auto-submitting exam",
-                    studentId, studentName, violationCount, request.examId());
+                    studentId, studentName, violationCount, examId);
 
             // Persist/send the final violation before the submission notification
             // so the "NỘP BÀI" notification remains the latest event.
-            notifyTeachers(request, exam, studentId, studentName, currentAttempt, violationCount, autoSubmitted);
+            notifyTeachers(examId, exam, studentId, studentName, violationType, description,
+                    currentAttempt, violationCount, autoSubmitted);
             try {
-                autoSubmitExam(request.examId(), studentId);
+                autoSubmitExam(examId, studentId);
             } catch (Exception e) {
                 log.error("Auto-submit failed for student {} exam {}: {}",
-                        studentId, request.examId(), e.getMessage());
+                        studentId, examId, e.getMessage());
             }
         } else {
-            notifyTeachers(request, exam, studentId, studentName, currentAttempt, violationCount, autoSubmitted);
+            notifyTeachers(examId, exam, studentId, studentName, violationType, description,
+                    currentAttempt, violationCount, autoSubmitted);
         }
 
         return ReportViolationResponse.fromModel(saved, violationCount, autoSubmitted);
     }
 
-    private void notifyTeachers(ReportViolationRequest request, Exam exam, Long studentId, String studentName,
+    private void notifyTeachers(Long examId, Exam exam, Long studentId, String studentName,
+                                String violationType, String description,
                                 int currentAttempt, long violationCount, boolean autoSubmitted) {
         violationNotificationService.notifyTeacher(
-                request.examId(), resolveTeacherIds(exam), studentId,
-                studentName, request.violationType(), request.description(),
+                examId, resolveTeacherIds(exam), studentId,
+                studentName, violationType, description,
                 currentAttempt, violationCount, autoSubmitted);
     }
 

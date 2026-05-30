@@ -466,6 +466,16 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    RecordHeartbeatUsecase recordHeartbeatUsecase(
+            HeartbeatService heartbeatService,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService,
+            ReportViolationUsecase reportViolationUsecase) {
+        return new RecordHeartbeatUsecase(
+                heartbeatService, examRepository, currentUserService, reportViolationUsecase);
+    }
+
+    @Bean
     GetViolationsUsecase getViolationsUsecase(
             ClassRepository classRepository,
             ExamViolationRepository examViolationRepository,

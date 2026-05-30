@@ -40,6 +40,7 @@ public class ExamController {
         private final ExecuteSqlUsecase executeSqlUsecase;
         private final SubmitExamUsecase submitExamUsecase;
         private final ReportViolationUsecase reportViolationUsecase;
+        private final RecordHeartbeatUsecase recordHeartbeatUsecase;
         private final GetViolationsUsecase getViolationsUsecase;
         private final StartExamSessionUsecase startExamSessionUsecase;
         private final GetExamTimeUsecase getExamTimeUsecase;
@@ -587,6 +588,18 @@ public class ExamController {
                                                 ReportViolationResponseDto.fromResponse(response),
                                                 "CREATED",
                                                 response.message()));
+        }
+
+        @PostMapping("/{examId}/heartbeat")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> heartbeat(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid RecordHeartbeatRequestDto requestDto) {
+                recordHeartbeatUsecase.execute(requestDto.toRequest(examId));
+                return ResponseEntity.ok(ResponseDto.of(
+                                new HeartbeatResponseDto(true, System.currentTimeMillis()),
+                                "OK",
+                                "Heartbeat recorded"));
         }
 
         @GetMapping("/{examId}/violations")

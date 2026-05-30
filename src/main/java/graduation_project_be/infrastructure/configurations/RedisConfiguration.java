@@ -17,12 +17,14 @@ import graduation_project_be.application.port.repositories.TeacherNotificationRe
 import graduation_project_be.application.port.services.DeviceConflictNotificationService;
 import graduation_project_be.application.port.services.DeviceConflictStore;
 import graduation_project_be.application.port.services.ExamSessionService;
+import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.port.services.NotificationBufferService;
 import graduation_project_be.application.port.services.GradingQueueService;
 import graduation_project_be.application.port.services.RefreshTokenHasher;
 import graduation_project_be.infrastructure.persistence.repositories.redis.RedisRefreshTokenRepository;
 import graduation_project_be.infrastructure.services.RedisDeviceConflictStore;
 import graduation_project_be.infrastructure.services.RedisExamSessionService;
+import graduation_project_be.infrastructure.services.RedisHeartbeatService;
 import graduation_project_be.infrastructure.services.RedisGradingQueueService;
 import graduation_project_be.infrastructure.services.RedisNotificationBufferService;
 import graduation_project_be.infrastructure.services.Sha256RefreshTokenHasher;
@@ -107,6 +109,12 @@ public class RedisConfiguration {
     public ExamSessionService examSessionService(
             @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
         return new RedisExamSessionService(redisTemplate);
+    }
+
+    @Bean
+    public HeartbeatService heartbeatService(
+            @Qualifier("redisTemplate") RedisTemplate<String, String> redisTemplate) {
+        return new RedisHeartbeatService(redisTemplate);
     }
 
     @Bean

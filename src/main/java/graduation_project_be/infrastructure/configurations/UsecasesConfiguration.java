@@ -327,12 +327,13 @@ public class UsecasesConfiguration {
             GradingQueueService gradingQueueService,
             ExamDraftRepository examDraftRepository,
             TeacherNotificationRepository teacherNotificationRepository,
-            SimpMessagingTemplate simpMessagingTemplate) {
+            SimpMessagingTemplate simpMessagingTemplate,
+            HeartbeatService heartbeatService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, classEnrollmentRepository, classRepository, userRepository, currentUserService,
                 examSessionService, gradingQueueService, examDraftRepository, teacherNotificationRepository,
-                simpMessagingTemplate);
+                simpMessagingTemplate, heartbeatService);
     }
 
     @Bean

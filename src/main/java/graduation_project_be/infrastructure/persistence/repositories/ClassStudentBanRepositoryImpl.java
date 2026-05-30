@@ -34,4 +34,12 @@ public class ClassStudentBanRepositoryImpl implements ClassStudentBanRepository 
                 .map(ClassStudentBanEntity::toModel)
                 .toList();
     }
+
+    @Override
+    public List<Long> findActiveBannedClassIdsByStudentId(Long studentId) {
+        return jpaRepository.findByStudentIdAndActiveTrue(studentId).stream()
+                .map(ClassStudentBanEntity::getClassId)
+                .distinct()
+                .toList();
+    }
 }

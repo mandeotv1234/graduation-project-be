@@ -9,10 +9,11 @@ public record StudentExamListResponseDto(
         Long classId,
         Integer durationMinutes,
         LocalDateTime startTime,
-        LocalDateTime endTime) {
+        LocalDateTime endTime,
+        boolean banned) {
     public static StudentExamListResponseDto fromResponse(StudentExamListResponse r) {
         return new StudentExamListResponseDto(
                 r.examId(), r.title(), r.classId(),
-                r.durationMinutes(), r.startTime(), r.endTime());
+                r.durationMinutes(), r.startTime(), r.endTime(), r.banned());
     }
 }

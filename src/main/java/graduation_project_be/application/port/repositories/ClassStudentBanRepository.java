@@ -9,4 +9,5 @@ public interface ClassStudentBanRepository {
     ClassStudentBan save(ClassStudentBan ban);
     Optional<ClassStudentBan> findActiveByClassIdAndStudentId(Long classId, Long studentId);
     List<ClassStudentBan> findActiveByClassId(Long classId);
+    List<Long> findActiveBannedClassIdsByStudentId(Long studentId);
 }

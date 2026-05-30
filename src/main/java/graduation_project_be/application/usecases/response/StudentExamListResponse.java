@@ -9,10 +9,11 @@ public record StudentExamListResponse(
         Long classId,
         Integer durationMinutes,
         LocalDateTime startTime,
-        LocalDateTime endTime) {
-    public static StudentExamListResponse fromModel(Exam exam) {
+        LocalDateTime endTime,
+        boolean banned) {
+    public static StudentExamListResponse fromModel(Exam exam, boolean banned) {
         return new StudentExamListResponse(
                 exam.getId(), exam.getTitle(), exam.getClassId(),
-                exam.getDurationMinutes(), exam.getStartTime(), exam.getEndTime());
+                exam.getDurationMinutes(), exam.getStartTime(), exam.getEndTime(), banned);
     }
 }

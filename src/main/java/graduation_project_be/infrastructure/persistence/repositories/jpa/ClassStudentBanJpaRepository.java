@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface ClassStudentBanJpaRepository extends JpaRepository<ClassStudentBanEntity, Long> {
     Optional<ClassStudentBanEntity> findByClassIdAndStudentIdAndActiveTrue(Long classId, Long studentId);
     List<ClassStudentBanEntity> findByClassIdAndActiveTrueOrderByBannedAtDesc(Long classId);
+    List<ClassStudentBanEntity> findByStudentIdAndActiveTrue(Long studentId);
 }

@@ -22,4 +22,8 @@ public class ExamSettings {
     private Boolean showResultAfterSubmit;
     private Boolean isLoadDdl;
     private Long seedDatasetId;
+    private Integer heartbeatIntervalSec;
+    private Integer maxHeartbeatGapSec;
+    private Boolean integrityCheckEnabled;
+    private Boolean requireLockdownBrowser;
 }

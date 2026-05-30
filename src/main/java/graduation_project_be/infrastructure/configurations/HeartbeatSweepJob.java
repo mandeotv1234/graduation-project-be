@@ -54,11 +54,22 @@ public class HeartbeatSweepJob {
                 long ageSec = (now - state.lastSeenEpochMs()) / 1000;
                 if (ageSec <= resolveGapSec(exam)) continue;
 
+                // Guard against racing a fresh heartbeat: re-read right before mutating.
+                // If lastSeen advanced, a heartbeat arrived between our read and now — the
+                // student is alive, so skip without clobbering the fresh state.
+                Optional<HeartbeatState> latest = heartbeatService.get(key.examId(), key.studentId());
+                if (latest.isEmpty()
+                        || latest.get().lastSeenEpochMs() != state.lastSeenEpochMs()) {
+                    continue;
+                }
+                state = latest.get();
+
                 int newStreak = state.tamperStreak() + 1;
                 if (newStreak >= RecordHeartbeatUsecase.TAMPER_STREAK_THRESHOLD && !state.flagged()) {
                     raiseAbsence(key, ageSec);
-                    heartbeatService.save(key.examId(), key.studentId(),
-                            new HeartbeatState(state.lastSeenEpochMs(), state.lastSeq(), 0, true));
+                    // Clear instead of persisting a flagged state: stops re-scanning a gone
+                    // student and avoids resurrecting a key that auto-submit may have just cleared.
+                    heartbeatService.clear(key.examId(), key.studentId());
                 } else {
                     heartbeatService.save(key.examId(), key.studentId(),
                             new HeartbeatState(state.lastSeenEpochMs(), state.lastSeq(), newStreak, state.flagged()));

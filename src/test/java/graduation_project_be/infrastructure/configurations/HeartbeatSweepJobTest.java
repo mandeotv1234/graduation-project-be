@@ -82,16 +82,16 @@ class HeartbeatSweepJobTest {
     }
 
     @Test
-    void beyondGapSecondCycle_raisesAndFlags() {
+    void beyondGapSecondCycle_raisesAndClearsKey() {
         stub(new HeartbeatState(secondsAgo(60), 3, 1, false), true);
 
         job.sweep();
 
         verify(reportViolationUsecase).executeAsSystem(eq(EXAM_ID), eq(STUDENT_ID),
                 eq(RecordHeartbeatUsecase.INTEGRITY_TAMPERED), anyString());
-        verify(heartbeatService).save(eq(EXAM_ID), eq(STUDENT_ID), stateCaptor.capture());
-        assertThat(stateCaptor.getValue().tamperStreak()).isZero();
-        assertThat(stateCaptor.getValue().flagged()).isTrue();
+        // On raise we clear the key (no resurrection / no re-scan), not persist a flagged state.
+        verify(heartbeatService).clear(EXAM_ID, STUDENT_ID);
+        verify(heartbeatService, never()).save(any(), any(), any());
     }
 
     @Test

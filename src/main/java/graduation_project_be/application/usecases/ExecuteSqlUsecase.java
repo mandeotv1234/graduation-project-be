@@ -1,11 +1,16 @@
 package graduation_project_be.application.usecases;
 
-import graduation_project_be.shared.utils.TimeUtils;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
-import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
@@ -15,16 +20,11 @@ import graduation_project_be.application.usecases.request.ExecuteSqlRequest;
 import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TableMetadata;
 import graduation_project_be.domain.models.enums.Role;
-import graduation_project_be.domain.models.SqlExecutionResult;
+import graduation_project_be.shared.utils.TimeUtils;
 import lombok.RequiredArgsConstructor;
-
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Locale;
-import java.util.Optional;
 
 @RequiredArgsConstructor
 public class ExecuteSqlUsecase {
@@ -109,6 +109,7 @@ public class ExecuteSqlUsecase {
         try {
             SqlExecutionResult result = examSchemaService.executeSql(schemaName, sql);
             List<Map<String, Object>> resultSet = result.getResultSet();
+            List<String> columns = result.getColumns() != null ? result.getColumns() : List.of();
             List<TableMetadata> schema = null;
             List<RoutineMetadata> routines = null;
             if (affectsSchema(sql)) {
@@ -116,7 +117,7 @@ public class ExecuteSqlUsecase {
                 routines = examSchemaService.extractRoutineMetadata(schemaName);
             }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-            return ExecuteSqlResponse.success(resultSet, result.getRowCount(), executionTimeMs, result.getStatusMessage(), schema, routines);
+            return ExecuteSqlResponse.success(resultSet, columns, result.getRowCount(), executionTimeMs, result.getStatusMessage(), schema, routines);
         } catch (Exception e) {
             return ExecuteSqlResponse.error(e.getMessage());
         }

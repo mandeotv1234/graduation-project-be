@@ -1,13 +1,15 @@
 package graduation_project_be.adapter.web.api.dtos.response;
 
-import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
-import graduation_project_be.domain.models.RoutineMetadata;
-import graduation_project_be.domain.models.TableMetadata;
 import java.util.List;
 import java.util.Map;
 
+import graduation_project_be.application.usecases.response.ExecuteSqlResponse;
+import graduation_project_be.domain.models.RoutineMetadata;
+import graduation_project_be.domain.models.TableMetadata;
+
 public record ExecuteSqlResponseDto(
         List<Map<String, Object>> resultSet,
+        List<String> columns,
         int rowCount,
         Integer executionTimeMs,
         String errorMessage,
@@ -17,6 +19,7 @@ public record ExecuteSqlResponseDto(
     public static ExecuteSqlResponseDto fromResponse(ExecuteSqlResponse r) {
         return new ExecuteSqlResponseDto(
                 r.resultSet(),
+                r.columns(),
                 r.rowCount(),
                 r.executionTimeMs(),
                 r.errorMessage(),

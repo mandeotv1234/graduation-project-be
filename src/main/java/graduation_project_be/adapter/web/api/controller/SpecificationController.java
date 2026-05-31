@@ -67,7 +67,7 @@ public class SpecificationController {
                                 .body(ResponseDto.of(
                                                 SpecificationResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                "Specification created successfully"));
+                                                "Tạo đặc tả thành công!"));
         }
 
         @PostMapping("/v2")
@@ -79,7 +79,7 @@ public class SpecificationController {
                                 .body(ResponseDto.of(
                                                 SpecificationResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                "Specification created successfully (v2)"));
+                                                "Tạo đặc tả thành công!"));
         }
 
         @PostMapping("/ai-schema")
@@ -117,7 +117,7 @@ public class SpecificationController {
                                 ResponseDto.of(
                                                 ExamSpecificationResponseDto.fromResponse(response),
                                                 "SUCCESS",
-                                                "Specification updated successfully"));
+                                                "Cập nhật đặc tả thành công!"));
         }
 
         @GetMapping
@@ -152,7 +152,7 @@ public class SpecificationController {
                                 ResponseDto.of(
                                                 null,
                                                 "SUCCESS",
-                                                "Specification deleted successfully"));
+                                                "Xoá đặc tả thành công!"));
         }
 
         @PostMapping("/{specificationId}/entities/{entityId}/generate-description")

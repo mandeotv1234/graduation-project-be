@@ -45,7 +45,7 @@ public class AuthController {
 
         return ResponseEntity
                 .ok()
-                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Login successfully"));
+                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Đăng nhập thành công!"));
     }
 
     @PostMapping("/refresh")
@@ -65,7 +65,7 @@ public class AuthController {
         logoutUsecase.execute(logoutRequest);
 
         return ResponseEntity.ok()
-                .body(MessageResponseDto.of("Logout successfully"));
+                .body(MessageResponseDto.of("Đăng xuất thành công!"));
     }
 
     @PostMapping("/google")
@@ -75,7 +75,7 @@ public class AuthController {
 
         return ResponseEntity
                 .ok()
-                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Google login successfully"));
+                .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK", "Đăng nhập Google thành công!"));
     }
 
     @PostMapping("/microsoft")
@@ -87,6 +87,6 @@ public class AuthController {
         return ResponseEntity
                 .ok()
                 .body(ResponseDto.of(LoginResponseDto.fromResponse(loginResponse), "OK",
-                        "Microsoft login successfully"));
+                        "Đăng nhập Microsoft thành công!"));
     }
 }

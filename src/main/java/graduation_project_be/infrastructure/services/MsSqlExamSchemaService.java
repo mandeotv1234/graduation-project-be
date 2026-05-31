@@ -396,7 +396,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
     private String formatDataType(String dataType, int maxLength) {
         if (dataType == null)
-            return "Không rõ";
+            return "unknown";
         String lower = dataType.toLowerCase();
 
         switch (lower) {
@@ -404,28 +404,23 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             case "bigint":
             case "smallint":
             case "tinyint":
-                return "Số nguyên (" + lower + ")";
             case "decimal":
             case "numeric":
             case "float":
             case "real":
-                return "Số thực (" + lower + ")";
+            case "date":
+            case "datetime":
+            case "datetime2":
+            case "bit":
+            case "boolean":
+            case "text":
+            case "ntext":
+                return lower;
             case "varchar":
             case "nvarchar":
             case "char":
             case "nchar":
-                return maxLength > 0 ? "Chuỗi (" + maxLength + ")" : "Chuỗi (Max)";
-            case "date":
-                return "Ngày";
-            case "datetime":
-            case "datetime2":
-                return "Ngày giờ";
-            case "bit":
-            case "boolean":
-                return "Logic (Boolean)";
-            case "text":
-            case "ntext":
-                return "Văn bản (Text)";
+                return maxLength > 0 ? lower + "(" + maxLength + ")" : lower + "(max)";
             default:
                 return dataType;
         }
@@ -468,6 +463,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                List<String> resultColumns = new ArrayList<>();
                 int totalUpdateCount = 0;
                 boolean hasUpdateCount = false;
 
@@ -488,8 +484,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                             int[] updateCountState = new int[] { totalUpdateCount };
                             boolean[] hasUpdateCountState = new boolean[] { hasUpdateCount };
 
-                            executeSingleBatch(stmt, batch, results, updateCountState, hasUpdateCountState,
-                                    absoluteTimeoutMs);
+                            executeSingleBatch(stmt, batch, results, resultColumns, updateCountState,
+                                    hasUpdateCountState, absoluteTimeoutMs);
 
                             totalUpdateCount = updateCountState[0];
                             hasUpdateCount = hasUpdateCountState[0];
@@ -511,6 +507,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                     return SqlExecutionResult.builder()
                             .resultSet(results)
+                            .columns(resultColumns)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
                             .printMessages(printMessages)
@@ -532,6 +529,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             Statement stmt,
             String sql,
             List<Map<String, Object>> results,
+            List<String> resultColumns,
             int[] totalUpdateCount,
             boolean[] hasUpdateCount,
             long absoluteTimeoutMs) {
@@ -573,23 +571,30 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
             if (isResultSet) {
                 try (ResultSet rs = stmt.getResultSet()) {
-                    ResultSetMetaData meta = rs.getMetaData();
-                    int colCount = meta.getColumnCount();
-                    while (rs.next()) {
-                        if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                            try {
-                                stmt.cancel();
-                            } catch (Exception ignore) {
+                    if (rs != null) {
+                        ResultSetMetaData meta = rs.getMetaData();
+                        int colCount = meta.getColumnCount();
+                        if (resultColumns.isEmpty() && colCount > 0) {
+                            for (int i = 1; i <= colCount; i++) {
+                                resultColumns.add(meta.getColumnLabel(i));
                             }
-                            throw new RuntimeException("Lấy result set vượt quá thời gian tối đa "
-                                    + QUERY_TIMEOUT_SECONDS + " giây.");
                         }
+                        while (rs.next()) {
+                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
+                                try {
+                                    stmt.cancel();
+                                } catch (Exception ignore) {
+                                }
+                                throw new RuntimeException("Lấy result set vượt quá thời gian tối đa "
+                                        + QUERY_TIMEOUT_SECONDS + " giây.");
+                            }
 
-                        Map<String, Object> row = new LinkedHashMap<>();
-                        for (int i = 1; i <= colCount; i++) {
-                            row.put(meta.getColumnLabel(i), rs.getObject(i));
+                            Map<String, Object> row = new LinkedHashMap<>();
+                            for (int i = 1; i <= colCount; i++) {
+                                row.put(meta.getColumnLabel(i), rs.getObject(i));
+                            }
+                            results.add(row);
                         }
-                        results.add(row);
                     }
                 } catch (Exception e) {
                     throw new RuntimeException("SQL result processing error: " + e.getMessage(), e);
@@ -690,6 +695,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                List<String> resultColumns = new ArrayList<>();
                 int totalUpdateCount = 0;
                 boolean hasUpdateCount = false;
 
@@ -704,67 +710,14 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         stmt.setMaxRows(1000);
 
                         long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000);
+                        int[] updateCountState = new int[] { totalUpdateCount };
+                        boolean[] hasUpdateCountState = new boolean[] { hasUpdateCount };
 
-                        CompletableFuture<Boolean> executeFuture = CompletableFuture.supplyAsync(() -> {
-                            try {
-                                return stmt.execute(batchSql);
-                            } catch (Exception e) {
-                                throw new CompletionException(e);
-                            }
-                        });
+                        executeSingleBatch(stmt, batchSql, results, resultColumns, updateCountState,
+                                hasUpdateCountState, absoluteTimeoutMs);
 
-                        boolean isResultSet;
-                        try {
-                            isResultSet = executeFuture.get(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                        } catch (TimeoutException e) {
-                            try {
-                                stmt.cancel();
-                            } catch (Exception ignore) {
-                            }
-                            throw new RuntimeException(
-                                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
-                        } catch (Exception e) {
-                            Throwable cause = e.getCause() != null ? e.getCause() : e;
-                            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
-                        }
-
-                        while (true) {
-                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                stmt.cancel();
-                                throw new RuntimeException("Xử lý batch vượt quá thời gian tối đa "
-                                        + QUERY_TIMEOUT_SECONDS + " giây.");
-                            }
-
-                            if (isResultSet) {
-                                try (ResultSet rs = stmt.getResultSet()) {
-                                    if (rs != null) {
-                                        ResultSetMetaData meta = rs.getMetaData();
-                                        int colCount = meta.getColumnCount();
-                                        while (rs.next()) {
-                                            if (System.currentTimeMillis() > absoluteTimeoutMs) {
-                                                stmt.cancel();
-                                                throw new RuntimeException(
-                                                        "Lấy result vượt quá thời gian tối đa "
-                                                                + QUERY_TIMEOUT_SECONDS + " giây.");
-                                            }
-                                            Map<String, Object> row = new LinkedHashMap<>();
-                                            for (int i = 1; i <= colCount; i++) {
-                                                row.put(meta.getColumnLabel(i), rs.getObject(i));
-                                            }
-                                            results.add(row);
-                                        }
-                                    }
-                                }
-                            } else {
-                                int updateCount = stmt.getUpdateCount();
-                                if (updateCount == -1) {
-                                    break;
-                                }
-                                totalUpdateCount += updateCount;
-                                hasUpdateCount = true;
-                            }
-                            isResultSet = stmt.getMoreResults();
-                        }
+                        totalUpdateCount = updateCountState[0];
+                        hasUpdateCount = hasUpdateCountState[0];
 
                         printMessages.addAll(collectPrintMessages(stmt));
                     }
@@ -780,6 +733,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
                     return SqlExecutionResult.builder()
                             .resultSet(results)
+                            .columns(resultColumns)
                             .rowCount(results.size())
                             .statusMessage(statusMessage)
                             .printMessages(printMessages)
@@ -897,11 +851,11 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
 
     @Override
     public SqlExecutionResult executeAdminSql(String sql) {
-        log.debug("Executing admin SQL: {}", sql);
-
+        long absoluteTimeoutMs = System.currentTimeMillis() + (QUERY_TIMEOUT_SECONDS * 1000L);
         try {
             return jdbcTemplate.execute((Connection conn) -> {
                 List<Map<String, Object>> results = new ArrayList<>();
+                List<String> resultColumns = new ArrayList<>();
                 int totalUpdateCount = 0;
                 boolean hasUpdateCount = false;
 

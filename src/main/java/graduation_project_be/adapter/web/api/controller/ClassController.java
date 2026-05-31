@@ -50,7 +50,7 @@ public class ClassController {
                 CreateClassResponse usecaseResponse = createClassUsecase.execute(usecaseRequest);
                 return ResponseEntity.status(HttpStatus.CREATED)
                                 .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "CREATED",
-                                                "Class created successfully"));
+                                                "Tạo lớp học thành công!"));
         }
 
         @PutMapping("/{classId}")
@@ -62,7 +62,7 @@ public class ClassController {
                 CreateClassResponse usecaseResponse = updateClassUsecase.execute(usecaseRequest);
                 return ResponseEntity.ok()
                                 .body(ResponseDto.of(CreateClassResponseDto.fromResponse(usecaseResponse), "OK",
-                                                "Class updated successfully"));
+                                                "Cập nhật lớp học thành công!"));
         }
 
 
@@ -146,7 +146,7 @@ public class ClassController {
         public ResponseEntity<ResponseDto> softDeleteClass(
                         @PathVariable("classId") Long classId) {
                 softDeleteClassUsecase.execute(classId);
-                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Class deleted successfully"));
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Xóa lớp học thành công!"));
         }
 
         @PostMapping("/{classId}/restore")
@@ -154,6 +154,6 @@ public class ClassController {
         public ResponseEntity<ResponseDto> restoreClass(
                         @PathVariable("classId") Long classId) {
                 restoreClassUsecase.execute(classId);
-                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Class restored successfully"));
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Khôi phục lớp học thành công!"));
         }
 }

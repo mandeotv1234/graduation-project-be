@@ -47,7 +47,7 @@ public class TeacherClassController {
                 addTeacherToClassUsecase.execute(request);
 
                 return ResponseEntity.ok(
-                                ResponseDto.of(null, "OK", "Teacher added to class successfully"));
+                                ResponseDto.of(null, "OK", "Thêm giảng viên vào lớp học thành công!"));
         }
 
         @DeleteMapping("/{classId}/teachers/{teacherId}")
@@ -58,6 +58,6 @@ public class TeacherClassController {
                 removeTeacherFromClassUsecase.execute(classId, teacherId);
 
                 return ResponseEntity.ok(
-                                ResponseDto.of(null, "OK", "Teacher removed from class successfully"));
+                                ResponseDto.of(null, "OK", "Xóa giảng viên khỏi lớp học thành công!"));
         }
 }

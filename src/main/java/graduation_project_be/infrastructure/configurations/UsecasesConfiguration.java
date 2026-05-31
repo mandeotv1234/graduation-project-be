@@ -135,6 +135,23 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GetStudentProgressInClassUsecase getStudentProgressInClassUsecase(
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService) {
+        return new GetStudentProgressInClassUsecase(
+                classRepository,
+                classEnrollmentRepository,
+                examRepository,
+                examResultRepository,
+                userRepository,
+                currentUserService);
+    }
+
+    @Bean
     GetStudentExamUsecase getStudentExamUsecase(
             ExamRepository examRepository,
             ClassRepository classRepository,

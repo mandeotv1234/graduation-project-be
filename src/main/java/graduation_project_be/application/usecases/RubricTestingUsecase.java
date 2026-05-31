@@ -551,6 +551,11 @@ public class RubricTestingUsecase {
                 throw new IllegalArgumentException("SQL đáp án không hợp lệ sau khi chuẩn hóa.");
             }
 
+            Set<String> currentCreatedTables = extractCreatedTableNames(normalizedCorrectSql);
+            if (currentCreatedTables.isEmpty()) {
+                currentCreatedTables = extractCreatedTableNames(correctQuery);
+            }
+
             List<Map<String, Object>> details = new ArrayList<>();
             int preparedCount = executeExistingAnswersForSchema(
                     examQuestions,
@@ -558,7 +563,8 @@ public class RubricTestingUsecase {
                     details,
                     "BUILD_CREATE",
                     true,
-                    normalizedCorrectSql);
+                    normalizedCorrectSql,
+                    currentCreatedTables);
 
             List<TableMetadata> baselineMetadata = examSchemaService.extractMetadata(schemaName);
             Set<String> baselineTableNames = new LinkedHashSet<>();
@@ -582,10 +588,7 @@ public class RubricTestingUsecase {
                         tableMetadata);
             }
 
-            Set<String> targetTables = extractCreatedTableNames(normalizedCorrectSql);
-            if (targetTables.isEmpty()) {
-                targetTables = extractCreatedTableNames(correctQuery);
-            }
+            Set<String> targetTables = new LinkedHashSet<>(currentCreatedTables);
 
             if (targetTables.isEmpty()) {
                 for (TableMetadata tableMetadata : metadataList) {
@@ -1270,12 +1273,12 @@ public class RubricTestingUsecase {
                 .replace("\r\n", "\n")
                 .replace("\r", "\n");
 
+        normalized = normalized.replaceAll("(?s)/\\*.*?\\*/", " ");
+        normalized = normalized.replaceAll("--[^\\r\\n]*", " ");
+
         normalized = normalized.replaceAll(
                 "(?i)(CREATE\\s+TABLE|ALTER\\s+TABLE|INSERT\\s+INTO|UPDATE\\s+|DELETE\\s+FROM|MERGE\\s+INTO|DROP\\s+TABLE|TRUNCATE\\s+TABLE|WITH\\s+)",
                 "\n$1");
-
-        normalized = normalized.replaceAll("(?s)/\\*.*?\\*/", " ");
-        normalized = normalized.replaceAll("--[^\\r\\n]*", " ");
 
         normalized = normalized.replaceAll("[\\t\\x0B\\f ]+", " ");
         normalized = normalized.replaceAll("\n+", "\n");
@@ -1313,6 +1316,24 @@ public class RubricTestingUsecase {
             String caseId,
             boolean createTableOnly,
             String excludeNormalizedSql) {
+        return executeExistingAnswersForSchema(
+                examQuestions,
+                schemaName,
+                details,
+                caseId,
+                createTableOnly,
+                excludeNormalizedSql,
+                Set.of());
+    }
+
+    private int executeExistingAnswersForSchema(
+            List<ExamQuestionResponse> examQuestions,
+            String schemaName,
+            List<Map<String, Object>> details,
+            String caseId,
+            boolean createTableOnly,
+            String excludeNormalizedSql,
+            Set<String> excludeCreatedTableNames) {
         int preparedCount = 0;
         for (ExamQuestionResponse question : examQuestions) {
             if ("SELECT_QUERY".equalsIgnoreCase(question.questionType())) {
@@ -1332,6 +1353,9 @@ public class RubricTestingUsecase {
             if (excludeNormalizedSql != null
                     && !excludeNormalizedSql.isBlank()
                     && normalizedSql.equals(excludeNormalizedSql)) {
+                continue;
+            }
+            if (createTableOnly && hasCreatedTableNameOverlap(normalizedSql, excludeCreatedTableNames)) {
                 continue;
             }
 
@@ -1363,6 +1387,27 @@ public class RubricTestingUsecase {
         }
 
         return preparedCount;
+    }
+
+    private boolean hasCreatedTableNameOverlap(String sql, Set<String> tableNames) {
+        if (sql == null || sql.isBlank() || tableNames == null || tableNames.isEmpty()) {
+            return false;
+        }
+
+        Set<String> normalizedTableNames = new HashSet<>();
+        for (String tableName : tableNames) {
+            if (tableName != null && !tableName.isBlank()) {
+                normalizedTableNames.add(tableName.toLowerCase(Locale.ROOT));
+            }
+        }
+
+        for (String createdTableName : extractCreatedTableNames(sql)) {
+            if (createdTableName != null
+                    && normalizedTableNames.contains(createdTableName.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean containsForbiddenSchemaDdl(String sql) {

@@ -71,6 +71,7 @@ public class TeacherExecuteSqlOnResultUsecase {
         try {
             SqlExecutionResult sqlResult = examSchemaService.executeSql(schemaName, request.sql());
             List<Map<String, Object>> resultSet = sqlResult.getResultSet();
+            List<String> columns = sqlResult.getColumns() != null ? sqlResult.getColumns() : List.of();
             List<TableMetadata> schema = null;
             List<RoutineMetadata> routines = null;
             if (affectsSchema(request.sql())) {
@@ -78,7 +79,7 @@ public class TeacherExecuteSqlOnResultUsecase {
                 routines = examSchemaService.extractRoutineMetadata(schemaName);
             }
             int executionTimeMs = (int) (System.currentTimeMillis() - startTime);
-            return ExecuteSqlResponse.success(resultSet, sqlResult.getRowCount(), executionTimeMs,
+            return ExecuteSqlResponse.success(resultSet, columns, sqlResult.getRowCount(), executionTimeMs,
                     sqlResult.getStatusMessage(), schema, routines);
         } catch (Exception e) {
             return ExecuteSqlResponse.error(e.getMessage());

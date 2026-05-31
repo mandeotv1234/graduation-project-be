@@ -110,7 +110,7 @@ public class ExamController {
                                 .body(ResponseDto.of(
                                                 CreateExamResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                "Exam created successfully"));
+                                                "Tạo đề thi thành công!"));
         }
 
         @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -123,7 +123,7 @@ public class ExamController {
                                 .body(ResponseDto.of(
                                                 CreateExamResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                "Exam created successfully"));
+                                                "Tạo đề thi thành công!"));
         }
 
         @PutMapping(value = "/{examId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -158,7 +158,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 UpdateExamResponseDto.fromResponse(response),
                                                 "OK",
-                                                "Exam updated successfully"));
+                                                "Cập nhật đề thi thành công!"));
         }
 
         @PutMapping(value = "/{examId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -172,7 +172,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 UpdateExamResponseDto.fromResponse(response),
                                                 "OK",
-                                                "Exam updated successfully"));
+                                                "Cập nhật đề thi thành công!"));
         }
 
         @GetMapping("/{examId}/teacher-detail")
@@ -229,7 +229,7 @@ public class ExamController {
                                 .body(ResponseDto.of(
                                                 CreateExamQuestionsResponseDto.fromResponse(response),
                                                 "CREATED",
-                                                response.totalCreated() + " question(s) created successfully"));
+                                                response.totalCreated() + " câu hỏi đã được tạo thành công!"));
         }
 
         @PutMapping("/{examId}/questions/{questionId}")
@@ -244,7 +244,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 ExamQuestionResponseDto.fromResponse(response),
                                                 "OK",
-                                                "Question updated successfully"));
+                                                "Cập nhật câu hỏi thành công!"));
         }
 
         @DeleteMapping("/{examId}")
@@ -256,7 +256,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 null,
                                                 "OK",
-                                                "Exam deleted successfully"));
+                                                "Xóa đề thi thành công!"));
         }
 
         @DeleteMapping("/{examId}/questions/{questionId}")
@@ -269,7 +269,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 null,
                                                 "OK",
-                                                "Question deleted successfully"));
+                                                "Xóa câu hỏi thành công!"));
         }
 
         @PostMapping("/{examId}/specification")
@@ -395,7 +395,7 @@ public class ExamController {
                                 examId, resultId, submissionId, requestDto.toRequest());
                 return ResponseEntity.ok(ResponseDto.of(
                                 OverrideSubmissionResponseDto.fromResponse(response),
-                                "OK", "Score overridden successfully"));
+                                "OK", "Cập nhật điểm thành công!"));
         }
 
         @PostMapping("/{examId}/results/{resultId}/regrade")
@@ -552,7 +552,7 @@ public class ExamController {
                                 .body(ResponseDto.of(
                                                 SubmitExamResponseDto.fromResponse(response),
                                                 "ACCEPTED",
-                                                "Exam submitted successfully. Grading in progress."));
+                                                "Nộp bài thành công! Đang chấm điểm."));
         }
 
         // ===== ANTI-CHEATING ENDPOINTS =====
@@ -676,7 +676,7 @@ public class ExamController {
                 }
 
                 return ResponseEntity.ok(
-                                ResponseDto.of(rubricJson, "OK", "Rubric generated successfully"));
+                                ResponseDto.of(rubricJson, "OK", "Tạo rubric thành công!"));
         }
 
         // ===== TEST GRADING =====
@@ -783,7 +783,7 @@ public class ExamController {
                                 ResponseDto.of(
                                                 SaveExamDraftResponseDto.fromResponse(response),
                                                 "OK",
-                                                "Draft saved successfully"));
+                                                "Lưu nháp thành công!"));
         }
 
         @GetMapping("/{examId}/draft")

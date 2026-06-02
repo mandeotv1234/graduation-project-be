@@ -460,6 +460,31 @@ import graduation_project_be.shared.utils.TimeUtils;
 classJpaRepository.updateDeletedAt(classId, TimeUtils.now()); // ✅ correct
 ```
 
-## 9. General Coding Standards
+## 9. Commit Message Convention
+
+**Format**: `GRAD-XXX: Commit message` (first letter of message uppercase)
+
+```
+GRAD-XXX: Short description of what was done
+```
+
+**Examples:**
+- `GRAD-25: Add user roles and created_at timestamp`
+- `GRAD-68: Fix grading status not updating after regrade`
+- `GRAD-102: Implement per-question score override endpoint`
+
+**Rules:**
+- Always prefix with the JIRA ticket ID: `GRAD-XXX`
+- Separate ticket ID from message with `: ` (colon + space)
+- First letter of the message must be **uppercase**
+- Use imperative mood: "Add", "Fix", "Implement", "Update", "Remove"
+- Keep the message concise (under 72 characters)
+
+**❌ Wrong**: `grad-25 add user roles`, `GRAD-25 - add user roles`, `GRAD-25: add user roles` (lowercase first letter)  
+**✅ Correct**: `GRAD-25: Add user roles and created_at timestamp`
+
+---
+
+## 10. General Coding Standards
 
 - **Avoid using Fully Qualified Class Names (FQCN) inline in code**: Standard Java/Spring packages (`java.util.List`, `java.time.LocalDateTime`, etc.) **must** be placed in the `import` section at the top of the file. Writing them inline (e.g., `java.util.List<T>` in a field declaration, parameter, or return type) is strictly forbidden.

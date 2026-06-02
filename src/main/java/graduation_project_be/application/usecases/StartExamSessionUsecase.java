@@ -2,9 +2,11 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.BadRequestException;
+import graduation_project_be.application.exceptions.BannedFromExamException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
+import graduation_project_be.application.port.repositories.ClassStudentBanRepository;
 import graduation_project_be.application.port.repositories.ExamDraftRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
@@ -53,7 +55,9 @@ public class StartExamSessionUsecase {
     private final DeviceConflictNotificationService deviceConflictNotificationService;
     private final UserRepository userRepository;
     private final ClassRepository classRepository;
-    private final ExamDraftRepository examDraftRepository;    private final SimpMessagingTemplate messagingTemplate;
+    private final ExamDraftRepository examDraftRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final ClassStudentBanRepository classStudentBanRepository;
     @Transactional
     public StartExamSessionResponse execute(StartExamSessionRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -68,6 +72,13 @@ public class StartExamSessionUsecase {
         if (!isEnrolled) {
             throw new UnauthorizedException("Student is not enrolled in this exam's class");
         }
+
+        // 2b. Check if student is banned from this class
+        classStudentBanRepository.findActiveByClassIdAndStudentId(exam.getClassId(), studentId)
+                .ifPresent(ban -> {
+                    throw new BannedFromExamException("Bạn đã bị cấm thi trong lớp này: " +
+                            (ban.getReason() != null ? ban.getReason() : "Không có lý do"));
+                });
 
         // 3. Validate exam time window
         LocalDateTime now = TimeUtils.now();

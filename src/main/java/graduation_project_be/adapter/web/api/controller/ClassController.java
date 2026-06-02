@@ -1,11 +1,15 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import graduation_project_be.adapter.web.api.dtos.request.BanStudentRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassDetailRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassesRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentsInClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
+import graduation_project_be.application.usecases.BanStudentUsecase;
+import graduation_project_be.application.usecases.UnbanStudentUsecase;
+import graduation_project_be.application.usecases.GetClassBansUsecase;
 import graduation_project_be.application.usecases.CreateClassUsecase;
 import graduation_project_be.application.usecases.UpdateClassUsecase;
 import graduation_project_be.application.usecases.GetClassDetailUsecase;
@@ -44,6 +48,9 @@ public class ClassController {
         private final GetStudentProgressInClassUsecase getStudentProgressInClassUsecase;
         private final SoftDeleteClassUsecase softDeleteClassUsecase;
         private final RestoreClassUsecase restoreClassUsecase;
+        private final BanStudentUsecase banStudentUsecase;
+        private final UnbanStudentUsecase unbanStudentUsecase;
+        private final GetClassBansUsecase getClassBansUsecase;
 
         @PostMapping
         @PreAuthorize("hasRole('TEACHER')")
@@ -172,5 +179,35 @@ public class ClassController {
                         @PathVariable("classId") Long classId) {
                 restoreClassUsecase.execute(classId);
                 return ResponseEntity.ok(ResponseDto.of(null, "OK", "Khôi phục lớp học thành công!"));
+        }
+
+        @GetMapping("/{classId}/bans")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<PaginationResponseDto<BannedStudentResponseDto>> getClassBans(
+                        @PathVariable("classId") Long classId,
+                        @RequestParam(name = "page", defaultValue = "1") int page,
+                        @RequestParam(name = "size", defaultValue = "10") int size) {
+                PaginationResponse<BannedStudentResponse> response = getClassBansUsecase.execute(classId, page, size);
+                return ResponseEntity.ok(PaginationResponseDto.fromResponse(
+                                response, BannedStudentResponseDto::fromResponse, "OK",
+                                "Banned students retrieved successfully"));
+        }
+
+        @PostMapping("/{classId}/bans")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> banStudent(
+                        @PathVariable("classId") Long classId,
+                        @RequestBody @Valid BanStudentRequestDto requestDto) {
+                banStudentUsecase.execute(requestDto.toRequest(classId));
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Student banned successfully"));
+        }
+
+        @DeleteMapping("/{classId}/bans/{studentId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> unbanStudent(
+                        @PathVariable("classId") Long classId,
+                        @PathVariable("studentId") Long studentId) {
+                unbanStudentUsecase.execute(classId, studentId);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Student unbanned successfully"));
         }
 }

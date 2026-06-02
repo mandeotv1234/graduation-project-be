@@ -17,4 +17,5 @@ public enum Code {
     INTERNAL_ERROR,
     DATABASE_ERROR,
     OK,
+    STUDENT_BANNED,
 }

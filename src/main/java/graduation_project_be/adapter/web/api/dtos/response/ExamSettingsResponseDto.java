@@ -14,7 +14,11 @@ public record ExamSettingsResponseDto(
         Integer maxViolations,
         Boolean showResultAfterSubmit,
         Boolean isLoadDdl,
-        Long seedDatasetId) {
+        Long seedDatasetId,
+        Integer heartbeatIntervalSec,
+        Integer maxHeartbeatGapSec,
+        Boolean integrityCheckEnabled,
+        Boolean requireLockdownBrowser) {
 
     public static ExamSettingsResponseDto fromModel(ExamSettings settings) {
         if (settings == null) return null;
@@ -30,6 +34,10 @@ public record ExamSettingsResponseDto(
                 settings.getMaxViolations(),
                 settings.getShowResultAfterSubmit(),
                 settings.getIsLoadDdl(),
-                settings.getSeedDatasetId());
+                settings.getSeedDatasetId(),
+                settings.getHeartbeatIntervalSec(),
+                settings.getMaxHeartbeatGapSec(),
+                settings.getIntegrityCheckEnabled(),
+                settings.getRequireLockdownBrowser());
     }
 }

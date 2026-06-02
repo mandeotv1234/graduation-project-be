@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 3005261725
+      author: manhuynh
+      comment: "GRAD-169: add INTEGRITY_TAMPERED to exam_violations.violation_type CHECK"
+      changes:
+        - sql:
+            sql: ALTER TABLE exam_violations DROP CONSTRAINT chk_violation_type
+        - sql:
+            sql: >
+              ALTER TABLE exam_violations ADD CONSTRAINT chk_violation_type
+              CHECK (violation_type IN (
+                'TAB_SWITCHED',
+                'WINDOW_LOST_FOCUS',
+                'ILLEGAL_PASTE',
+                'ILLEGAL_COPY',
+                'FULLSCREEN_EXIT',
+                'DEVTOOLS_OPENED',
+                'RIGHT_CLICK',
+                'SUSPICIOUS_ACTIVITY',
+                'INTEGRITY_TAMPERED'
+              ))
+      rollback:
+        - sql:
+            sql: ALTER TABLE exam_violations DROP CONSTRAINT chk_violation_type
+        - sql:
+            sql: >
+              ALTER TABLE exam_violations ADD CONSTRAINT chk_violation_type
+              CHECK (violation_type IN (
+                'TAB_SWITCHED',
+                'WINDOW_LOST_FOCUS',
+                'ILLEGAL_PASTE',
+                'ILLEGAL_COPY',
+                'FULLSCREEN_EXIT',
+                'DEVTOOLS_OPENED',
+                'RIGHT_CLICK',
+                'SUSPICIOUS_ACTIVITY'
+              ))

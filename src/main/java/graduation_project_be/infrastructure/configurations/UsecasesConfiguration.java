@@ -327,12 +327,13 @@ public class UsecasesConfiguration {
             GradingQueueService gradingQueueService,
             ExamDraftRepository examDraftRepository,
             TeacherNotificationRepository teacherNotificationRepository,
-            SimpMessagingTemplate simpMessagingTemplate) {
+            SimpMessagingTemplate simpMessagingTemplate,
+            HeartbeatService heartbeatService) {
         return new SubmitExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, classEnrollmentRepository, classRepository, userRepository, currentUserService,
                 examSessionService, gradingQueueService, examDraftRepository, teacherNotificationRepository,
-                simpMessagingTemplate);
+                simpMessagingTemplate, heartbeatService);
     }
 
     @Bean
@@ -456,11 +457,23 @@ public class UsecasesConfiguration {
             CurrentUserService currentUserService,
             ViolationNotificationService violationNotificationService,
             SubmitExamUsecase submitExamUsecase,
-            ExamDraftRepository examDraftRepository) {
+            ExamDraftRepository examDraftRepository,
+            UserRepository userRepository) {
         return new ReportViolationUsecase(
                 examViolationRepository, examResultRepository, examRepository,
                 classEnrollmentRepository, classRepository, currentUserService,
-                violationNotificationService, submitExamUsecase, examDraftRepository);
+                violationNotificationService, submitExamUsecase, examDraftRepository,
+                userRepository);
+    }
+
+    @Bean
+    RecordHeartbeatUsecase recordHeartbeatUsecase(
+            HeartbeatService heartbeatService,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService,
+            ReportViolationUsecase reportViolationUsecase) {
+        return new RecordHeartbeatUsecase(
+                heartbeatService, examRepository, currentUserService, reportViolationUsecase);
     }
 
     @Bean

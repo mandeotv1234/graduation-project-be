@@ -28,6 +28,10 @@ public class ExamSettingsJson {
     /** Legacy field kept only so old settings JSON can still be deserialized. */
     private String databaseInitMode;
     private Long seedDatasetId;
+    private Integer heartbeatIntervalSec;
+    private Integer maxHeartbeatGapSec;
+    private Boolean integrityCheckEnabled;
+    private Boolean requireLockdownBrowser;
 
     public ExamSettings toModel() {
         return ExamSettings.builder()
@@ -43,6 +47,10 @@ public class ExamSettingsJson {
                 .showResultAfterSubmit(showResultAfterSubmit)
                 .isLoadDdl(isLoadDdl)
                 .seedDatasetId(seedDatasetId)
+                .heartbeatIntervalSec(heartbeatIntervalSec)
+                .maxHeartbeatGapSec(maxHeartbeatGapSec)
+                .integrityCheckEnabled(integrityCheckEnabled)
+                .requireLockdownBrowser(requireLockdownBrowser)
                 .build();
     }
 
@@ -61,6 +69,10 @@ public class ExamSettingsJson {
                 .showResultAfterSubmit(model.getShowResultAfterSubmit())
                 .isLoadDdl(model.getIsLoadDdl())
                 .seedDatasetId(model.getSeedDatasetId())
+                .heartbeatIntervalSec(model.getHeartbeatIntervalSec())
+                .maxHeartbeatGapSec(model.getMaxHeartbeatGapSec())
+                .integrityCheckEnabled(model.getIntegrityCheckEnabled())
+                .requireLockdownBrowser(model.getRequireLockdownBrowser())
                 .build();
     }
 }

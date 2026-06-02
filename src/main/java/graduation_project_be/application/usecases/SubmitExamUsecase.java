@@ -7,6 +7,7 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.GradingQueueService;
+import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import graduation_project_be.domain.models.Exam;
@@ -64,6 +65,7 @@ public class SubmitExamUsecase {
     private final ExamDraftRepository examDraftRepository;
     private final TeacherNotificationRepository teacherNotificationRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final HeartbeatService heartbeatService;
     @Transactional
     public SubmitExamResponse execute(SubmitExamRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
@@ -216,6 +218,9 @@ public class SubmitExamUsecase {
 
         // 10. CLEAR THE SESSION! So next attempt (if any) starts with a fresh timer.
         examSessionService.clearSession(examId, studentId);
+
+        // Stop heartbeat tracking so the absence sweep doesn't flag a submitted student.
+        heartbeatService.clear(examId, studentId);
 
         // 11. CLEAR THE DRAFT! So next attempt starts with an empty answer set.
         examDraftRepository.deleteByExamIdAndStudentId(examId, studentId);

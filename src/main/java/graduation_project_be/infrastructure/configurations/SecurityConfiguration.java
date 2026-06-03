@@ -15,6 +15,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -54,6 +55,12 @@ public class SecurityConfiguration {
         http
                 .cors(Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
+                // This is a pure REST API — disable Spring Security's default X-Frame-Options
+                // and XSS-Protection headers since they only apply to HTML documents.
+                // The FE handles frame restrictions via its own CSP (frame-ancestors 'none').
+                .headers(headers -> headers
+                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::disable)
+                        .xssProtection(HeadersConfigurer.XXssConfig::disable))
                 .authorizeHttpRequests(
                         auth -> auth.requestMatchers(
                                 "/api/auth/**",

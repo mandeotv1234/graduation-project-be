@@ -4,6 +4,7 @@ import graduation_project_be.application.usecases.DeleteExamUsecase;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
+import graduation_project_be.application.usecases.grading.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
 
@@ -337,6 +338,56 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GradingSupport gradingSupport(
+            ExamSchemaService examSchemaService,
+            ObjectMapper objectMapper,
+            TestCaseRepository testCaseRepository) {
+        return new GradingSupport(examSchemaService, objectMapper, testCaseRepository);
+    }
+
+    @Bean
+    CreateTableQuestionGrader createTableQuestionGrader(
+            ExamSchemaService examSchemaService,
+            ObjectMapper objectMapper,
+            GradingSupport gradingSupport) {
+        return new CreateTableQuestionGrader(examSchemaService, objectMapper, gradingSupport);
+    }
+
+    @Bean
+    InsertDataQuestionGrader insertDataQuestionGrader(
+            ExamSchemaService examSchemaService,
+            ObjectMapper objectMapper,
+            GradingSupport gradingSupport) {
+        return new InsertDataQuestionGrader(examSchemaService, objectMapper, gradingSupport);
+    }
+
+    @Bean
+    SelectQuestionGrader selectQuestionGrader(
+            ExamSchemaService examSchemaService,
+            ObjectMapper objectMapper,
+            GradingSupport gradingSupport) {
+        return new SelectQuestionGrader(examSchemaService, objectMapper, gradingSupport);
+    }
+
+    @Bean
+    RoutineQuestionGrader routineQuestionGrader(
+            ExamSchemaService examSchemaService,
+            ObjectMapper objectMapper,
+            TestCaseRepository testCaseRepository,
+            GradingSupport gradingSupport) {
+        return new RoutineQuestionGrader(examSchemaService, objectMapper, testCaseRepository, gradingSupport);
+    }
+
+    @Bean
+    TriggerQuestionGrader triggerQuestionGrader(
+            ExamSchemaService examSchemaService,
+            TestCaseRepository testCaseRepository,
+            GradingSupport gradingSupport,
+            RoutineQuestionGrader routineQuestionGrader) {
+        return new TriggerQuestionGrader(examSchemaService, testCaseRepository, gradingSupport, routineQuestionGrader);
+    }
+
+    @Bean
     GradeExamUsecase gradeExamUsecase(
             ExamRepository examRepository,
             ExamQuestionRepository examQuestionRepository,
@@ -348,12 +399,19 @@ public class UsecasesConfiguration {
             ExamSessionService examSessionService,
             GradingNotificationService gradingNotificationService,
             UserRepository userRepository,
-            TestCaseRepository testCaseRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            GradingSupport gradingSupport,
+            CreateTableQuestionGrader createTableQuestionGrader,
+            InsertDataQuestionGrader insertDataQuestionGrader,
+            SelectQuestionGrader selectQuestionGrader,
+            RoutineQuestionGrader routineQuestionGrader,
+            TriggerQuestionGrader triggerQuestionGrader) {
         return new GradeExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, examSpecificationRepository, classRepository,
-                examSchemaService, examSessionService, gradingNotificationService, userRepository, testCaseRepository, objectMapper);
+                examSchemaService, examSessionService, gradingNotificationService, userRepository,
+                objectMapper, gradingSupport, createTableQuestionGrader, insertDataQuestionGrader,
+                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader);
     }
 
     @Bean
@@ -363,12 +421,12 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
-            GradeExamUsecase gradeExamUsecase,
+            InsertDataQuestionGrader insertDataQuestionGrader,
             ObjectMapper objectMapper) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
                 examRepository, examSpecificationRepository,
-                getExamQuestionsUsecase, gradeExamUsecase, objectMapper);
+                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper);
     }
 
     @Bean

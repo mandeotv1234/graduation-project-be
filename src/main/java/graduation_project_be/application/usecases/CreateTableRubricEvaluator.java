@@ -13,14 +13,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-final class CreateTableRubricEvaluator {
+public final class CreateTableRubricEvaluator {
 
     private static final String GLOBAL_SCOPE = "__GLOBAL__";
 
     private CreateTableRubricEvaluator() {
     }
 
-    static CreateTableRubricGradeResult evaluate(
+    public static CreateTableRubricGradeResult evaluate(
             JsonNode rubric,
             List<TableMetadata> actualTables,
             BigDecimal totalPoints) {
@@ -1425,7 +1425,7 @@ final class CreateTableRubricEvaluator {
         }
     }
 
-    record CreateTableRubricGradeResult(
+    public record CreateTableRubricGradeResult(
             BigDecimal earnedPoints,
             BigDecimal totalDeductions,
             boolean allPassed,

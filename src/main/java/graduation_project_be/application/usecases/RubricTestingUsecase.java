@@ -7,6 +7,7 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -65,7 +66,7 @@ public class RubricTestingUsecase {
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
-    private final GradeExamUsecase gradeExamUsecase;
+    private final InsertDataQuestionGrader insertDataGrader;
     private final ObjectMapper objectMapper;
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
@@ -314,7 +315,7 @@ public class RubricTestingUsecase {
                             "points", 0));
                     fakeSubmission.setScoreEarned(BigDecimal.ZERO);
                 } else {
-                    gradeExamUsecase.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission,
+                    insertDataGrader.gradeInsertDataByRubric(studentSchema, fakeQuestion, fakeSubmission,
                             fallbackTriggered);
                 }
 

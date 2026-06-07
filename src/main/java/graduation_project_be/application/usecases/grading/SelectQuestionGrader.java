@@ -2019,7 +2019,8 @@ public class SelectQuestionGrader {
      * polarity: FORBID_* rules are skipped (benefit of the doubt) while REQUIRE_* rules cannot be
      * verified and are flagged for manual review instead of silently passing.
      */
-    private QueryStructureResult calculateQueryStructureDeduction(
+    // Package-private for unit testing the white-box rule logic without a database.
+    QueryStructureResult calculateQueryStructureDeduction(
             JsonNode selectRules, String studentQuery, BigDecimal maxPoints, StringBuilder issues) {
         QueryStructureFacts facts = queryStructureAnalyzer.analyze(studentQuery);
 
@@ -2098,7 +2099,7 @@ public class SelectQuestionGrader {
         };
     }
 
-    private record QueryStructureResult(BigDecimal deduction, boolean failAllTriggered, String message) {
+    record QueryStructureResult(BigDecimal deduction, boolean failAllTriggered, String message) {
         static QueryStructureResult none() {
             return new QueryStructureResult(BigDecimal.ZERO, false, null);
         }

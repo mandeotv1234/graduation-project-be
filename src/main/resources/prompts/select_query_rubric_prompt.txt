@@ -23,8 +23,8 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
     "grading_rules": [
       {
         "rule_name": "<TEN_RULE>",
-        "target": "<COLUMN|ROW|CELL_VALUE|ROW_ORDER|COLUMN_ORDER>",
-        "condition": "<IS_MISSING|IS_EXTRA|IS_NULL|NOT_EQUAL|OUT_OF_ORDER>",
+        "target": "<COLUMN|ROW|CELL_VALUE|ROW_ORDER|COLUMN_ORDER|QUERY>",
+        "condition": "<IS_MISSING|IS_EXTRA|IS_NULL|NOT_EQUAL|OUT_OF_ORDER|REQUIRE_JOIN|FORBID_JOIN|FORBID_SUBQUERY_IN_SELECT|FORBID_SUBQUERY_IN_FROM|FORBID_SUBQUERY_IN_WHERE|REQUIRE_CTE|FORBID_CTE|REQUIRE_GROUP_BY|REQUIRE_AGGREGATE|REQUIRE_DISTINCT|FORBID_ORDER_BY>",
         "modifiers": [
           "<TO_LOWERCASE|TRIM_WHITESPACE|REMOVE_ALL_WHITESPACE|REMOVE_DIACRITICS|CAST_TO_STRING|CAST_TO_FLOAT|ROUND_TO_INT|ROUND_2_DECIMALS|SORT_ASC>"
         ],
@@ -81,7 +81,12 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 - Đây là rubric TRỪ ĐIỂM cho câu hỏi SELECT_QUERY.
 - Dùng rule_name (KHÔNG dùng rule_id).
 - Mỗi rule đại diện cho một lỗi/điều kiện KHÁC NHAU, không lặp nội dung.
-- YÊU CẦU NGHIÊM NGẶT VỀ GRADING_RULES: Chỉ tạo các rule liên quan đến kết quả truy vấn SELECT (sai giá trị, thiếu/thừa dòng, sai thứ tự, sai tên cột...). Không tạo rule kiểm tra cấu trúc bảng hay ràng buộc.
+- GRADING_RULES gồm HAI nhóm: (1) rule KẾT QUẢ (target COLUMN/ROW/CELL_VALUE/ROW_ORDER/COLUMN_ORDER) bắt lỗi sai giá trị, thiếu/thừa dòng, sai thứ tự, sai tên cột; (2) rule CẤU TRÚC CÂU LỆNH white-box (target QUERY) kiểm tra CÁCH viết truy vấn. TUYỆT ĐỐI KHÔNG tạo rule kiểm tra cấu trúc BẢNG hay RÀNG BUỘC — đó là việc của câu CREATE_TABLE.
+- RULE CẤU TRÚC CÂU LỆNH (target="QUERY") — tùy chọn, chỉ thêm khi đề thực sự cần ép cách viết:
+  - REQUIRE_* khi đáp án mẫu DÙNG construct đó (REQUIRE_JOIN, REQUIRE_GROUP_BY, REQUIRE_AGGREGATE, REQUIRE_CTE, REQUIRE_DISTINCT).
+  - FORBID_* để chặn lối đi tắt mà đáp án mẫu TRÁNH (FORBID_SUBQUERY_IN_SELECT/FROM/WHERE, FORBID_JOIN, FORBID_CTE, FORBID_ORDER_BY).
+  - Rule QUERY chỉ được dùng action="DEDUCT_POINTS" (KHÔNG bao giờ FAIL_ALL/FAIL_ITEM) để tránh chấm oan lời giải tương đương.
+  - KHÔNG đặt REQUIRE_* mà chính đáp án mẫu không thỏa (sẽ chấm oan). Nếu không chắc, BỎ rule QUERY.
 - TUYỆT ĐỐI KHÔNG được nhúng tên bảng, tên cột, tên ràng buộc CỤ THỂ (ví dụ: CONGTY, CONGTRINH, TongChiPhi, MaCT...) vào rule_name hoặc description của rule, TRỪ KHI người dùng YÊU CẦU RÕ RÀNG tạo rule ÁP DỤNG RIÊNG cho đối tượng đó.
 - Rule chung PHẢI dùng từ ngữ tổng quát: "giá trị ô dữ liệu", "dòng kết quả", "cột kết quả", "thứ tự dòng", "tên cột" thay vì tên cụ thể.
 - Ví dụ ĐÚNG: rule_name="Sai giá trị ô dữ liệu", description="Nếu phát hiện giá trị trong ô sai giá trị thì trừ 0.25 điểm".

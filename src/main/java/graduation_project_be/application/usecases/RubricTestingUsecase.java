@@ -8,6 +8,7 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
+import graduation_project_be.application.usecases.grading.SelectQueryRuleSuggester;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -68,6 +69,7 @@ public class RubricTestingUsecase {
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
     private final InsertDataQuestionGrader insertDataGrader;
     private final ObjectMapper objectMapper;
+    private final SelectQueryRuleSuggester selectQueryRuleSuggester;
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
         String sc = request.schemaContext();
@@ -105,13 +107,22 @@ public class RubricTestingUsecase {
             priorQuestionContext = "";
         }
 
-        return geminiService.generateGradingRubric(
+        String rubricJson = geminiService.generateGradingRubric(
                 request.correctQuery(),
                 request.questionContent(),
                 request.totalPoints(),
                 request.questionType(),
                 priorQuestionContext,
                 request.schemaContext());
+
+        // White-box enrichment: deterministically suggest QUERY structure rules from the model
+        // answer and surface contradiction warnings. Independent of Gemini — the baseline holds
+        // even when the model only produced result-set rules.
+        if (rubricJson != null && "SELECT_QUERY".equalsIgnoreCase(request.questionType())) {
+            rubricJson = selectQueryRuleSuggester.enrich(
+                    rubricJson, request.correctQuery(), BigDecimal.valueOf(request.totalPoints()));
+        }
+        return rubricJson;
     }
 
     public RubricTestGradeResponse testGradeInsert(TestGradeInsertRequest request) {

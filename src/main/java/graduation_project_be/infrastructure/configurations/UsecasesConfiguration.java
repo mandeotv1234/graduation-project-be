@@ -352,6 +352,13 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    SelectQueryRuleSuggester selectQueryRuleSuggester(
+            SelectQueryStructureAnalyzer selectQueryStructureAnalyzer,
+            ObjectMapper objectMapper) {
+        return new SelectQueryRuleSuggester(selectQueryStructureAnalyzer, objectMapper);
+    }
+
+    @Bean
     CreateTableQuestionGrader createTableQuestionGrader(
             ExamSchemaService examSchemaService,
             ObjectMapper objectMapper,
@@ -430,11 +437,13 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             InsertDataQuestionGrader insertDataQuestionGrader,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            SelectQueryRuleSuggester selectQueryRuleSuggester) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
                 examRepository, examSpecificationRepository,
-                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper);
+                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper,
+                selectQueryRuleSuggester);
     }
 
     @Bean

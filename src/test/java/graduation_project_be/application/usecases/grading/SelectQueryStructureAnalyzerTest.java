@@ -163,10 +163,18 @@ class SelectQueryStructureAnalyzerTest {
     }
 
     @Test
-    void nPrefixedUnicodeStringLiteralParsesAndCountsAsLiteral() {
+    void nPrefixedUnicodeStringLiteralParsesAndIsAllowlisted() {
+        // N'...' Unicode comparisons are normal SQL, not hardcoded answers -> not a flaggable literal.
         QueryStructureFacts f = analyze("SELECT * FROM a WHERE a.name = N'Nguyen'");
         assertTrue(f.parseOk());
-        assertTrue(f.hasLiteralInWhere());
+        assertFalse(f.hasLiteralInWhere());
+    }
+
+    @Test
+    void safeConstantsInWhereAreAllowlisted() {
+        assertFalse(analyze("SELECT * FROM a WHERE a.active = 1").hasLiteralInWhere());
+        assertFalse(analyze("SELECT * FROM a WHERE a.deleted = 0").hasLiteralInWhere());
+        assertFalse(analyze("SELECT * FROM a WHERE a.note = ''").hasLiteralInWhere());
     }
 
     // --- parse-fail contract: never throws, parseOk=false ---

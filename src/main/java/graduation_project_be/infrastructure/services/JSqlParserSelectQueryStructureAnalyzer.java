@@ -162,7 +162,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
         } else if (expr instanceof BinaryExpression bin) {
             walk(bin.getLeftExpression(), depth, acc, trackLiteral);
             walk(bin.getRightExpression(), depth, acc, trackLiteral);
-        } else if (trackLiteral && isLiteral(expr)) {
+        } else if (trackLiteral && isLiteral(expr) && !isAllowlistedLiteral(expr)) {
             acc.hasLiteral = true;
         }
     }
@@ -197,5 +197,26 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
     private static boolean isLiteral(Expression expr) {
         return expr instanceof StringValue || expr instanceof LongValue || expr instanceof DoubleValue
                 || expr instanceof DateValue || expr instanceof TimeValue || expr instanceof TimestampValue;
+    }
+
+    /**
+     * Constants that are not evidence of a hardcoded answer and so are excluded from the
+     * "literal in WHERE" fact: the 0/1 flags, empty strings, Unicode {@code N'...'} strings, and
+     * date/time literals. Only "magic" literals (e.g. {@code = 12345}, {@code = 'AnswerText'})
+     * remain flaggable, keeping the opt-in FORBID_LITERAL_IN_WHERE check from firing on fair queries.
+     */
+    private static boolean isAllowlistedLiteral(Expression expr) {
+        if (expr instanceof LongValue lv) {
+            long value = lv.getValue();
+            return value == 0L || value == 1L;
+        }
+        if (expr instanceof StringValue sv) {
+            String prefix = sv.getPrefix();
+            if (prefix != null && !prefix.isBlank()) {
+                return true;
+            }
+            return sv.getValue() == null || sv.getValue().isEmpty();
+        }
+        return expr instanceof DateValue || expr instanceof TimeValue || expr instanceof TimestampValue;
     }
 }

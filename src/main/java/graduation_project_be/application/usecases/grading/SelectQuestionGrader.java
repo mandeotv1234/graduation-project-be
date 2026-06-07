@@ -97,6 +97,15 @@ public class SelectQuestionGrader {
             boolean allPassed = true;
             StringBuilder issues = new StringBuilder();
 
+            // White-box structural rules depend only on the query text -> evaluate once up front.
+            QueryStructureResult queryStructure = calculateQueryStructureDeduction(
+                    selectRules, studentQuery, totalPoints, issues);
+            if (queryStructure.failAllTriggered()) {
+                return GradeDecision.fail(queryStructure.message() != null && !queryStructure.message().isBlank()
+                        ? queryStructure.message()
+                        : "Vi phạm quy tắc cấu trúc câu lệnh (FAIL_ALL): câu này bị 0 điểm toàn bộ.");
+            }
+
             for (int i = 0; i < testCases.size(); i++) {
                 JsonNode tc = testCases.get(i);
                 String caseId = tc.path("case_id").asText("TC_" + (i + 1));
@@ -246,6 +255,10 @@ public class SelectQuestionGrader {
             if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
                 allPassed = false;
                 totalDeduction = totalDeduction.add(structuralDeduction);
+            }
+            if (queryStructure.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                allPassed = false;
+                totalDeduction = totalDeduction.add(queryStructure.deduction());
             }
 
             BigDecimal finalEarned = totalPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
@@ -876,6 +889,18 @@ public class SelectQuestionGrader {
             if (decision.errorMessage() != null && !decision.errorMessage().isBlank()) {
                 appendSelectIssue(errorBuilder, decision.errorMessage());
             }
+        }
+
+        // White-box structural rules are dataset-independent: evaluate once and fold into the
+        // accumulated score; FAIL_ALL routes through the existing failAllTriggered flag below.
+        QueryStructureResult queryStructure = calculateQueryStructureDeduction(
+                selectRules, studentQuery, totalPoints, errorBuilder);
+        if (queryStructure.deduction().compareTo(BigDecimal.ZERO) > 0) {
+            allPassed = false;
+            earnedTotal = earnedTotal.subtract(queryStructure.deduction());
+        }
+        if (queryStructure.failAllTriggered()) {
+            failAllTriggered = true;
         }
 
         if (failAllTriggered) {

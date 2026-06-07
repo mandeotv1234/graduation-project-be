@@ -9,6 +9,7 @@ import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectQueryRuleSuggester;
+import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -70,6 +71,8 @@ public class RubricTestingUsecase {
     private final InsertDataQuestionGrader insertDataGrader;
     private final ObjectMapper objectMapper;
     private final SelectQueryRuleSuggester selectQueryRuleSuggester;
+    // Stateless helper; constructed directly so it stays out of the generated constructor.
+    private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
         String sc = request.schemaContext();
@@ -831,6 +834,8 @@ public class RubricTestingUsecase {
                                 "type", "info",
                                 "message", "[" + caseId + "] Dùng kết quả đáp án giáo viên làm expected cho test case",
                                 "points", 0));
+
+                        checkTrapDiscrimination(caseSchema, caseId, caseName, correctQuery, teacherRows, details);
                     } else {
                         JsonNode expectedResult = tc.path("expected_result");
                         JsonNode columnsConfig = expectedResult.path("columns_config");
@@ -1049,6 +1054,47 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    /**
+     * Runs known-wrong mutants of the model answer on the trap data already loaded in
+     * {@code caseSchema} and warns the teacher about any mutant the trap cannot distinguish from the
+     * correct answer. Read-only against the schema; touches the response details only.
+     */
+    private void checkTrapDiscrimination(
+            String caseSchema,
+            String caseId,
+            String caseName,
+            String correctQuery,
+            List<Map<String, Object>> teacherRows,
+            List<Map<String, Object>> details) {
+        List<SelectTrapDiscriminationChecker.Mutation> mutations = trapChecker.mutate(correctQuery);
+        if (mutations.isEmpty()) {
+            return;
+        }
+
+        List<String> nonDiscriminating = new ArrayList<>();
+        for (SelectTrapDiscriminationChecker.Mutation mutation : mutations) {
+            List<Map<String, Object>> mutantRows;
+            try {
+                mutantRows = examSchemaService.executeSql(caseSchema, mutation.mutatedSql()).getResultSet();
+            } catch (Exception ex) {
+                // A mutant that fails to run is already distinguishable from the answer -> trap is fine.
+                continue;
+            }
+            if (trapChecker.sameResult(teacherRows, mutantRows)) {
+                nonDiscriminating.add(mutation.label());
+            }
+        }
+
+        if (!nonDiscriminating.isEmpty()) {
+            details.add(Map.of(
+                    "type", "warning",
+                    "message", "[" + caseId + "] Bẫy \"" + caseName
+                            + "\" CHƯA phân biệt được lỗi: " + String.join("; ", nonDiscriminating)
+                            + ". Hãy bổ sung dữ liệu bẫy để câu sai cho kết quả khác đáp án mẫu.",
+                    "points", 0));
         }
     }
 

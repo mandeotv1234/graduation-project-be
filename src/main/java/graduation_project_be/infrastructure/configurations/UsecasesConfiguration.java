@@ -5,6 +5,7 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.grading.*;
+import graduation_project_be.infrastructure.services.JSqlParserSelectQueryStructureAnalyzer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
 
@@ -343,6 +344,11 @@ public class UsecasesConfiguration {
             ObjectMapper objectMapper,
             TestCaseRepository testCaseRepository) {
         return new GradingSupport(examSchemaService, objectMapper, testCaseRepository);
+    }
+
+    @Bean
+    SelectQueryStructureAnalyzer selectQueryStructureAnalyzer() {
+        return new JSqlParserSelectQueryStructureAnalyzer();
     }
 
     @Bean

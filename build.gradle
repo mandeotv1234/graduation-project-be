@@ -50,6 +50,7 @@ dependencies {
     implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
     implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     implementation 'org.jsoup:jsoup:1.17.2'
+    implementation 'com.github.jsqlparser:jsqlparser:5.3'
 }
 
 tasks.named('test') {

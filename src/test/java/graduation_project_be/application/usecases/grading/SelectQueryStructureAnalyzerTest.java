@@ -175,6 +175,8 @@ class SelectQueryStructureAnalyzerTest {
         assertFalse(analyze("SELECT * FROM a WHERE a.active = 1").hasLiteralInWhere());
         assertFalse(analyze("SELECT * FROM a WHERE a.deleted = 0").hasLiteralInWhere());
         assertFalse(analyze("SELECT * FROM a WHERE a.note = ''").hasLiteralInWhere());
+        assertFalse(analyze("SELECT * FROM a WHERE a.parent = NULL").hasLiteralInWhere());
+        assertFalse(analyze("SELECT * FROM a WHERE a.parent IS NULL").hasLiteralInWhere());
     }
 
     // --- parse-fail contract: never throws, parseOk=false ---

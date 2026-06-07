@@ -105,7 +105,7 @@ class SelectQuestionGraderQueryRuleTest {
         assertFalse(result.failAllTriggered());
     }
 
-    // --- Phase 2 parameterized checks ---
+    // --- Parameterized checks: nesting depth, aggregate allow-list, literal-in-WHERE ---
 
     private static QueryStructureFacts factsNesting(int depth) {
         return new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
@@ -157,6 +157,17 @@ class SelectQuestionGraderQueryRuleTest {
                 + "\"action\":\"FAIL_ALL\",\"penalty_value\":0}]");
         var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
         assertFalse(result.failAllTriggered(), "FORBID_LITERAL_IN_WHERE must never zero the whole question");
+    }
+
+    @Test
+    void forbidLiteralDeductsWhenConfiguredWithPenalty() {
+        var grader = grader(new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
+                Set.of(), 0, true));
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"FORBID_LITERAL_IN_WHERE\","
+                + "\"action\":\"DEDUCT_POINTS\",\"penalty_value\":1.5}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, new BigDecimal("1.50").compareTo(result.deduction()));
+        assertFalse(result.failAllTriggered());
     }
 
     @Test

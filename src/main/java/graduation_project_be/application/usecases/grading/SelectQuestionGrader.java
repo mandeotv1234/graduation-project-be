@@ -2009,8 +2009,13 @@ public class SelectQuestionGrader {
             "REQUIRE_JOIN", "FORBID_JOIN",
             "FORBID_SUBQUERY_IN_SELECT", "FORBID_SUBQUERY_IN_FROM", "FORBID_SUBQUERY_IN_WHERE",
             "REQUIRE_CTE", "FORBID_CTE",
-            "REQUIRE_GROUP_BY", "REQUIRE_AGGREGATE", "REQUIRE_DISTINCT", "FORBID_ORDER_BY"
+            "REQUIRE_GROUP_BY", "REQUIRE_AGGREGATE", "REQUIRE_DISTINCT", "FORBID_ORDER_BY",
+            "MAX_NESTING_DEPTH", "FORBID_LITERAL_IN_WHERE"
     };
+
+    // FORBID_LITERAL_IN_WHERE is a fuzzy fairness check: it may only deduct, never zero the whole
+    // question, regardless of how the rule is configured.
+    private static final String FORBID_LITERAL = "FORBID_LITERAL_IN_WHERE";
 
     /**
      * Applies white-box structural rules (target = QUERY) to the parsed student query.
@@ -2039,7 +2044,8 @@ public class SelectQuestionGrader {
         BigDecimal deduction = BigDecimal.ZERO;
         boolean failAll = false;
         for (String condition : QUERY_CONDITIONS) {
-            int violationCount = isQueryRuleViolated(condition, facts) ? 1 : 0;
+            JsonNode ruleNode = support.findInsertRule(selectRules, "QUERY", condition);
+            int violationCount = isQueryRuleViolated(condition, facts, ruleNode) ? 1 : 0;
             SelectRuleApplication application = applySelectRule(
                     selectRules, "QUERY", condition, violationCount, maxPoints, 0d,
                     queryViolationSummary(condition));
@@ -2048,7 +2054,7 @@ public class SelectQuestionGrader {
             }
             addSelectRuleTrace(null, "Cấu trúc câu lệnh SELECT", application, maxPoints,
                     "SELECT query-structure rubric");
-            if (application.failAllTriggered()) {
+            if (application.failAllTriggered() && !FORBID_LITERAL.equals(condition)) {
                 failAll = true;
             }
             if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
@@ -2062,6 +2068,53 @@ public class SelectQuestionGrader {
             deduction = maxPoints;
         }
         return new QueryStructureResult(deduction.setScale(2, RoundingMode.HALF_UP), failAll, null);
+    }
+
+    /**
+     * Parameterized white-box checks read extra keys off the rule node ({@code threshold},
+     * {@code argument}); {@code resolveSelectRuleDecision} ignores those keys, so reading them here
+     * keeps the rule engine untouched. Non-parameterized conditions fall through to the base set.
+     */
+    private boolean isQueryRuleViolated(String condition, QueryStructureFacts f, JsonNode ruleNode) {
+        switch (condition) {
+            case "MAX_NESTING_DEPTH": {
+                int threshold = ruleNode == null
+                        ? -1
+                        : (int) support.readDoubleSetting(ruleNode.path("threshold"), -1d);
+                return threshold >= 0 && f.maxNestingDepth() > threshold;
+            }
+            case "REQUIRE_AGGREGATE": {
+                Set<String> required = parseAggregateArgument(ruleNode);
+                if (required.isEmpty()) {
+                    return f.aggregateFns().isEmpty();
+                }
+                // ANY listed aggregate present satisfies the rule.
+                return required.stream().noneMatch(f.aggregateFns()::contains);
+            }
+            case FORBID_LITERAL:
+                return f.hasLiteralInWhere();
+            default:
+                return isQueryRuleViolated(condition, f);
+        }
+    }
+
+    /** Parses the optional {@code argument} CSV (e.g. "COUNT,SUM") into an upper-cased set. */
+    private Set<String> parseAggregateArgument(JsonNode ruleNode) {
+        if (ruleNode == null) {
+            return Set.of();
+        }
+        String argument = ruleNode.path("argument").asText("");
+        if (argument.isBlank()) {
+            return Set.of();
+        }
+        Set<String> result = new HashSet<>();
+        for (String token : argument.split(",")) {
+            String trimmed = token.trim().toUpperCase(Locale.ROOT);
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
     }
 
     private boolean isQueryRuleViolated(String condition, QueryStructureFacts f) {
@@ -2095,6 +2148,8 @@ public class SelectQuestionGrader {
             case "REQUIRE_AGGREGATE" -> "câu truy vấn không dùng hàm tổng hợp";
             case "REQUIRE_DISTINCT" -> "câu truy vấn không dùng DISTINCT";
             case "FORBID_ORDER_BY" -> "câu truy vấn dùng ORDER BY (bị cấm)";
+            case "MAX_NESTING_DEPTH" -> "câu truy vấn lồng truy vấn con quá sâu";
+            case FORBID_LITERAL -> "có hằng số trong WHERE (nghi vấn ghi cứng đáp án)";
             default -> condition;
         };
     }

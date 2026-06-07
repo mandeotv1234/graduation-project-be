@@ -104,4 +104,68 @@ class SelectQuestionGraderQueryRuleTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(result.deduction()));
         assertFalse(result.failAllTriggered());
     }
+
+    // --- Phase 2 parameterized checks ---
+
+    private static QueryStructureFacts factsNesting(int depth) {
+        return new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
+                Set.of(), depth, false);
+    }
+
+    @Test
+    void maxNestingDepthDeductsWhenDeeperThanThreshold() {
+        var grader = grader(factsNesting(3));
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"MAX_NESTING_DEPTH\","
+                + "\"action\":\"DEDUCT_POINTS\",\"penalty_value\":2,\"threshold\":2}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, new BigDecimal("2.00").compareTo(result.deduction()));
+    }
+
+    @Test
+    void maxNestingDepthNoDeductionAtOrBelowThreshold() {
+        var grader = grader(factsNesting(2));
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"MAX_NESTING_DEPTH\","
+                + "\"action\":\"DEDUCT_POINTS\",\"penalty_value\":2,\"threshold\":2}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.deduction()));
+    }
+
+    @Test
+    void requireAggregateArgumentSatisfiedByAnyListed() {
+        var grader = grader(facts(true, 0, 1, false, false, false, false, true, false, false, Set.of("SUM")));
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"REQUIRE_AGGREGATE\","
+                + "\"action\":\"DEDUCT_POINTS\",\"penalty_value\":2,\"argument\":\"SUM,AVG\"}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.deduction()));
+    }
+
+    @Test
+    void requireAggregateArgumentViolatedWhenNoneListedPresent() {
+        var grader = grader(facts(true, 0, 1, false, false, false, false, true, false, false, Set.of("COUNT")));
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"REQUIRE_AGGREGATE\","
+                + "\"action\":\"DEDUCT_POINTS\",\"penalty_value\":2,\"argument\":\"SUM,AVG\"}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, new BigDecimal("2.00").compareTo(result.deduction()));
+    }
+
+    @Test
+    void forbidLiteralDeductsButNeverFails() {
+        var grader = grader(new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
+                Set.of(), 0, true));
+        // Configured as FAIL_ALL, but the literal check must only ever deduct.
+        var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"FORBID_LITERAL_IN_WHERE\","
+                + "\"action\":\"FAIL_ALL\",\"penalty_value\":0}]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertFalse(result.failAllTriggered(), "FORBID_LITERAL_IN_WHERE must never zero the whole question");
+    }
+
+    @Test
+    void forbidLiteralOffByDefaultWhenNoRule() {
+        var grader = grader(new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
+                Set.of(), 0, true));
+        var rules = rules("[]");
+        var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.deduction()));
+        assertFalse(result.failAllTriggered());
+    }
 }

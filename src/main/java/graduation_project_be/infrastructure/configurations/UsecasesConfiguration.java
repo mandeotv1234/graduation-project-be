@@ -371,8 +371,10 @@ public class UsecasesConfiguration {
     SelectQuestionGrader selectQuestionGrader(
             ExamSchemaService examSchemaService,
             ObjectMapper objectMapper,
-            GradingSupport gradingSupport) {
-        return new SelectQuestionGrader(examSchemaService, objectMapper, gradingSupport);
+            GradingSupport gradingSupport,
+            SelectQueryStructureAnalyzer selectQueryStructureAnalyzer) {
+        return new SelectQuestionGrader(examSchemaService, objectMapper, gradingSupport,
+                selectQueryStructureAnalyzer);
     }
 
     @Bean

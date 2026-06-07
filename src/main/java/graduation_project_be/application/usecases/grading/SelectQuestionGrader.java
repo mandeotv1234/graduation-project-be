@@ -13,6 +13,7 @@ import graduation_project_be.domain.models.TableMetadata.ColumnMetadata;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.ExamSchemaService;
+import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.domain.models.Exam;
@@ -51,6 +52,7 @@ public class SelectQuestionGrader {
     private final ExamSchemaService examSchemaService;
     private final ObjectMapper objectMapper;
     private final GradingSupport support;
+    private final SelectQueryStructureAnalyzer queryStructureAnalyzer;
 
     public boolean hasSelectRubricTestCases(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
@@ -1972,6 +1974,109 @@ public class SelectQuestionGrader {
             builder.append(' ');
         }
         builder.append(message.trim());
+    }
+
+    /**
+     * White-box query-structure conditions evaluated against the parsed student SQL.
+     * Each maps to a boolean fact; teachers enable them as {@code target = "QUERY"} rules.
+     */
+    private static final String[] QUERY_CONDITIONS = {
+            "REQUIRE_JOIN", "FORBID_JOIN",
+            "FORBID_SUBQUERY_IN_SELECT", "FORBID_SUBQUERY_IN_FROM", "FORBID_SUBQUERY_IN_WHERE",
+            "REQUIRE_CTE", "FORBID_CTE",
+            "REQUIRE_GROUP_BY", "REQUIRE_AGGREGATE", "REQUIRE_DISTINCT", "FORBID_ORDER_BY"
+    };
+
+    /**
+     * Applies white-box structural rules (target = QUERY) to the parsed student query.
+     * Reuses the existing {@code applySelectRule} engine; deduction is dataset-independent so the
+     * student SQL is parsed once per grading call. On parse failure the policy is fail-open by
+     * polarity: FORBID_* rules are skipped (benefit of the doubt) while REQUIRE_* rules cannot be
+     * verified and are flagged for manual review instead of silently passing.
+     */
+    private QueryStructureResult calculateQueryStructureDeduction(
+            JsonNode selectRules, String studentQuery, BigDecimal maxPoints, StringBuilder issues) {
+        QueryStructureFacts facts = queryStructureAnalyzer.analyze(studentQuery);
+
+        if (!facts.parseOk()) {
+            for (String condition : QUERY_CONDITIONS) {
+                if (condition.startsWith("REQUIRE")
+                        && support.findInsertRule(selectRules, "QUERY", condition) != null) {
+                    appendSelectIssue(issues,
+                            "[Cấu trúc câu lệnh] Không phân tích được câu truy vấn (lỗi cú pháp) nên không xác minh được rule "
+                                    + condition + " — cần giáo viên xem lại.");
+                }
+            }
+            return QueryStructureResult.none();
+        }
+
+        BigDecimal deduction = BigDecimal.ZERO;
+        boolean failAll = false;
+        for (String condition : QUERY_CONDITIONS) {
+            int violationCount = isQueryRuleViolated(condition, facts) ? 1 : 0;
+            SelectRuleApplication application = applySelectRule(
+                    selectRules, "QUERY", condition, violationCount, maxPoints, 0d,
+                    queryViolationSummary(condition));
+            if (!application.violationPresent()) {
+                continue;
+            }
+            addSelectRuleTrace(null, "Cấu trúc câu lệnh SELECT", application, maxPoints,
+                    "SELECT query-structure rubric");
+            if (application.failAllTriggered()) {
+                failAll = true;
+            }
+            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
+                deduction = deduction.add(application.deduction());
+            }
+            if (application.message() != null && !application.message().isBlank()) {
+                appendSelectIssue(issues, "[Cấu trúc câu lệnh] " + application.message());
+            }
+        }
+        if (deduction.compareTo(maxPoints) > 0) {
+            deduction = maxPoints;
+        }
+        return new QueryStructureResult(deduction.setScale(2, RoundingMode.HALF_UP), failAll, null);
+    }
+
+    private boolean isQueryRuleViolated(String condition, QueryStructureFacts f) {
+        return switch (condition) {
+            // REQUIRE_JOIN is satisfied by an explicit JOIN or a comma-join (>1 FROM table).
+            case "REQUIRE_JOIN" -> !(f.joinCount() > 0 || f.fromTableCount() > 1);
+            case "FORBID_JOIN" -> f.joinCount() > 0 || f.fromTableCount() > 1;
+            case "FORBID_SUBQUERY_IN_SELECT" -> f.hasSubqueryInSelect();
+            case "FORBID_SUBQUERY_IN_FROM" -> f.hasSubqueryInFrom();
+            case "FORBID_SUBQUERY_IN_WHERE" -> f.hasSubqueryInWhere();
+            case "REQUIRE_CTE" -> !f.hasCte();
+            case "FORBID_CTE" -> f.hasCte();
+            case "REQUIRE_GROUP_BY" -> !f.hasGroupBy();
+            case "REQUIRE_AGGREGATE" -> f.aggregateFns().isEmpty();
+            case "REQUIRE_DISTINCT" -> !f.hasDistinct();
+            case "FORBID_ORDER_BY" -> f.hasOrderBy();
+            default -> false;
+        };
+    }
+
+    private String queryViolationSummary(String condition) {
+        return switch (condition) {
+            case "REQUIRE_JOIN" -> "câu truy vấn không dùng JOIN";
+            case "FORBID_JOIN" -> "câu truy vấn dùng JOIN (bị cấm)";
+            case "FORBID_SUBQUERY_IN_SELECT" -> "có truy vấn con trong mệnh đề SELECT (bị cấm)";
+            case "FORBID_SUBQUERY_IN_FROM" -> "có truy vấn con trong mệnh đề FROM (bị cấm)";
+            case "FORBID_SUBQUERY_IN_WHERE" -> "có truy vấn con trong mệnh đề WHERE (bị cấm)";
+            case "REQUIRE_CTE" -> "câu truy vấn không dùng CTE (WITH)";
+            case "FORBID_CTE" -> "câu truy vấn dùng CTE (bị cấm)";
+            case "REQUIRE_GROUP_BY" -> "câu truy vấn không có GROUP BY";
+            case "REQUIRE_AGGREGATE" -> "câu truy vấn không dùng hàm tổng hợp";
+            case "REQUIRE_DISTINCT" -> "câu truy vấn không dùng DISTINCT";
+            case "FORBID_ORDER_BY" -> "câu truy vấn dùng ORDER BY (bị cấm)";
+            default -> condition;
+        };
+    }
+
+    private record QueryStructureResult(BigDecimal deduction, boolean failAllTriggered, String message) {
+        static QueryStructureResult none() {
+            return new QueryStructureResult(BigDecimal.ZERO, false, null);
+        }
     }
 
     private record SelectExpectedRows(List<String> columns, List<Map<String, Object>> rows) {

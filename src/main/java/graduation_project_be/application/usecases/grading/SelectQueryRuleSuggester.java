@@ -138,7 +138,7 @@ public class SelectQueryRuleSuggester {
                 continue;
             }
             String condition = existing.path("condition").asText("").trim().toUpperCase(Locale.ROOT);
-            if (!condition.isBlank() && modelAnswerViolates(condition, f)) {
+            if (!condition.isBlank() && modelAnswerViolates(condition, f, existing)) {
                 warnings.add("Quy tắc cấu trúc \"" + condition
                         + "\" mâu thuẫn với đáp án mẫu (đáp án không thỏa quy tắc này) — "
                         + "sẽ chấm oan lời giải đúng; hãy xem lại.");
@@ -151,7 +151,7 @@ public class SelectQueryRuleSuggester {
      * answer would itself fail. Kept independent of the grader's private helper by design — the
      * grading engine must not be modified.
      */
-    private boolean modelAnswerViolates(String condition, QueryStructureFacts f) {
+    private boolean modelAnswerViolates(String condition, QueryStructureFacts f, JsonNode ruleNode) {
         return switch (condition) {
             case "REQUIRE_JOIN" -> !(f.joinCount() > 0 || f.fromTableCount() > 1);
             case "FORBID_JOIN" -> f.joinCount() > 0 || f.fromTableCount() > 1;
@@ -164,6 +164,11 @@ public class SelectQueryRuleSuggester {
             case "REQUIRE_AGGREGATE" -> f.aggregateFns().isEmpty();
             case "REQUIRE_DISTINCT" -> !f.hasDistinct();
             case "FORBID_ORDER_BY" -> f.hasOrderBy();
+            case "FORBID_LITERAL_IN_WHERE" -> f.hasLiteralInWhere();
+            case "MAX_NESTING_DEPTH" -> {
+                int threshold = ruleNode == null ? -1 : ruleNode.path("threshold").asInt(-1);
+                yield threshold >= 0 && f.maxNestingDepth() > threshold;
+            }
             default -> false;
         };
     }

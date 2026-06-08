@@ -2045,6 +2045,10 @@ public class SelectQuestionGrader {
         boolean failAll = false;
         for (String condition : QUERY_CONDITIONS) {
             JsonNode ruleNode = support.findInsertRule(selectRules, "QUERY", condition);
+            if (ruleNode == null) {
+                // Teacher did not enable this white-box rule; keep the path fully inert (no trace).
+                continue;
+            }
             int violationCount = isQueryRuleViolated(condition, facts, ruleNode) ? 1 : 0;
             SelectRuleApplication application = applySelectRule(
                     selectRules, "QUERY", condition, violationCount, maxPoints, 0d,
@@ -2052,9 +2056,21 @@ public class SelectQuestionGrader {
             if (!application.violationPresent()) {
                 continue;
             }
+            // FORBID_LITERAL_IN_WHERE may never zero the question: a FAIL_ALL configuration is
+            // downgraded to a points deduction of its penalty_value (0 if unset), never maxPoints.
+            if (FORBID_LITERAL.equals(condition) && application.failAllTriggered()) {
+                BigDecimal literalDeduction = literalPenaltyValue(ruleNode);
+                application = SelectRuleApplication.matchedViolation(
+                        application.target(), application.condition(), "DEDUCT_POINTS",
+                        literalDeduction, false, literalDeduction,
+                        buildSelectRuleMessage(
+                                selectRuleLabel(application.target(), application.condition()),
+                                application.violationSummary(), literalDeduction, "DEDUCT_POINTS"),
+                        application.violationSummary());
+            }
             addSelectRuleTrace(null, "Cấu trúc câu lệnh SELECT", application, maxPoints,
                     "SELECT query-structure rubric");
-            if (application.failAllTriggered() && !FORBID_LITERAL.equals(condition)) {
+            if (application.failAllTriggered()) {
                 failAll = true;
             }
             if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
@@ -2115,6 +2131,12 @@ public class SelectQuestionGrader {
             }
         }
         return result;
+    }
+
+    /** The configured {@code penalty_value} (>=0) for a FORBID_LITERAL rule mis-set to FAIL_ALL. */
+    private BigDecimal literalPenaltyValue(JsonNode ruleNode) {
+        double value = ruleNode == null ? 0d : support.readDoubleSetting(ruleNode.path("penalty_value"), 0d);
+        return BigDecimal.valueOf(Math.max(0d, value));
     }
 
     private boolean isQueryRuleViolated(String condition, QueryStructureFacts f) {

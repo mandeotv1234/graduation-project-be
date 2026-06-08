@@ -152,11 +152,13 @@ class SelectQuestionGraderQueryRuleTest {
     void forbidLiteralDeductsButNeverFails() {
         var grader = grader(new QueryStructureFacts(true, 0, 1, false, false, false, false, false, false, false,
                 Set.of(), 0, true));
-        // Configured as FAIL_ALL, but the literal check must only ever deduct.
+        // Configured (incorrectly) as FAIL_ALL: must downgrade to its penalty_value deduction, never zero.
         var rules = rules("[{\"target\":\"QUERY\",\"condition\":\"FORBID_LITERAL_IN_WHERE\","
-                + "\"action\":\"FAIL_ALL\",\"penalty_value\":0}]");
+                + "\"action\":\"FAIL_ALL\",\"penalty_value\":3}]");
         var result = grader.calculateQueryStructureDeduction(rules, "q", new BigDecimal("10"), new StringBuilder());
         assertFalse(result.failAllTriggered(), "FORBID_LITERAL_IN_WHERE must never zero the whole question");
+        assertEquals(0, new BigDecimal("3.00").compareTo(result.deduction()),
+                "FAIL_ALL on the literal rule downgrades to its penalty_value deduction");
     }
 
     @Test

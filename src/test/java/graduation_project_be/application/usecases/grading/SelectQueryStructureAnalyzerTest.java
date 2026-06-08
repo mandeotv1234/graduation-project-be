@@ -146,6 +146,43 @@ class SelectQueryStructureAnalyzerTest {
         assertFalse(f.hasLiteralInWhere());
     }
 
+    // --- expression coverage: BETWEEN / CASE / signed literal / JOIN ON ---
+
+    @Test
+    void betweenBoundLiteralInWhereDetected() {
+        QueryStructureFacts f = analyze("SELECT * FROM a WHERE a.id BETWEEN 12345 AND 67890");
+        assertTrue(f.hasLiteralInWhere());
+    }
+
+    @Test
+    void signedLiteralInWhereDetected() {
+        QueryStructureFacts f = analyze("SELECT * FROM a WHERE a.id = -12345");
+        assertTrue(f.hasLiteralInWhere());
+    }
+
+    @Test
+    void subqueryInsideCaseExpressionDetected() {
+        QueryStructureFacts f = analyze(
+                "SELECT CASE WHEN x IN (SELECT id FROM b) THEN 1 ELSE 0 END AS c FROM a");
+        assertTrue(f.hasSubqueryInSelect());
+        assertTrue(f.maxNestingDepth() >= 1);
+    }
+
+    @Test
+    void aggregateInsideCaseExpressionCollected() {
+        QueryStructureFacts f = analyze(
+                "SELECT CASE WHEN COUNT(x) > 0 THEN 1 ELSE 0 END AS c FROM a GROUP BY y");
+        assertTrue(f.aggregateFns().contains("COUNT"));
+    }
+
+    @Test
+    void joinOnSubqueryCountsNestingAndAggregate() {
+        QueryStructureFacts f = analyze(
+                "SELECT * FROM a JOIN b ON b.v = (SELECT MAX(v) FROM c)");
+        assertTrue(f.aggregateFns().contains("MAX"));
+        assertTrue(f.maxNestingDepth() >= 1);
+    }
+
     // --- T-SQL dialect edges ---
 
     @Test

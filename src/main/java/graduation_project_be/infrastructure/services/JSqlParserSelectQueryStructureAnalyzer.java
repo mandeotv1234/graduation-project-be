@@ -3,6 +3,7 @@ package graduation_project_be.infrastructure.services;
 import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.usecases.grading.QueryStructureFacts;
 import net.sf.jsqlparser.expression.BinaryExpression;
+import net.sf.jsqlparser.expression.CaseExpression;
 import net.sf.jsqlparser.expression.DateValue;
 import net.sf.jsqlparser.expression.DoubleValue;
 import net.sf.jsqlparser.expression.Expression;
@@ -10,9 +11,12 @@ import net.sf.jsqlparser.expression.Function;
 import net.sf.jsqlparser.expression.LongValue;
 import net.sf.jsqlparser.expression.NotExpression;
 import net.sf.jsqlparser.expression.Parenthesis;
+import net.sf.jsqlparser.expression.SignedExpression;
 import net.sf.jsqlparser.expression.StringValue;
 import net.sf.jsqlparser.expression.TimeValue;
 import net.sf.jsqlparser.expression.TimestampValue;
+import net.sf.jsqlparser.expression.WhenClause;
+import net.sf.jsqlparser.expression.operators.relational.Between;
 import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
@@ -62,6 +66,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             int joinCount = 0;
             int fromTableCount = 1;
             boolean subqueryInFrom = isSubselect(ps.getFromItem());
+            Acc joinAcc = new Acc();
             List<Join> joins = ps.getJoins();
             if (joins != null) {
                 for (Join join : joins) {
@@ -71,6 +76,12 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     }
                     if (isSubselect(join.getRightItem())) {
                         subqueryInFrom = true;
+                    }
+                    // ON conditions can carry subqueries/aggregates that drive REQUIRE_* and nesting depth.
+                    if (join.getOnExpressions() != null) {
+                        for (Expression on : join.getOnExpressions()) {
+                            walk(on, 0, joinAcc, false);
+                        }
                     }
                 }
             }
@@ -89,8 +100,10 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             Set<String> aggregates = new TreeSet<>();
             aggregates.addAll(selectAcc.aggregates);
             aggregates.addAll(havingAcc.aggregates);
+            aggregates.addAll(joinAcc.aggregates);
 
-            int maxDepth = Math.max(Math.max(selectAcc.maxDepth, whereAcc.maxDepth),
+            int maxDepth = Math.max(
+                    Math.max(Math.max(selectAcc.maxDepth, whereAcc.maxDepth), joinAcc.maxDepth),
                     Math.max(havingAcc.maxDepth, subqueryInFrom ? 1 : 0));
 
             return new QueryStructureFacts(
@@ -159,6 +172,21 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             walk(in.getRightExpression(), depth, acc, trackLiteral);
         } else if (expr instanceof ExistsExpression exists) {
             walk(exists.getRightExpression(), depth, acc, trackLiteral);
+        } else if (expr instanceof Between between) {
+            walk(between.getLeftExpression(), depth, acc, trackLiteral);
+            walk(between.getBetweenExpressionStart(), depth, acc, trackLiteral);
+            walk(between.getBetweenExpressionEnd(), depth, acc, trackLiteral);
+        } else if (expr instanceof SignedExpression signed) {
+            walk(signed.getExpression(), depth, acc, trackLiteral);
+        } else if (expr instanceof CaseExpression caseExpr) {
+            walk(caseExpr.getSwitchExpression(), depth, acc, trackLiteral);
+            if (caseExpr.getWhenClauses() != null) {
+                for (WhenClause when : caseExpr.getWhenClauses()) {
+                    walk(when.getWhenExpression(), depth, acc, trackLiteral);
+                    walk(when.getThenExpression(), depth, acc, trackLiteral);
+                }
+            }
+            walk(caseExpr.getElseExpression(), depth, acc, trackLiteral);
         } else if (expr instanceof BinaryExpression bin) {
             walk(bin.getLeftExpression(), depth, acc, trackLiteral);
             walk(bin.getRightExpression(), depth, acc, trackLiteral);
@@ -189,6 +217,11 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                 if (isSubselect(join.getRightItem())) {
                     acc.maxDepth = Math.max(acc.maxDepth, depth + 1);
                     scanInner((Select) join.getRightItem(), depth + 1, acc);
+                }
+                if (join.getOnExpressions() != null) {
+                    for (Expression on : join.getOnExpressions()) {
+                        walk(on, depth, acc, false);
+                    }
                 }
             }
         }

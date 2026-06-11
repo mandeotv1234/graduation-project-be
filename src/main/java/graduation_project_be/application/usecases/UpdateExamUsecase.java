@@ -40,12 +40,11 @@ public class UpdateExamUsecase {
         if (request.title() != null) {
             exam.setTitle(request.title());
         }
+        // Spec và PDF độc lập: gắn/gỡ đặc tả không còn xoá PDF (và ngược lại).
         if (request.specificationId() != null) {
             Long sid = request.specificationId();
-            if (sid != null && sid > 0L) {
+            if (sid > 0L) {
                 exam.setSpecificationId(sid);
-                exam.setPdfFilePath(null);
-                exam.setOriginalPdfFileName(null);
             } else {
                 exam.setSpecificationId(null);
             }
@@ -76,9 +75,13 @@ public class UpdateExamUsecase {
         }
 
         if (request.pdfFilePath() != null) {
+            // Upload PDF mới (thay thế PDF cũ nếu có); không ảnh hưởng đặc tả spec.
             exam.setPdfFilePath(request.pdfFilePath());
             exam.setOriginalPdfFileName(request.originalPdfFileName());
-            exam.setSpecificationId(null);
+        } else if (Boolean.TRUE.equals(request.removePdf())) {
+            // Gỡ PDF hiện tại theo yêu cầu, giữ nguyên đặc tả spec.
+            exam.setPdfFilePath(null);
+            exam.setOriginalPdfFileName(null);
         }
 
         ExamSettingsValidator.validateDatabaseInitialization(

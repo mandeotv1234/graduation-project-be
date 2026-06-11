@@ -43,10 +43,9 @@ public class CreateExamUsecase {
             specificationId = null;
         }
 
+        // Đặc tả (spec) và PDF có thể tồn tại đồng thời: spec cấp schema/IntelliSense
+        // và dùng để chấm, PDF là tài liệu đề bài hiển thị cho sinh viên.
         boolean hasPdf = request.pdfFilePath() != null && !request.pdfFilePath().isBlank();
-        if (hasPdf) {
-            specificationId = null;
-        }
 
         ExamSettingsValidator.validateDatabaseInitialization(
                 examSpecificationRepository,
@@ -54,7 +53,7 @@ public class CreateExamUsecase {
                 request.settings());
 
         Exam exam = Exam.builder()
-                .specificationId(hasPdf ? null : specificationId)
+                .specificationId(specificationId)
                 .classId(request.classId())
                 .creatorId(currentUserId)
                 .title(request.title())

@@ -48,7 +48,7 @@ public class TeacherNotificationEntity {
     @Column(name = "is_read")
     private boolean isRead;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
+    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
     public TeacherNotification toModel() {
@@ -79,6 +79,7 @@ public class TeacherNotificationEntity {
                 .violationCount(model.getViolationCount())
                 .autoSubmitted(model.isAutoSubmitted())
                 .isRead(model.isRead())
+                .createdAt(model.getCreatedAt())
                 .build();
     }
 }

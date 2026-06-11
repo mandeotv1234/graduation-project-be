@@ -16,5 +16,6 @@ public record UpdateExamRequest(
         Integer lateThreshold,
         ExamSettings settings,
         String pdfFilePath,
-        String originalPdfFileName) {
+        String originalPdfFileName,
+        Boolean removePdf) {
 }

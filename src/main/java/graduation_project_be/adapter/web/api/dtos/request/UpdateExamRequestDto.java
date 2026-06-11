@@ -19,7 +19,9 @@ public record UpdateExamRequestDto(
         String description,
         @Positive(message = "Max attempts must be positive") Integer maxAttempts,
         Integer lateThreshold,
-        @Valid ExamSettingsDto settings) {
+        @Valid ExamSettingsDto settings,
+        /** true = gỡ file PDF hiện tại (đặc tả spec vẫn giữ nguyên nếu có). */
+        Boolean removePdf) {
 
     public UpdateExamRequest toRequest(Long examId) {
         return new UpdateExamRequest(
@@ -35,7 +37,8 @@ public record UpdateExamRequestDto(
                 lateThreshold,
                 settings != null ? settings.toModel() : null,
                 null,
-                null);
+                null,
+                removePdf);
     }
 
     public UpdateExamRequest toRequest(Long examId, String pdfFilePath, String originalPdfFileName) {
@@ -52,6 +55,7 @@ public record UpdateExamRequestDto(
                 lateThreshold,
                 settings != null ? settings.toModel() : null,
                 pdfFilePath,
-                originalPdfFileName);
+                originalPdfFileName,
+                removePdf);
     }
 }

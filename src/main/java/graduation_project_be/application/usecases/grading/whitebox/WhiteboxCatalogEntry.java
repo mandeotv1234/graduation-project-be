@@ -19,6 +19,12 @@ import java.util.List;
  * @param parserRequired     true if the check needs a successful parse (else UNVERIFIED on parse fail)
  * @param questionTypes      question types this rule applies to (SELECT_QUERY for v1)
  * @param params             configurable parameters
+ * @param featureId          stable id of the SQL construct this rule judges (the FE groups by this)
+ * @param featureLabel       Vietnamese display name of the feature
+ * @param featureKind        evaluator signal shape (BOOLEAN / NUMERIC / SET / COMPOSITE)
+ * @param policy             how the feature is judged (FORBID / REQUIRE / AT_MOST / ...)
+ * @param policyLabel        Vietnamese display name of the policy
+ * @param conflictsWith      rule ids that contradict this one (e.g. FORBIDDEN vs REQUIRED of one feature)
  */
 public record WhiteboxCatalogEntry(
         String ruleId,
@@ -31,5 +37,11 @@ public record WhiteboxCatalogEntry(
         WhiteboxPenaltyUnit defaultPenaltyUnit,
         boolean parserRequired,
         List<String> questionTypes,
-        List<WhiteboxParamSpec> params) {
+        List<WhiteboxParamSpec> params,
+        String featureId,
+        String featureLabel,
+        WhiteboxFeatureKind featureKind,
+        WhiteboxPolicy policy,
+        String policyLabel,
+        List<String> conflictsWith) {
 }

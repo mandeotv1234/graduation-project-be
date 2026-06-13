@@ -41,6 +41,50 @@ class WhiteboxCatalogTest {
     }
 
     @Test
+    void everyExposedRuleHasFeaturePolicyAuthoringMetadata() {
+        List<WhiteboxCatalogEntry> entries = catalog.entriesFor("SELECT_QUERY");
+        for (WhiteboxCatalogEntry e : entries) {
+            assertNotNull(e.featureId(), e.ruleId() + " missing featureId");
+            assertFalse(e.featureId().isBlank(), e.ruleId() + " blank featureId");
+            assertNotNull(e.featureLabel(), e.ruleId() + " missing featureLabel");
+            assertFalse(e.featureLabel().isBlank(), e.ruleId() + " blank featureLabel");
+            assertNotNull(e.featureKind(), e.ruleId() + " missing featureKind");
+            assertNotNull(e.policy(), e.ruleId() + " missing policy");
+            assertNotNull(e.policyLabel(), e.ruleId() + " missing policyLabel");
+            assertFalse(e.policyLabel().isBlank(), e.ruleId() + " blank policyLabel");
+            assertNotNull(e.conflictsWith(), e.ruleId() + " missing conflictsWith");
+        }
+    }
+
+    @Test
+    void numericRulesAreTheOnlyOnesWithNumberParams() {
+        // featureKind=NUMERIC must carry a NUMBER param (the threshold); BOOLEAN rules carry none.
+        for (WhiteboxCatalogEntry e : catalog.entriesFor("SELECT_QUERY")) {
+            boolean hasNumberParam = e.params().stream()
+                    .anyMatch(p -> WhiteboxParamSpec.TYPE_NUMBER.equals(p.type()));
+            if (e.featureKind() == WhiteboxFeatureKind.NUMERIC) {
+                assertTrue(hasNumberParam, e.ruleId() + " NUMERIC rule must expose a NUMBER param");
+            } else {
+                assertFalse(hasNumberParam, e.ruleId() + " non-NUMERIC rule must not expose a NUMBER param");
+            }
+        }
+    }
+
+    @Test
+    void conflictMetadataReferencesExposedRulesAndIsSymmetric() {
+        List<WhiteboxCatalogEntry> entries = catalog.entriesFor("SELECT_QUERY");
+        Set<String> ids = entries.stream().map(WhiteboxCatalogEntry::ruleId).collect(java.util.stream.Collectors.toSet());
+        for (WhiteboxCatalogEntry e : entries) {
+            for (String other : e.conflictsWith()) {
+                assertTrue(ids.contains(other),
+                        e.ruleId() + " conflictsWith unknown rule " + other);
+                assertTrue(catalog.entry(other).conflictsWith().contains(e.ruleId()),
+                        "conflict must be symmetric: " + other + " should list " + e.ruleId());
+            }
+        }
+    }
+
+    @Test
     void parserRequiredFlagsMatchTheStructuralRules() {
         for (WhiteboxCatalogEntry e : catalog.entriesFor("SELECT_QUERY")) {
             assertEquals(PARSER_REQUIRED.contains(e.ruleId()), e.parserRequired(),

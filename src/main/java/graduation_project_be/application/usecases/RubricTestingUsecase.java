@@ -7,7 +7,9 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
+import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
@@ -69,6 +71,8 @@ public class RubricTestingUsecase {
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
     private final InsertDataQuestionGrader insertDataGrader;
     private final ObjectMapper objectMapper;
+    // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
+    private final SelectQuestionGrader selectGrader;
     // Stateless helper; constructed directly so it stays out of the generated constructor.
     private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
 
@@ -709,14 +713,11 @@ public class RubricTestingUsecase {
             boolean strictOrdering = readBoolean(globalRules.path("strict_ordering"), false);
 
             if (testCases.isMissingNode() || !testCases.isArray() || testCases.size() == 0) {
-                return RubricTestGradeResponse.of(
-                        0,
-                        totalPoints,
-                        false,
-                        List.of(Map.of(
-                                "type", "error",
-                                "message", "Rubric SELECT không có test_cases",
-                                "points", 0)));
+                // No test_cases: mirror runtime, which grades by comparing the student query
+                // against correctQuery across the spec datasets (gradeSelectByRubricTestCases
+                // itself delegates here when test_cases is empty). Erroring out instead would
+                // make the preview diverge from the real grade for correctQuery-only questions.
+                return previewSelectAcrossDatasets(request, totalPoints);
             }
 
             BigDecimal totalDeduction = BigDecimal.ZERO;
@@ -931,6 +932,64 @@ public class RubricTestingUsecase {
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử SELECT: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Preview path for SELECT questions without explicit test_cases. Mirrors the runtime fallback
+     * (SelectQuestionGrader.gradeSelectAcrossDatasets) so the teacher's "Chấm Giả Lập" matches the
+     * real grade for correctQuery-only questions. Runs on a throwaway schema that the dataset grader
+     * resets/populates itself; the schema is dropped afterwards.
+     */
+    private RubricTestGradeResponse previewSelectAcrossDatasets(TestGradeSelectRequest request, double totalPoints) {
+        String correctQuery = request.correctQuery();
+        if (correctQuery == null || correctQuery.isBlank()) {
+            return RubricTestGradeResponse.of(
+                    0,
+                    totalPoints,
+                    false,
+                    List.of(Map.of(
+                            "type", "error",
+                            "message", "Rubric SELECT không có test_cases và thiếu đáp án mẫu (correctQuery) để chấm so sánh dataset",
+                            "points", 0)));
+        }
+
+        Exam exam = examRepository.findById(request.examId()).orElse(null);
+        ExamSpecification specification = (exam != null && exam.getSpecificationId() != null)
+                ? examSpecificationRepository.findById(exam.getSpecificationId()).orElse(null)
+                : null;
+
+        ExamQuestion question = ExamQuestion.builder()
+                .examId(request.examId())
+                .questionType(QuestionType.SELECT_QUERY)
+                .correctQuery(correctQuery)
+                .points(BigDecimal.valueOf(totalPoints))
+                .gradingRubric(request.gradingRubric())
+                .build();
+
+        String previewSchema = "rubric_test_select_" + request.examId() + "_" + System.currentTimeMillis();
+        try {
+            GradeDecision decision = selectGrader.gradeSelectAcrossDatasets(
+                    specification, previewSchema, question, request.studentQuery());
+            BigDecimal earned = decision.scoreEarned() != null ? decision.scoreEarned() : BigDecimal.ZERO;
+            String message = decision.isCorrect()
+                    ? "Chấm so sánh dataset: kết quả khớp đáp án mẫu"
+                    : (decision.errorMessage() != null && !decision.errorMessage().isBlank()
+                            ? decision.errorMessage()
+                            : "Kết quả không khớp đáp án mẫu");
+            return RubricTestGradeResponse.of(
+                    earned.doubleValue(),
+                    totalPoints,
+                    decision.isCorrect(),
+                    List.of(Map.of(
+                            "type", decision.isCorrect() ? "success" : "error",
+                            "message", message,
+                            "points", earned.doubleValue())));
+        } finally {
+            try {
+                examSchemaService.dropSchema(previewSchema);
+            } catch (Exception ignore) {
+            }
         }
     }
 

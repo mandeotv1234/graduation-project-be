@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Shared white-box engine: applies {@code whitebox_rules} with {@code whitebox_settings} to a SQL
@@ -48,8 +49,11 @@ public class WhiteboxEngine {
         }
         WhiteboxSettings effectiveSettings = settings == null ? WhiteboxSettings.defaults() : settings;
         BigDecimal points = questionPoints == null ? BigDecimal.ZERO : questionPoints;
+        // Normalize once: callers should pass the canonical enum name, but trim/upper guards against
+        // casing/whitespace drift so parser dispatch and applicability checks stay consistent.
+        String normalizedType = questionType == null ? "" : questionType.trim().toUpperCase(Locale.ROOT);
 
-        QueryStructureFacts facts = QUESTION_TYPE_SELECT.equals(questionType)
+        QueryStructureFacts facts = QUESTION_TYPE_SELECT.equals(normalizedType)
                 ? selectAnalyzer.analyze(studentSql)
                 : QueryStructureFacts.parseFailed();
         SelectWhiteboxContext context = new SelectWhiteboxContext(
@@ -68,7 +72,7 @@ public class WhiteboxEngine {
             }
             WhiteboxCatalogEntry entry = catalog.entry(rule.ruleId());
             WhiteboxRuleEvaluator evaluator = catalog.evaluator(rule.ruleId());
-            if (entry == null || evaluator == null || !entry.questionTypes().contains(questionType)) {
+            if (entry == null || evaluator == null || !entry.questionTypes().contains(normalizedType)) {
                 continue; // unknown / inapplicable rule id: skip rather than mis-grade
             }
 

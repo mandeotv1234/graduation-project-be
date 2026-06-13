@@ -13,11 +13,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -224,5 +227,89 @@ class RulePresetUsecaseTest {
         assertTrue(responses.stream().anyMatch(r -> "BLACKBOX".equals(r.getKind())));
 
         verify(rulePresetRepository).findByTeacherIdAndQuestionType(TEACHER_ID, QuestionType.SELECT_QUERY);
+    }
+
+    // --- Test 6: Owner updates a preset — name and rules change, questionType/kind preserved ---
+
+    @Test
+    void updatePreset_byOwner_updatesNameAndRulesAndPreservesKind() {
+        // Arrange
+        RulePreset existing = RulePreset.builder()
+                .id(PRESET_ID)
+                .teacherId(TEACHER_ID)
+                .name("Old name")
+                .questionType(QuestionType.SELECT_QUERY)
+                .rulesJson("[{\"rule_id\":\"OLD\"}]")
+                .kind("WHITEBOX")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(rulePresetRepository.findById(PRESET_ID)).thenReturn(Optional.of(existing));
+        when(rulePresetRepository.save(any(RulePreset.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RulePresetDto.UpdateRequest request = RulePresetDto.UpdateRequest.builder()
+                .name("New name")
+                .rulesJson("[{\"rule_id\":\"NEW\"}]")
+                .build();
+
+        // Act
+        RulePresetDto.Response response = rulePresetUseCase.updatePreset(PRESET_ID, TEACHER_ID, request);
+
+        // Assert
+        assertEquals("New name", response.getName());
+        assertEquals("[{\"rule_id\":\"NEW\"}]", response.getRulesJson());
+        assertEquals("WHITEBOX", response.getKind());
+        assertEquals(QuestionType.SELECT_QUERY, response.getQuestionType());
+
+        ArgumentCaptor<RulePreset> captor = ArgumentCaptor.forClass(RulePreset.class);
+        verify(rulePresetRepository).save(captor.capture());
+        assertEquals(PRESET_ID, captor.getValue().getId());
+        assertEquals("New name", captor.getValue().getName());
+        assertEquals("WHITEBOX", captor.getValue().getKind());
+    }
+
+    // --- Test 7: A non-owner cannot update; nothing is saved ---
+
+    @Test
+    void updatePreset_byNonOwner_throwsAndDoesNotSave() {
+        // Arrange
+        RulePreset existing = RulePreset.builder()
+                .id(PRESET_ID)
+                .teacherId(999L)
+                .name("Someone else's")
+                .questionType(QuestionType.SELECT_QUERY)
+                .rulesJson("[]")
+                .kind("WHITEBOX")
+                .build();
+
+        when(rulePresetRepository.findById(PRESET_ID)).thenReturn(Optional.of(existing));
+
+        RulePresetDto.UpdateRequest request = RulePresetDto.UpdateRequest.builder()
+                .name("Hijack")
+                .rulesJson("[]")
+                .build();
+
+        // Act + Assert
+        assertThrows(RuntimeException.class,
+                () -> rulePresetUseCase.updatePreset(PRESET_ID, TEACHER_ID, request));
+        verify(rulePresetRepository, never()).save(any());
+    }
+
+    // --- Test 8: Updating a missing preset throws ---
+
+    @Test
+    void updatePreset_notFound_throws() {
+        // Arrange
+        when(rulePresetRepository.findById(PRESET_ID)).thenReturn(Optional.empty());
+
+        RulePresetDto.UpdateRequest request = RulePresetDto.UpdateRequest.builder()
+                .name("Whatever")
+                .rulesJson("[]")
+                .build();
+
+        // Act + Assert
+        assertThrows(RuntimeException.class,
+                () -> rulePresetUseCase.updatePreset(PRESET_ID, TEACHER_ID, request));
+        verify(rulePresetRepository, never()).save(any());
     }
 }

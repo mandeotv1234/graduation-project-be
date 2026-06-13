@@ -49,8 +49,24 @@ public class RulePresetUseCase {
         if (!preset.getTeacherId().equals(teacherId)) {
             throw new RuntimeException("Bạn không có quyền xóa mẫu quy tắc này");
         }
-        
+
         rulePresetRepository.deleteById(presetId);
+    }
+
+    public RulePresetDto.Response updatePreset(Long presetId, Long teacherId, RulePresetDto.UpdateRequest request) {
+        RulePreset preset = rulePresetRepository.findById(presetId)
+                .orElseThrow(() -> new RuntimeException("Quy tắc chấm định sẵn không tồn tại"));
+
+        if (!preset.getTeacherId().equals(teacherId)) {
+            throw new RuntimeException("Bạn không có quyền sửa mẫu quy tắc này");
+        }
+
+        // Update only the editable fields; questionType/kind/teacherId stay fixed for the preset.
+        preset.setName(request.getName());
+        preset.setRulesJson(request.getRulesJson());
+
+        RulePreset saved = rulePresetRepository.save(preset);
+        return toResponse(saved);
     }
 
     private RulePresetDto.Response toResponse(RulePreset model) {

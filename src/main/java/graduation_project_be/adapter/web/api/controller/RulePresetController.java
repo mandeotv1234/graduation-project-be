@@ -43,6 +43,16 @@ public class RulePresetController {
         return ResponseEntity.ok(ResponseDto.of(responses, "OK", "Danh sách mẫu quy tắc"));
     }
 
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> updatePreset(
+            @PathVariable("id") Long id,
+            @RequestBody @Valid RulePresetDto.UpdateRequest request) {
+        Long teacherId = currentUserService.getCurrentUserId();
+        RulePresetDto.Response response = rulePresetUseCase.updatePreset(id, teacherId, request);
+        return ResponseEntity.ok(ResponseDto.of(response, "OK", "Mẫu quy tắc đã được cập nhật"));
+    }
+
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> deletePreset(@PathVariable("id") Long id) {

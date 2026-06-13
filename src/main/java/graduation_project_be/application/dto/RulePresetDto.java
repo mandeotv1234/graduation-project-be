@@ -33,6 +33,18 @@ public class RulePresetDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class UpdateRequest {
+        @NotBlank(message = "Tên mẫu không được để trống")
+        private String name;
+
+        @NotBlank(message = "Quy tắc không được để trống")
+        private String rulesJson;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class Response {
         private Long id;
         private Long teacherId;

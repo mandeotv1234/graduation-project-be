@@ -34,12 +34,14 @@ public class RulePresetController {
     @GetMapping
     @PreAuthorize("hasRole('TEACHER')")
     public ResponseEntity<ResponseDto> getPresets(
-            @RequestParam("questionType") QuestionType questionType,
-            @RequestParam(value = "kind", required = false) String kind) {
+            @RequestParam(name = "questionType") QuestionType questionType,
+            @RequestParam(name = "kind", required = false) String kind) {
         Long teacherId = currentUserService.getCurrentUserId();
-        List<RulePresetDto.Response> responses = (kind != null && !kind.isBlank())
-                ? rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind)
-                : rulePresetUseCase.getPresetsByTeacherIdAndQuestionType(teacherId, questionType);
+        // No kind defaults to BLACKBOX so legacy callers never receive white-box presets mixed in;
+        // existing rows were backfilled to BLACKBOX, so this stays backward-compatible.
+        String resolvedKind = (kind != null && !kind.isBlank()) ? kind : "BLACKBOX";
+        List<RulePresetDto.Response> responses =
+                rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, resolvedKind);
         return ResponseEntity.ok(ResponseDto.of(responses, "OK", "Danh sách mẫu quy tắc"));
     }
 

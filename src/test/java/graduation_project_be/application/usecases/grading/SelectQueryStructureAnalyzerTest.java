@@ -69,6 +69,16 @@ class SelectQueryStructureAnalyzerTest {
         assertFalse(f.hasSubqueryInFrom());
     }
 
+    @Test
+    void subqueryInHavingDetected() {
+        QueryStructureFacts f = analyze(
+                "SELECT dept, COUNT(*) FROM emp GROUP BY dept HAVING COUNT(*) > (SELECT AVG(c) FROM t)");
+        assertTrue(f.hasSubqueryInHaving());
+        assertFalse(f.hasSubqueryInSelect());
+        assertFalse(f.hasSubqueryInFrom());
+        assertFalse(f.hasSubqueryInWhere());
+    }
+
     // --- CTE / GROUP BY / DISTINCT / ORDER BY ---
 
     @Test

@@ -62,7 +62,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             PlainSelect ps = select.getPlainSelect();
             if (ps == null) {
                 // Set operation (UNION/INTERSECT/EXCEPT): only top-level facts are reliable.
-                return new QueryStructureFacts(true, 0, 0, false, false, false,
+                return new QueryStructureFacts(true, 0, 0, false, false, false, false,
                         hasCte, false, hasOrderBy, false, Set.of(), 0, false, false);
             }
 
@@ -116,6 +116,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     selectAcc.subselect,
                     subqueryInFrom,
                     whereAcc.subselect,
+                    havingAcc.subselect,
                     hasCte,
                     ps.getGroupBy() != null,
                     hasOrderBy,

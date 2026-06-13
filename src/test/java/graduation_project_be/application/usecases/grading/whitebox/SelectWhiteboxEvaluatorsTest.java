@@ -130,6 +130,15 @@ class SelectWhiteboxEvaluatorsTest {
         }
     }
 
+    @Test
+    void forbiddenSubqueryAlsoCatchesHavingSubquery() {
+        // HAVING subquery must trip FORBIDDEN_SUBQUERY just like WHERE/FROM/SELECT subqueries.
+        BigDecimal d = deduction("FORBIDDEN_SUBQUERY", "{}",
+                "SELECT dept, COUNT(*) FROM emp GROUP BY dept HAVING COUNT(*) > (SELECT AVG(c) FROM t)");
+        assertEquals(0, new BigDecimal("1").compareTo(d),
+                "FORBIDDEN_SUBQUERY should FAIL a HAVING subquery");
+    }
+
     private BigDecimal deduction(String ruleId, String paramsJson, String sql) {
         WhiteboxRule rule = new WhiteboxRule(ruleId, true, null, BigDecimal.ONE,
                 WhiteboxPenaltyUnit.ABSOLUTE, WhiteboxSeverity.DEDUCTION, null, params(paramsJson));

@@ -16,6 +16,7 @@ public record QueryStructureFacts(
         boolean hasSubqueryInSelect,
         boolean hasSubqueryInFrom,
         boolean hasSubqueryInWhere,
+        boolean hasSubqueryInHaving,
         boolean hasCte,
         boolean hasGroupBy,
         boolean hasOrderBy,
@@ -28,6 +29,6 @@ public record QueryStructureFacts(
     /** Facts for a query that could not be parsed; all structural checks must be skipped. */
     public static QueryStructureFacts parseFailed() {
         return new QueryStructureFacts(
-                false, 0, 0, false, false, false, false, false, false, false, Set.of(), 0, false, false);
+                false, 0, 0, false, false, false, false, false, false, false, false, Set.of(), 0, false, false);
     }
 }

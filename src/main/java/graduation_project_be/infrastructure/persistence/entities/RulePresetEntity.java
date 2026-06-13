@@ -36,6 +36,9 @@ public class RulePresetEntity {
     @Column(name = "rules_json", nullable = false, columnDefinition = "TEXT")
     private String rulesJson;
 
+    @Column(name = "kind", nullable = false, length = 20)
+    private String kind;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -64,6 +67,7 @@ public class RulePresetEntity {
                 .name(name)
                 .questionType(questionType)
                 .rulesJson(rulesJson)
+                .kind(kind)
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -76,6 +80,7 @@ public class RulePresetEntity {
                 .name(model.getName())
                 .questionType(model.getQuestionType())
                 .rulesJson(model.getRulesJson())
+                .kind(model.getKind() != null ? model.getKind() : "BLACKBOX")
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();

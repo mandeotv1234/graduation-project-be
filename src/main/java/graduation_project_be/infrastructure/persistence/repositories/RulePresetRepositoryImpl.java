@@ -41,6 +41,14 @@ public class RulePresetRepositoryImpl implements RulePresetRepository {
     }
 
     @Override
+    public List<RulePreset> findByTeacherIdAndQuestionTypeAndKind(Long teacherId, QuestionType questionType, String kind) {
+        return jpaRulePresetRepository.findByTeacherIdAndQuestionTypeAndKindOrderByCreatedAtDesc(teacherId, questionType, kind)
+                .stream()
+                .map(RulePresetEntity::toModel)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public void deleteById(Long id) {
         jpaRulePresetRepository.deleteById(id);

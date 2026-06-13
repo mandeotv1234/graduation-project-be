@@ -24,6 +24,9 @@ public class RulePresetDto {
 
         @NotBlank(message = "Quy tắc không được để trống")
         private String rulesJson;
+
+        // "BLACKBOX" or "WHITEBOX"; defaults to "BLACKBOX" if omitted
+        private String kind;
     }
 
     @Data
@@ -36,6 +39,7 @@ public class RulePresetDto {
         private String name;
         private QuestionType questionType;
         private String rulesJson;
+        private String kind;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
     }

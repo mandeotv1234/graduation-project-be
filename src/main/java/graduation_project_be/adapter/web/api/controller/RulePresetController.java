@@ -33,9 +33,13 @@ public class RulePresetController {
 
     @GetMapping
     @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getPresets(@RequestParam("questionType") QuestionType questionType) {
+    public ResponseEntity<ResponseDto> getPresets(
+            @RequestParam("questionType") QuestionType questionType,
+            @RequestParam(value = "kind", required = false) String kind) {
         Long teacherId = currentUserService.getCurrentUserId();
-        List<RulePresetDto.Response> responses = rulePresetUseCase.getPresetsByTeacherIdAndQuestionType(teacherId, questionType);
+        List<RulePresetDto.Response> responses = (kind != null && !kind.isBlank())
+                ? rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind)
+                : rulePresetUseCase.getPresetsByTeacherIdAndQuestionType(teacherId, questionType);
         return ResponseEntity.ok(ResponseDto.of(responses, "OK", "Danh sách mẫu quy tắc"));
     }
 

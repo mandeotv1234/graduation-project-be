@@ -17,19 +17,28 @@ public class RulePresetUseCase {
     private final RulePresetRepository rulePresetRepository;
 
     public RulePresetDto.Response createPreset(Long teacherId, RulePresetDto.CreateRequest request) {
+        String kind = (request.getKind() != null && !request.getKind().isBlank())
+                ? request.getKind()
+                : "BLACKBOX";
         RulePreset preset = RulePreset.builder()
                 .teacherId(teacherId)
                 .name(request.getName())
                 .questionType(request.getQuestionType())
                 .rulesJson(request.getRulesJson())
+                .kind(kind)
                 .build();
-        
+
         RulePreset saved = rulePresetRepository.save(preset);
         return toResponse(saved);
     }
 
     public List<RulePresetDto.Response> getPresetsByTeacherIdAndQuestionType(Long teacherId, QuestionType questionType) {
         List<RulePreset> presets = rulePresetRepository.findByTeacherIdAndQuestionType(teacherId, questionType);
+        return presets.stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    public List<RulePresetDto.Response> getPresetsByTeacherIdAndQuestionTypeAndKind(Long teacherId, QuestionType questionType, String kind) {
+        List<RulePreset> presets = rulePresetRepository.findByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind);
         return presets.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
@@ -51,6 +60,7 @@ public class RulePresetUseCase {
                 .name(model.getName())
                 .questionType(model.getQuestionType())
                 .rulesJson(model.getRulesJson())
+                .kind(model.getKind())
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();

@@ -235,4 +235,28 @@ class SelectQueryStructureAnalyzerTest {
         assertFalse(analyze(null).parseOk());
         assertFalse(analyze("   ").parseOk());
     }
+
+    // --- hasCorrelatedSubquery ---
+
+    @Test
+    void correlatedExistsSubqueryDetected() {
+        QueryStructureFacts f = analyze(
+                "SELECT id FROM a WHERE EXISTS (SELECT 1 FROM b WHERE b.aid = a.id)");
+        assertTrue(f.parseOk());
+        assertTrue(f.hasCorrelatedSubquery());
+    }
+
+    @Test
+    void nonCorrelatedSubqueryNotFlagged() {
+        QueryStructureFacts f = analyze("SELECT id FROM a WHERE x IN (SELECT y FROM b)");
+        assertTrue(f.parseOk());
+        assertFalse(f.hasCorrelatedSubquery());
+    }
+
+    @Test
+    void queryWithoutSubqueryHasNoCorrelation() {
+        QueryStructureFacts f = analyze("SELECT a.id FROM a JOIN b ON a.id = b.id");
+        assertTrue(f.parseOk());
+        assertFalse(f.hasCorrelatedSubquery());
+    }
 }

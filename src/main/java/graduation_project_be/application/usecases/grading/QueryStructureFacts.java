@@ -22,11 +22,12 @@ public record QueryStructureFacts(
         boolean hasDistinct,
         Set<String> aggregateFns, // upper-cased: COUNT/SUM/AVG/MIN/MAX present in the query
         int maxNestingDepth,      // 0 = no nested subquery, 1 = one level, ...
-        boolean hasLiteralInWhere) { // a "magic" literal in WHERE; safe constants (0/1/''/N'..'/dates) excluded
+        boolean hasLiteralInWhere, // a "magic" literal in WHERE; safe constants (0/1/''/N'..'/dates) excluded
+        boolean hasCorrelatedSubquery) { // a subquery references an alias declared in an outer query scope
 
     /** Facts for a query that could not be parsed; all structural checks must be skipped. */
     public static QueryStructureFacts parseFailed() {
         return new QueryStructureFacts(
-                false, 0, 0, false, false, false, false, false, false, false, Set.of(), 0, false);
+                false, 0, 0, false, false, false, false, false, false, false, Set.of(), 0, false, false);
     }
 }

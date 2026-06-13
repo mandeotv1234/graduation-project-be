@@ -21,12 +21,15 @@ import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
 import net.sf.jsqlparser.expression.operators.relational.ExpressionList;
 import net.sf.jsqlparser.expression.operators.relational.InExpression;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectItem;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -60,7 +63,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             if (ps == null) {
                 // Set operation (UNION/INTERSECT/EXCEPT): only top-level facts are reliable.
                 return new QueryStructureFacts(true, 0, 0, false, false, false,
-                        hasCte, false, hasOrderBy, false, Set.of(), 0, false);
+                        hasCte, false, hasOrderBy, false, Set.of(), 0, false, false);
             }
 
             int joinCount = 0;
@@ -119,9 +122,221 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     ps.getDistinct() != null,
                     aggregates,
                     maxDepth,
-                    whereAcc.hasLiteral);
+                    whereAcc.hasLiteral,
+                    hasCorrelatedSubquery(ps, Set.of()));
         } catch (Throwable t) {
             return QueryStructureFacts.parseFailed();
+        }
+    }
+
+    /**
+     * A subquery is correlated when it references a table/alias declared in an enclosing query but
+     * not in its own FROM. Detection is precision-biased (only flags an explicit table-qualified
+     * column whose prefix resolves to an outer scope), so an undetected exotic case is treated as
+     * not-correlated rather than penalising a fair answer. Only expression-position subqueries
+     * (SELECT list, WHERE, HAVING, JOIN ON) are inspected; derived tables in FROM are not.
+     */
+    private boolean hasCorrelatedSubquery(PlainSelect ps, Set<String> enclosingAliases) {
+        if (ps == null) {
+            return false;
+        }
+        Set<String> visible = new HashSet<>(enclosingAliases);
+        visible.addAll(declaredAliases(ps));
+
+        List<Select> subSelects = new ArrayList<>();
+        if (ps.getSelectItems() != null) {
+            for (SelectItem<?> item : ps.getSelectItems()) {
+                collectSubSelects(item.getExpression(), subSelects);
+            }
+        }
+        collectSubSelects(ps.getWhere(), subSelects);
+        collectSubSelects(ps.getHaving(), subSelects);
+        if (ps.getJoins() != null) {
+            for (Join join : ps.getJoins()) {
+                if (join.getOnExpressions() != null) {
+                    for (Expression on : join.getOnExpressions()) {
+                        collectSubSelects(on, subSelects);
+                    }
+                }
+            }
+        }
+
+        for (Select sub : subSelects) {
+            PlainSelect subPs = sub.getPlainSelect();
+            if (subPs == null) {
+                continue;
+            }
+            Set<String> subOwn = declaredAliases(subPs);
+            if (referencesOuterScope(subPs, visible, subOwn)) {
+                return true;
+            }
+            // A nested subquery may correlate to any of the scopes above it.
+            if (hasCorrelatedSubquery(subPs, visible)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True if any column directly in {@code subPs}'s clauses is qualified by an outer-scope alias. */
+    private boolean referencesOuterScope(PlainSelect subPs, Set<String> outer, Set<String> subOwn) {
+        List<Column> columns = new ArrayList<>();
+        if (subPs.getSelectItems() != null) {
+            for (SelectItem<?> item : subPs.getSelectItems()) {
+                collectColumns(item.getExpression(), columns);
+            }
+        }
+        collectColumns(subPs.getWhere(), columns);
+        collectColumns(subPs.getHaving(), columns);
+        if (subPs.getJoins() != null) {
+            for (Join join : subPs.getJoins()) {
+                if (join.getOnExpressions() != null) {
+                    for (Expression on : join.getOnExpressions()) {
+                        collectColumns(on, columns);
+                    }
+                }
+            }
+        }
+        for (Column column : columns) {
+            if (column.getTable() == null) {
+                continue;
+            }
+            String prefix = normalizeAlias(column.getTable().getName());
+            if (prefix != null && outer.contains(prefix) && !subOwn.contains(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Alias names (or bare table names when unaliased) declared in a query's FROM and JOINs. */
+    private Set<String> declaredAliases(PlainSelect ps) {
+        Set<String> names = new HashSet<>();
+        addFromItemAlias(ps.getFromItem(), names);
+        if (ps.getJoins() != null) {
+            for (Join join : ps.getJoins()) {
+                addFromItemAlias(join.getRightItem(), names);
+            }
+        }
+        return names;
+    }
+
+    private void addFromItemAlias(FromItem fromItem, Set<String> names) {
+        if (fromItem == null) {
+            return;
+        }
+        if (fromItem.getAlias() != null && fromItem.getAlias().getName() != null) {
+            String alias = normalizeAlias(fromItem.getAlias().getName());
+            if (alias != null) {
+                names.add(alias);
+            }
+        }
+        if (fromItem instanceof net.sf.jsqlparser.schema.Table table && table.getName() != null) {
+            String name = normalizeAlias(table.getName());
+            if (name != null) {
+                names.add(name);
+            }
+        }
+    }
+
+    private static String normalizeAlias(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.replace("[", "").replace("]", "").trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        int dot = trimmed.lastIndexOf('.');
+        if (dot >= 0 && dot < trimmed.length() - 1) {
+            trimmed = trimmed.substring(dot + 1);
+        }
+        return trimmed.toUpperCase(Locale.ROOT);
+    }
+
+    /** Collects nested {@link Select} nodes directly inside an expression (does not descend into them). */
+    private void collectSubSelects(Expression expr, List<Select> out) {
+        if (expr == null) {
+            return;
+        }
+        if (expr instanceof Select select) {
+            out.add(select);
+        } else if (expr instanceof Parenthesis paren) {
+            collectSubSelects(paren.getExpression(), out);
+        } else if (expr instanceof NotExpression not) {
+            collectSubSelects(not.getExpression(), out);
+        } else if (expr instanceof SignedExpression signed) {
+            collectSubSelects(signed.getExpression(), out);
+        } else if (expr instanceof Between between) {
+            collectSubSelects(between.getLeftExpression(), out);
+            collectSubSelects(between.getBetweenExpressionStart(), out);
+            collectSubSelects(between.getBetweenExpressionEnd(), out);
+        } else if (expr instanceof InExpression in) {
+            collectSubSelects(in.getLeftExpression(), out);
+            collectSubSelects(in.getRightExpression(), out);
+        } else if (expr instanceof ExistsExpression exists) {
+            collectSubSelects(exists.getRightExpression(), out);
+        } else if (expr instanceof CaseExpression caseExpr) {
+            collectSubSelects(caseExpr.getSwitchExpression(), out);
+            if (caseExpr.getWhenClauses() != null) {
+                for (WhenClause when : caseExpr.getWhenClauses()) {
+                    collectSubSelects(when.getWhenExpression(), out);
+                    collectSubSelects(when.getThenExpression(), out);
+                }
+            }
+            collectSubSelects(caseExpr.getElseExpression(), out);
+        } else if (expr instanceof Function fn && fn.getParameters() != null) {
+            for (Object p : fn.getParameters()) {
+                if (p instanceof Expression pe) {
+                    collectSubSelects(pe, out);
+                }
+            }
+        } else if (expr instanceof BinaryExpression bin) {
+            collectSubSelects(bin.getLeftExpression(), out);
+            collectSubSelects(bin.getRightExpression(), out);
+        }
+    }
+
+    /** Collects {@link Column} references in an expression, without descending into nested subqueries. */
+    private void collectColumns(Expression expr, List<Column> out) {
+        if (expr == null || expr instanceof Select) {
+            return;
+        }
+        if (expr instanceof Column column) {
+            out.add(column);
+        } else if (expr instanceof Parenthesis paren) {
+            collectColumns(paren.getExpression(), out);
+        } else if (expr instanceof NotExpression not) {
+            collectColumns(not.getExpression(), out);
+        } else if (expr instanceof SignedExpression signed) {
+            collectColumns(signed.getExpression(), out);
+        } else if (expr instanceof Between between) {
+            collectColumns(between.getLeftExpression(), out);
+            collectColumns(between.getBetweenExpressionStart(), out);
+            collectColumns(between.getBetweenExpressionEnd(), out);
+        } else if (expr instanceof InExpression in) {
+            collectColumns(in.getLeftExpression(), out);
+            collectColumns(in.getRightExpression(), out);
+        } else if (expr instanceof ExistsExpression exists) {
+            collectColumns(exists.getRightExpression(), out);
+        } else if (expr instanceof CaseExpression caseExpr) {
+            collectColumns(caseExpr.getSwitchExpression(), out);
+            if (caseExpr.getWhenClauses() != null) {
+                for (WhenClause when : caseExpr.getWhenClauses()) {
+                    collectColumns(when.getWhenExpression(), out);
+                    collectColumns(when.getThenExpression(), out);
+                }
+            }
+            collectColumns(caseExpr.getElseExpression(), out);
+        } else if (expr instanceof Function fn && fn.getParameters() != null) {
+            for (Object p : fn.getParameters()) {
+                if (p instanceof Expression pe) {
+                    collectColumns(pe, out);
+                }
+            }
+        } else if (expr instanceof BinaryExpression bin) {
+            collectColumns(bin.getLeftExpression(), out);
+            collectColumns(bin.getRightExpression(), out);
         }
     }
 

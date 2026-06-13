@@ -37,11 +37,10 @@ public class RulePresetController {
             @RequestParam(name = "questionType") QuestionType questionType,
             @RequestParam(name = "kind", required = false) String kind) {
         Long teacherId = currentUserService.getCurrentUserId();
-        // No kind defaults to BLACKBOX so legacy callers never receive white-box presets mixed in;
-        // existing rows were backfilled to BLACKBOX, so this stays backward-compatible.
-        String resolvedKind = (kind != null && !kind.isBlank()) ? kind : "BLACKBOX";
+        // The use case canonicalizes kind (trim/upper, blank -> BLACKBOX) so legacy callers never
+        // receive white-box presets mixed in; existing rows were backfilled to BLACKBOX.
         List<RulePresetDto.Response> responses =
-                rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, resolvedKind);
+                rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind);
         return ResponseEntity.ok(ResponseDto.of(responses, "OK", "Danh sách mẫu quy tắc"));
     }
 

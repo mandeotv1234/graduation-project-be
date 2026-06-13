@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
@@ -17,9 +18,7 @@ public class RulePresetUseCase {
     private final RulePresetRepository rulePresetRepository;
 
     public RulePresetDto.Response createPreset(Long teacherId, RulePresetDto.CreateRequest request) {
-        String kind = (request.getKind() != null && !request.getKind().isBlank())
-                ? request.getKind()
-                : "BLACKBOX";
+        String kind = normalizeKind(request.getKind());
         RulePreset preset = RulePreset.builder()
                 .teacherId(teacherId)
                 .name(request.getName())
@@ -38,8 +37,14 @@ public class RulePresetUseCase {
     }
 
     public List<RulePresetDto.Response> getPresetsByTeacherIdAndQuestionTypeAndKind(Long teacherId, QuestionType questionType, String kind) {
-        List<RulePreset> presets = rulePresetRepository.findByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind);
+        List<RulePreset> presets = rulePresetRepository.findByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, normalizeKind(kind));
         return presets.stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    // Canonical discriminator: trim + uppercase, default BLACKBOX on null/blank, so kind-filtered
+    // queries match stored values regardless of caller casing/whitespace.
+    private static String normalizeKind(String kind) {
+        return (kind == null || kind.isBlank()) ? "BLACKBOX" : kind.trim().toUpperCase(Locale.ROOT);
     }
 
     public void deletePreset(Long presetId, Long teacherId) {

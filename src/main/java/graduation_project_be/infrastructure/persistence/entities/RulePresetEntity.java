@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Table(name = "rule_presets")
 @Entity
@@ -80,9 +81,15 @@ public class RulePresetEntity {
                 .name(model.getName())
                 .questionType(model.getQuestionType())
                 .rulesJson(model.getRulesJson())
-                .kind(model.getKind() != null ? model.getKind() : "BLACKBOX")
+                .kind(canonicalKind(model.getKind()))
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();
+    }
+
+    // Persistence-boundary guard for the non-null kind column: default BLACKBOX on null/blank,
+    // canonicalize to upper-case so the discriminator never stores casing/whitespace variants.
+    private static String canonicalKind(String kind) {
+        return (kind == null || kind.isBlank()) ? "BLACKBOX" : kind.trim().toUpperCase(Locale.ROOT);
     }
 }

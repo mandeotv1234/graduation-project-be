@@ -13,7 +13,6 @@ import graduation_project_be.domain.models.TableMetadata.ColumnMetadata;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.ExamSchemaService;
-import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.domain.models.Exam;
@@ -52,7 +51,6 @@ public class SelectQuestionGrader {
     private final ExamSchemaService examSchemaService;
     private final ObjectMapper objectMapper;
     private final GradingSupport support;
-    private final SelectQueryStructureAnalyzer queryStructureAnalyzer;
 
     public boolean hasSelectRubricTestCases(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
@@ -96,15 +94,6 @@ public class SelectQuestionGrader {
             boolean structuralChecked = false;
             boolean allPassed = true;
             StringBuilder issues = new StringBuilder();
-
-            // White-box structural rules depend only on the query text -> evaluate once up front.
-            QueryStructureResult queryStructure = calculateQueryStructureDeduction(
-                    selectRules, studentQuery, totalPoints, issues);
-            if (queryStructure.failAllTriggered()) {
-                return GradeDecision.fail(queryStructure.message() != null && !queryStructure.message().isBlank()
-                        ? queryStructure.message()
-                        : "Vi phạm quy tắc cấu trúc câu lệnh (FAIL_ALL): câu này bị 0 điểm toàn bộ.");
-            }
 
             for (int i = 0; i < testCases.size(); i++) {
                 JsonNode tc = testCases.get(i);
@@ -255,10 +244,6 @@ public class SelectQuestionGrader {
             if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
                 allPassed = false;
                 totalDeduction = totalDeduction.add(structuralDeduction);
-            }
-            if (queryStructure.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                allPassed = false;
-                totalDeduction = totalDeduction.add(queryStructure.deduction());
             }
 
             BigDecimal finalEarned = totalPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
@@ -889,18 +874,6 @@ public class SelectQuestionGrader {
             if (decision.errorMessage() != null && !decision.errorMessage().isBlank()) {
                 appendSelectIssue(errorBuilder, decision.errorMessage());
             }
-        }
-
-        // White-box structural rules are dataset-independent: evaluate once and fold into the
-        // accumulated score; FAIL_ALL routes through the existing failAllTriggered flag below.
-        QueryStructureResult queryStructure = calculateQueryStructureDeduction(
-                selectRules, studentQuery, totalPoints, errorBuilder);
-        if (queryStructure.deduction().compareTo(BigDecimal.ZERO) > 0) {
-            allPassed = false;
-            earnedTotal = earnedTotal.subtract(queryStructure.deduction());
-        }
-        if (queryStructure.failAllTriggered()) {
-            failAllTriggered = true;
         }
 
         if (failAllTriggered) {
@@ -1999,187 +1972,6 @@ public class SelectQuestionGrader {
             builder.append(' ');
         }
         builder.append(message.trim());
-    }
-
-    /**
-     * White-box query-structure conditions evaluated against the parsed student SQL.
-     * Each maps to a boolean fact; teachers enable them as {@code target = "QUERY"} rules.
-     */
-    private static final String[] QUERY_CONDITIONS = {
-            "REQUIRE_JOIN", "FORBID_JOIN",
-            "FORBID_SUBQUERY_IN_SELECT", "FORBID_SUBQUERY_IN_FROM", "FORBID_SUBQUERY_IN_WHERE",
-            "REQUIRE_CTE", "FORBID_CTE",
-            "REQUIRE_GROUP_BY", "REQUIRE_AGGREGATE", "REQUIRE_DISTINCT", "FORBID_ORDER_BY",
-            "MAX_NESTING_DEPTH", "FORBID_LITERAL_IN_WHERE"
-    };
-
-    // FORBID_LITERAL_IN_WHERE is a fuzzy fairness check: it may only deduct, never zero the whole
-    // question, regardless of how the rule is configured.
-    private static final String FORBID_LITERAL = "FORBID_LITERAL_IN_WHERE";
-
-    /**
-     * Applies white-box structural rules (target = QUERY) to the parsed student query.
-     * Reuses the existing {@code applySelectRule} engine; deduction is dataset-independent so the
-     * student SQL is parsed once per grading call. On parse failure the policy is fail-open by
-     * polarity: FORBID_* rules are skipped (benefit of the doubt) while REQUIRE_* rules cannot be
-     * verified and are flagged for manual review instead of silently passing.
-     */
-    // Package-private for unit testing the white-box rule logic without a database.
-    QueryStructureResult calculateQueryStructureDeduction(
-            JsonNode selectRules, String studentQuery, BigDecimal maxPoints, StringBuilder issues) {
-        QueryStructureFacts facts = queryStructureAnalyzer.analyze(studentQuery);
-
-        if (!facts.parseOk()) {
-            for (String condition : QUERY_CONDITIONS) {
-                if (condition.startsWith("REQUIRE")
-                        && support.findInsertRule(selectRules, "QUERY", condition) != null) {
-                    appendSelectIssue(issues,
-                            "[Cấu trúc câu lệnh] Không phân tích được câu truy vấn (lỗi cú pháp) nên không xác minh được rule "
-                                    + condition + " — cần giáo viên xem lại.");
-                }
-            }
-            return QueryStructureResult.none();
-        }
-
-        BigDecimal deduction = BigDecimal.ZERO;
-        boolean failAll = false;
-        for (String condition : QUERY_CONDITIONS) {
-            JsonNode ruleNode = support.findInsertRule(selectRules, "QUERY", condition);
-            if (ruleNode == null) {
-                // Teacher did not enable this white-box rule; keep the path fully inert (no trace).
-                continue;
-            }
-            int violationCount = isQueryRuleViolated(condition, facts, ruleNode) ? 1 : 0;
-            SelectRuleApplication application = applySelectRule(
-                    selectRules, "QUERY", condition, violationCount, maxPoints, 0d,
-                    queryViolationSummary(condition));
-            if (!application.violationPresent()) {
-                continue;
-            }
-            // FORBID_LITERAL_IN_WHERE may never zero the question: a FAIL_ALL configuration is
-            // downgraded to a points deduction of its penalty_value (0 if unset), never maxPoints.
-            if (FORBID_LITERAL.equals(condition) && application.failAllTriggered()) {
-                BigDecimal literalDeduction = literalPenaltyValue(ruleNode);
-                application = SelectRuleApplication.matchedViolation(
-                        application.target(), application.condition(), "DEDUCT_POINTS",
-                        literalDeduction, false, literalDeduction,
-                        buildSelectRuleMessage(
-                                selectRuleLabel(application.target(), application.condition()),
-                                application.violationSummary(), literalDeduction, "DEDUCT_POINTS"),
-                        application.violationSummary());
-            }
-            addSelectRuleTrace(null, "Cấu trúc câu lệnh SELECT", application, maxPoints,
-                    "SELECT query-structure rubric");
-            if (application.failAllTriggered()) {
-                failAll = true;
-            }
-            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                deduction = deduction.add(application.deduction());
-            }
-            if (application.message() != null && !application.message().isBlank()) {
-                appendSelectIssue(issues, "[Cấu trúc câu lệnh] " + application.message());
-            }
-        }
-        if (deduction.compareTo(maxPoints) > 0) {
-            deduction = maxPoints;
-        }
-        return new QueryStructureResult(deduction.setScale(2, RoundingMode.HALF_UP), failAll, null);
-    }
-
-    /**
-     * Parameterized white-box checks read extra keys off the rule node ({@code threshold},
-     * {@code argument}); {@code resolveSelectRuleDecision} ignores those keys, so reading them here
-     * keeps the rule engine untouched. Non-parameterized conditions fall through to the base set.
-     */
-    private boolean isQueryRuleViolated(String condition, QueryStructureFacts f, JsonNode ruleNode) {
-        switch (condition) {
-            case "MAX_NESTING_DEPTH": {
-                int threshold = ruleNode == null
-                        ? -1
-                        : (int) support.readDoubleSetting(ruleNode.path("threshold"), -1d);
-                return threshold >= 0 && f.maxNestingDepth() > threshold;
-            }
-            case "REQUIRE_AGGREGATE": {
-                Set<String> required = parseAggregateArgument(ruleNode);
-                if (required.isEmpty()) {
-                    return f.aggregateFns().isEmpty();
-                }
-                // ANY listed aggregate present satisfies the rule.
-                return required.stream().noneMatch(f.aggregateFns()::contains);
-            }
-            case FORBID_LITERAL:
-                return f.hasLiteralInWhere();
-            default:
-                return isQueryRuleViolated(condition, f);
-        }
-    }
-
-    /** Parses the optional {@code argument} CSV (e.g. "COUNT,SUM") into an upper-cased set. */
-    private Set<String> parseAggregateArgument(JsonNode ruleNode) {
-        if (ruleNode == null) {
-            return Set.of();
-        }
-        String argument = ruleNode.path("argument").asText("");
-        if (argument.isBlank()) {
-            return Set.of();
-        }
-        Set<String> result = new HashSet<>();
-        for (String token : argument.split(",")) {
-            String trimmed = token.trim().toUpperCase(Locale.ROOT);
-            if (!trimmed.isEmpty()) {
-                result.add(trimmed);
-            }
-        }
-        return result;
-    }
-
-    /** The configured {@code penalty_value} (>=0) for a FORBID_LITERAL rule mis-set to FAIL_ALL. */
-    private BigDecimal literalPenaltyValue(JsonNode ruleNode) {
-        double value = ruleNode == null ? 0d : support.readDoubleSetting(ruleNode.path("penalty_value"), 0d);
-        return BigDecimal.valueOf(Math.max(0d, value));
-    }
-
-    private boolean isQueryRuleViolated(String condition, QueryStructureFacts f) {
-        return switch (condition) {
-            // REQUIRE_JOIN is satisfied by an explicit JOIN or a comma-join (>1 FROM table).
-            case "REQUIRE_JOIN" -> !(f.joinCount() > 0 || f.fromTableCount() > 1);
-            case "FORBID_JOIN" -> f.joinCount() > 0 || f.fromTableCount() > 1;
-            case "FORBID_SUBQUERY_IN_SELECT" -> f.hasSubqueryInSelect();
-            case "FORBID_SUBQUERY_IN_FROM" -> f.hasSubqueryInFrom();
-            case "FORBID_SUBQUERY_IN_WHERE" -> f.hasSubqueryInWhere();
-            case "REQUIRE_CTE" -> !f.hasCte();
-            case "FORBID_CTE" -> f.hasCte();
-            case "REQUIRE_GROUP_BY" -> !f.hasGroupBy();
-            case "REQUIRE_AGGREGATE" -> f.aggregateFns().isEmpty();
-            case "REQUIRE_DISTINCT" -> !f.hasDistinct();
-            case "FORBID_ORDER_BY" -> f.hasOrderBy();
-            default -> false;
-        };
-    }
-
-    private String queryViolationSummary(String condition) {
-        return switch (condition) {
-            case "REQUIRE_JOIN" -> "câu truy vấn không dùng JOIN";
-            case "FORBID_JOIN" -> "câu truy vấn dùng JOIN (bị cấm)";
-            case "FORBID_SUBQUERY_IN_SELECT" -> "có truy vấn con trong mệnh đề SELECT (bị cấm)";
-            case "FORBID_SUBQUERY_IN_FROM" -> "có truy vấn con trong mệnh đề FROM (bị cấm)";
-            case "FORBID_SUBQUERY_IN_WHERE" -> "có truy vấn con trong mệnh đề WHERE (bị cấm)";
-            case "REQUIRE_CTE" -> "câu truy vấn không dùng CTE (WITH)";
-            case "FORBID_CTE" -> "câu truy vấn dùng CTE (bị cấm)";
-            case "REQUIRE_GROUP_BY" -> "câu truy vấn không có GROUP BY";
-            case "REQUIRE_AGGREGATE" -> "câu truy vấn không dùng hàm tổng hợp";
-            case "REQUIRE_DISTINCT" -> "câu truy vấn không dùng DISTINCT";
-            case "FORBID_ORDER_BY" -> "câu truy vấn dùng ORDER BY (bị cấm)";
-            case "MAX_NESTING_DEPTH" -> "câu truy vấn lồng truy vấn con quá sâu";
-            case FORBID_LITERAL -> "có hằng số trong WHERE (nghi vấn ghi cứng đáp án)";
-            default -> condition;
-        };
-    }
-
-    record QueryStructureResult(BigDecimal deduction, boolean failAllTriggered, String message) {
-        static QueryStructureResult none() {
-            return new QueryStructureResult(BigDecimal.ZERO, false, null);
-        }
     }
 
     private record SelectExpectedRows(List<String> columns, List<Map<String, Object>> rows) {

@@ -77,6 +77,8 @@ public class ExamController {
         private final TeacherExecuteSqlOnResultUsecase teacherExecuteSqlOnResultUsecase;
         private final TeacherResetResultSchemaUsecase teacherResetResultSchemaUsecase;
         private final DropAllExamSchemasUsecase dropAllExamSchemasUsecase;
+        private final WhiteboxCatalogUsecase whiteboxCatalogUsecase;
+        private final WhiteboxValidateUsecase whiteboxValidateUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -782,6 +784,25 @@ public class ExamController {
                 RubricTestGradeResponse result = rubricTestingUsecase.testGradeCreateTable(
                                 requestDto.toRequest(objectMapper));
                 return ResponseEntity.ok(ResponseDto.of(result, "OK", "Test grading completed"));
+        }
+
+        // ===== WHITEBOX (method-based grading) =====
+
+        @GetMapping("/whitebox/catalog")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getWhiteboxCatalog(
+                        @RequestParam(value = "questionType", required = false) String questionType) {
+                return ResponseEntity.ok(ResponseDto.of(
+                                whiteboxCatalogUsecase.execute(questionType), "OK", "Whitebox catalog"));
+        }
+
+        @PostMapping("/whitebox/validate")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> validateWhitebox(
+                        @RequestBody @Valid WhiteboxValidateRequestDto requestDto) {
+                return ResponseEntity.ok(ResponseDto.of(
+                                whiteboxValidateUsecase.execute(requestDto.toRequest()),
+                                "OK", "Whitebox validation completed"));
         }
 
         // ===== DRAFT ENDPOINTS =====

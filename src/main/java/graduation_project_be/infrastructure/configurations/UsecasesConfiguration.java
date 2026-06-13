@@ -5,6 +5,8 @@ import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.*;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.grading.*;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxCatalog;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
 import graduation_project_be.infrastructure.services.JSqlParserSelectQueryStructureAnalyzer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
@@ -286,8 +288,9 @@ public class UsecasesConfiguration {
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
             UserRepository userRepository,
-            CurrentUserService currentUserService) {
-        return new GetMyResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, examRepository, userRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ObjectMapper objectMapper) {
+        return new GetMyResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, examRepository, userRepository, currentUserService, objectMapper);
     }
 
     @Bean
@@ -352,10 +355,25 @@ public class UsecasesConfiguration {
     }
 
     @Bean
-    SelectQueryRuleSuggester selectQueryRuleSuggester(
+    WhiteboxCatalog whiteboxCatalog() {
+        return new WhiteboxCatalog();
+    }
+
+    @Bean
+    WhiteboxEngine whiteboxEngine(
             SelectQueryStructureAnalyzer selectQueryStructureAnalyzer,
-            ObjectMapper objectMapper) {
-        return new SelectQueryRuleSuggester(selectQueryStructureAnalyzer, objectMapper);
+            WhiteboxCatalog whiteboxCatalog) {
+        return new WhiteboxEngine(selectQueryStructureAnalyzer, whiteboxCatalog);
+    }
+
+    @Bean
+    WhiteboxCatalogUsecase whiteboxCatalogUsecase(WhiteboxCatalog whiteboxCatalog) {
+        return new WhiteboxCatalogUsecase(whiteboxCatalog);
+    }
+
+    @Bean
+    WhiteboxValidateUsecase whiteboxValidateUsecase(WhiteboxEngine whiteboxEngine) {
+        return new WhiteboxValidateUsecase(whiteboxEngine);
     }
 
     @Bean
@@ -378,10 +396,8 @@ public class UsecasesConfiguration {
     SelectQuestionGrader selectQuestionGrader(
             ExamSchemaService examSchemaService,
             ObjectMapper objectMapper,
-            GradingSupport gradingSupport,
-            SelectQueryStructureAnalyzer selectQueryStructureAnalyzer) {
-        return new SelectQuestionGrader(examSchemaService, objectMapper, gradingSupport,
-                selectQueryStructureAnalyzer);
+            GradingSupport gradingSupport) {
+        return new SelectQuestionGrader(examSchemaService, objectMapper, gradingSupport);
     }
 
     @Bean
@@ -420,13 +436,14 @@ public class UsecasesConfiguration {
             InsertDataQuestionGrader insertDataQuestionGrader,
             SelectQuestionGrader selectQuestionGrader,
             RoutineQuestionGrader routineQuestionGrader,
-            TriggerQuestionGrader triggerQuestionGrader) {
+            TriggerQuestionGrader triggerQuestionGrader,
+            WhiteboxEngine whiteboxEngine) {
         return new GradeExamUsecase(
                 examRepository, examQuestionRepository, examSubmissionRepository,
                 examResultRepository, examSpecificationRepository, classRepository,
                 examSchemaService, examSessionService, gradingNotificationService, userRepository,
                 objectMapper, gradingSupport, createTableQuestionGrader, insertDataQuestionGrader,
-                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader);
+                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader, whiteboxEngine);
     }
 
     @Bean
@@ -437,13 +454,11 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             InsertDataQuestionGrader insertDataQuestionGrader,
-            ObjectMapper objectMapper,
-            SelectQueryRuleSuggester selectQueryRuleSuggester) {
+            ObjectMapper objectMapper) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
                 examRepository, examSpecificationRepository,
-                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper,
-                selectQueryRuleSuggester);
+                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper);
     }
 
     @Bean

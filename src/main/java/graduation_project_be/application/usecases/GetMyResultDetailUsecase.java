@@ -4,17 +4,21 @@ import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxStudentTrace;
 import graduation_project_be.application.usecases.request.GetMyResultDetailRequest;
 import graduation_project_be.application.usecases.response.GetExamResultDetailResponse;
 import graduation_project_be.domain.models.*;
 import graduation_project_be.domain.models.enums.GradingType;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RequiredArgsConstructor
 public class GetMyResultDetailUsecase {
 
@@ -24,6 +28,7 @@ public class GetMyResultDetailUsecase {
     private final ExamRepository examRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
+    private final ObjectMapper objectMapper;
 
     public GetExamResultDetailResponse execute(GetMyResultDetailRequest request) {
         Long resultId = request.resultId();
@@ -79,7 +84,7 @@ public class GetMyResultDetailUsecase {
                             submission != null ? submission.getGradedAt() : null,
                             submission != null ? submission.getTeacherComment() : null,
                             List.of(),
-                            null
+                            buildStudentWhiteboxTrace(submission)
                     );
                 }).toList();
 
@@ -99,6 +104,30 @@ public class GetMyResultDetailUsecase {
                 result.getLastGradedAt(),
                 details
         );
+    }
+
+    /**
+     * Concise, evidence-stripped white-box feedback for the student (FAIL deductions only). Returns
+     * null when there is no white-box deduction, so students keep their existing result view.
+     */
+    private GradingTrace buildStudentWhiteboxTrace(ExamSubmission submission) {
+        if (submission == null || submission.getGradingTraceJson() == null
+                || submission.getGradingTraceJson().isBlank()) {
+            return null;
+        }
+        try {
+            GradingTrace full = objectMapper.readValue(submission.getGradingTraceJson(), GradingTrace.class);
+            List<GradingTraceItem> concise = WhiteboxStudentTrace.concise(full.items());
+            if (concise.isEmpty()) {
+                return null;
+            }
+            return new GradingTrace(full.traceSchemaVersion(), full.gradingRunVersion(),
+                    full.generatedAt(), full.attemptNumber(), full.rubricHash(), concise);
+        } catch (Exception e) {
+            log.warn("Không đọc được grading trace cho submission {}: {}",
+                    submission.getId(), e.getMessage());
+            return null;
+        }
     }
 
     private String resolveTeacherName(Long teacherId, Map<Long, String> cache) {

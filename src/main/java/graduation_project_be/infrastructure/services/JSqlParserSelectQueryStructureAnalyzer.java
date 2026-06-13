@@ -70,6 +70,13 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             int fromTableCount = 1;
             boolean subqueryInFrom = isSubselect(ps.getFromItem());
             Acc joinAcc = new Acc();
+            // Top-level derived tables (FROM/JOIN subselects) are nesting too; scan their interiors so
+            // deeper nesting inside them counts toward maxNestingDepth (otherwise it would cap at 1).
+            Acc fromAcc = new Acc();
+            if (isSubselect(ps.getFromItem())) {
+                fromAcc.maxDepth = Math.max(fromAcc.maxDepth, 1);
+                scanInner((Select) ps.getFromItem(), 1, fromAcc);
+            }
             List<Join> joins = ps.getJoins();
             if (joins != null) {
                 for (Join join : joins) {
@@ -79,6 +86,8 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     }
                     if (isSubselect(join.getRightItem())) {
                         subqueryInFrom = true;
+                        fromAcc.maxDepth = Math.max(fromAcc.maxDepth, 1);
+                        scanInner((Select) join.getRightItem(), 1, fromAcc);
                     }
                     // ON conditions can carry subqueries/aggregates that drive REQUIRE_* and nesting depth.
                     if (join.getOnExpressions() != null) {
@@ -107,7 +116,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
 
             int maxDepth = Math.max(
                     Math.max(Math.max(selectAcc.maxDepth, whereAcc.maxDepth), joinAcc.maxDepth),
-                    Math.max(havingAcc.maxDepth, subqueryInFrom ? 1 : 0));
+                    Math.max(Math.max(havingAcc.maxDepth, fromAcc.maxDepth), subqueryInFrom ? 1 : 0));
 
             return new QueryStructureFacts(
                     true,
@@ -125,7 +134,7 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     maxDepth,
                     whereAcc.hasLiteral,
                     hasCorrelatedSubquery(ps, Set.of()));
-        } catch (Throwable t) {
+        } catch (Exception | StackOverflowError t) {
             return QueryStructureFacts.parseFailed();
         }
     }

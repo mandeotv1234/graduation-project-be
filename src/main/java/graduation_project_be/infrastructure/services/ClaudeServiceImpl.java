@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import graduation_project_be.application.exceptions.BadRequestException;
-import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.AIService;
+import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
@@ -17,15 +17,9 @@ import org.springframework.util.StreamUtils;
 import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
-import java.net.URI;
-import java.util.Base64;
 import java.util.Collections;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -40,10 +34,7 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Service
-public class GeminiServiceImpl implements AIService {
-    private static final Pattern RETRY_DELAY_PATTERN = Pattern.compile("\"retryDelay\"\\s*:\\s*\"([^\"]+)\"");
-
-    private static final String GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s";
+public class ClaudeServiceImpl implements AIService {
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?is)create\\s+table\\s+([\\[\\]A-Za-z0-9_\\.]+)\\s*\\(");
     private static final Pattern CONSTRAINT_PREFIX_PATTERN = Pattern.compile(
@@ -63,11 +54,9 @@ public class GeminiServiceImpl implements AIService {
     private static final double CT_MISSING_PK_FK_PENALTY = 0.5d;
     private static final double[] CT_TABLE_PENALTY_STEPS = new double[] { 0.25d, 0.2d };
 
-    private final String apiKey;
-    private final String geminiModel;
-    private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final ExamSchemaService examSchemaService;
+    private final ClaudeVmClient claudeVmClient;
 
     @Value("classpath:prompts/system_prompt.txt")
     private Resource systemPromptResource;
@@ -118,19 +107,12 @@ public class GeminiServiceImpl implements AIService {
     private String entityDescriptionPromptTemplate;
     private String extractQuestionsFromPdfPromptTemplate;
 
-    public GeminiServiceImpl(
-            @Value("${spring.application.gemini.api-key}") String apiKey,
-            @Value("${spring.application.gemini.model:gemini-2.5-flash}") String geminiModel,
-            ExamSchemaService examSchemaService) {
-        this.apiKey = apiKey;
-        this.geminiModel = geminiModel;
-        this.httpClient = null;
+    public ClaudeServiceImpl(
+            ExamSchemaService examSchemaService,
+            ClaudeVmClient claudeVmClient) {
         this.objectMapper = new ObjectMapper();
         this.examSchemaService = examSchemaService;
-    }
-
-    private String geminiEndpoint() {
-        return String.format(GEMINI_URL_TEMPLATE, geminiModel, apiKey);
+        this.claudeVmClient = claudeVmClient;
     }
 
     @PostConstruct
@@ -161,67 +143,21 @@ public class GeminiServiceImpl implements AIService {
             this.extractQuestionsFromPdfPromptTemplate = StreamUtils
                     .copyToString(extractQuestionsFromPdfPromptResource.getInputStream(), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            log.error("Không thể nạp prompt template Gemini từ resources/prompts", e);
-            throw new RuntimeException("Không thể nạp prompt template Gemini", e);
+            log.error("Không thể nạp prompt template Claude từ resources/prompts", e);
+            throw new RuntimeException("Không thể nạp prompt template Claude", e);
         }
     }
 
     @Override
     public GeneratedQuestion generateSqlAnswer(String questionContent, String questionType, String schemaContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Thiếu Gemini API key. Bỏ qua bước sinh bằng AI.");
-            return new GeneratedQuestion("-- Không thể sinh bằng AI: thiếu Gemini API key", null);
-        }
-
-        HttpClient client = getOrCreateHttpClient();
-        if (client == null) {
-            return new GeneratedQuestion("-- Không thể sinh bằng AI: khởi tạo HTTP client thất bại", null);
-        }
-
         String prompt = buildPrompt(questionContent, questionType, schemaContext);
-        String requestBody = buildRequestBody(prompt);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(geminiEndpoint()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofSeconds(30))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                log.error("Gemini API trả lỗi {}: {}", response.statusCode(), response.body());
-                return new GeneratedQuestion("-- Sinh bằng AI thất bại", null);
-            }
-
-            return parseResponse(response.body());
-
+            String text = claudeVmClient.askForJson(prompt, 60);
+            return parseResponseFromText(text);
         } catch (Exception e) {
-            log.error("Không thể gọi Gemini API: {}", e.getMessage(), e);
+            log.error("Không thể gọi Claude VM API: {}", e.getMessage(), e);
             return new GeneratedQuestion("-- Sinh bằng AI thất bại: " + e.getMessage(), null);
-        }
-    }
-
-    private HttpClient getOrCreateHttpClient() {
-        if (httpClient != null) {
-            return httpClient;
-        }
-
-        synchronized (this) {
-            if (httpClient != null) {
-                return httpClient;
-            }
-            try {
-                httpClient = HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(15))
-                        .build();
-                return httpClient;
-            } catch (Exception e) {
-                log.error("Không thể khởi tạo HTTP client cho Gemini: {}", e.getMessage(), e);
-                return null;
-            }
         }
     }
 
@@ -232,49 +168,15 @@ public class GeminiServiceImpl implements AIService {
                 questionContent);
     }
 
-    private String buildRequestBody(String prompt) {
-        return buildRequestBody(prompt, 1024);
-    }
-
-    private String buildRequestBody(String prompt, int maxOutputTokens) {
+    private GeneratedQuestion parseResponseFromText(String text) {
         try {
-            String escaped = objectMapper.writeValueAsString(prompt);
-            // escaped includes surrounding quotes, remove them
-            escaped = escaped.substring(1, escaped.length() - 1);
-            return String.format("""
-                    {
-                      "contents": [{"parts": [{"text": "%s"}]}],
-                      "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": %d
-                      }
-                    }
-                    """, escaped, maxOutputTokens);
-        } catch (Exception e) {
-            throw new RuntimeException("Không thể tạo request body cho Gemini", e);
-        }
-    }
-
-    private GeneratedQuestion parseResponse(String body) {
-        try {
-            JsonNode root = objectMapper.readTree(body);
-            String text = root
-                    .path("candidates").get(0)
-                    .path("content")
-                    .path("parts").get(0)
-                    .path("text").asText();
-
-            // Strip markdown code blocks if present
             text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-
             JsonNode result = objectMapper.readTree(text);
             String correctQuery = result.path("correctQuery").asText("-- AI không sinh câu truy vấn");
             String verifyScript = result.path("verifyScript").asText(null);
-
-            return new GeneratedQuestion(correctQuery, verifyScript.isBlank() ? null : verifyScript);
-
+            return new GeneratedQuestion(correctQuery, verifyScript == null || verifyScript.isBlank() ? null : verifyScript);
         } catch (Exception e) {
-            log.error("Không thể phân tích phản hồi Gemini: {}", e.getMessage());
+            log.error("Không thể phân tích phản hồi AI: {}", e.getMessage());
             return new GeneratedQuestion("-- Không thể phân tích phản hồi AI", null);
         }
     }
@@ -287,15 +189,6 @@ public class GeminiServiceImpl implements AIService {
             String questionType,
             String priorQuestionContext,
             String schemaContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Thiếu Gemini API key. Không thể sinh rubric.");
-            return null;
-        }
-
-        HttpClient client = getOrCreateHttpClient();
-        if (client == null)
-            return null;
-
         String basePrompt;
         if ("CREATE_TABLE_RULES".equalsIgnoreCase(questionType)) {
             basePrompt = buildCreateTableRulesPrompt(correctQuery, questionContent, totalPoints);
@@ -317,7 +210,7 @@ public class GeminiServiceImpl implements AIService {
 
         try {
             if ("CREATE_TABLE_RULES".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
+                String rubricJson = callClaudeForJson(basePrompt);
                 if (rubricJson == null) {
                     return null;
                 }
@@ -329,7 +222,7 @@ public class GeminiServiceImpl implements AIService {
                 String prompt = basePrompt;
                 String latestJson = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
-                    latestJson = callGeminiForJson(client, prompt);
+                    latestJson = callClaudeForJson(prompt);
                     if (latestJson == null) {
                         return null;
                     }
@@ -357,7 +250,7 @@ public class GeminiServiceImpl implements AIService {
             }
 
             if ("INSERT_DATA".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
+                String rubricJson = callClaudeForJson(basePrompt);
                 if (rubricJson == null) {
                     return null;
                 }
@@ -367,7 +260,7 @@ public class GeminiServiceImpl implements AIService {
             }
 
             if ("STORED_PROCEDURE".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
+                String rubricJson = callClaudeForJson(basePrompt);
                 if (rubricJson == null) {
                     return null;
                 }
@@ -383,7 +276,7 @@ public class GeminiServiceImpl implements AIService {
                 log.warn("Rubric STORED_PROCEDURE chạy kiểm tra thất bại, thử sửa một lần: {}", issues);
                 String repairPrompt = buildStoredProcedureRubricRepairPrompt(
                         questionContent, correctQuery, schemaContext, rubricJson, issues);
-                String repairedRubricJson = callGeminiForJson(client, repairPrompt);
+                String repairedRubricJson = callClaudeForJson(repairPrompt);
                 if (repairedRubricJson == null) {
                     return buildNeedsReviewRubricResponse(rubricJson, issues);
                 }
@@ -404,7 +297,7 @@ public class GeminiServiceImpl implements AIService {
                 String prompt = basePrompt;
                 String latestJson = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
-                    latestJson = callGeminiForJson(client, prompt);
+                    latestJson = callClaudeForJson(prompt);
                     if (latestJson == null) {
                         return null;
                     }
@@ -435,7 +328,7 @@ public class GeminiServiceImpl implements AIService {
                 String prompt = basePrompt;
                 String latestJson = null;
                 for (int attempt = 0; attempt < 3; attempt++) {
-                    latestJson = callGeminiForJson(client, prompt);
+                    latestJson = callClaudeForJson(prompt);
                     if (latestJson == null) {
                         return null;
                     }
@@ -465,7 +358,7 @@ public class GeminiServiceImpl implements AIService {
             }
 
             if (!"SELECT_QUERY".equalsIgnoreCase(questionType)) {
-                String rubricJson = callGeminiForJson(client, basePrompt);
+                String rubricJson = callClaudeForJson(basePrompt);
                 logGeneratedRubric(questionType, rubricJson);
                 return rubricJson;
             }
@@ -473,7 +366,7 @@ public class GeminiServiceImpl implements AIService {
             String prompt = basePrompt;
             String latestJson = null;
             for (int attempt = 0; attempt < 3; attempt++) {
-                latestJson = callGeminiForJson(client, prompt);
+                latestJson = callClaudeForJson(prompt);
                 if (latestJson == null) {
                     return null;
                 }
@@ -504,54 +397,15 @@ public class GeminiServiceImpl implements AIService {
         }
     }
 
-    private String callGeminiForJson(HttpClient client, String prompt) throws Exception {
-        String requestBody = buildRequestBody(prompt, 16384);
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(geminiEndpoint()))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .timeout(Duration.ofSeconds(120))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            log.error("Gemini API trả lỗi {}: {}", response.statusCode(), response.body());
-            return null;
-        }
-
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode candidate = root.path("candidates").get(0);
-        String finishReason = candidate.path("finishReason").asText("");
-        JsonNode usage = root.path("usageMetadata");
-        String text = candidate
-                .path("content")
-                .path("parts").get(0)
-                .path("text").asText();
-
-        text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-
-        log.info(
-                "Phản hồi Gemini: finishReason={} promptTokens={} candidatesTokens={} thoughtsTokens={} totalTokens={} textLength={}\n--- BẮT ĐẦU RAW TEXT ---\n{}\n--- KẾT THÚC RAW TEXT ---",
-                finishReason,
-                usage.path("promptTokenCount").asInt(-1),
-                usage.path("candidatesTokenCount").asInt(-1),
-                usage.path("thoughtsTokenCount").asInt(-1),
-                usage.path("totalTokenCount").asInt(-1),
-                text.length(),
-                text);
-
+    private String callClaudeForJson(String prompt) throws Exception {
+        String text = claudeVmClient.askForJson(prompt, 600);
+        log.info("Phản hồi Claude VM: textLength={}\n--- BẮT ĐẦU RAW TEXT ---\n{}\n--- KẾT THÚC RAW TEXT ---",
+                text.length(), text);
         try {
             objectMapper.readTree(text);
         } catch (Exception parseErr) {
-            log.error(
-                    "Gemini trả về JSON không hợp lệ. finishReason={} textLength={} parseError={}\nPhản hồi wrapper đầy đủ:\n{}",
-                    finishReason, text.length(), parseErr.getMessage(), response.body());
-            if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) {
-                throw new RuntimeException(
-                        "Gemini bị cắt do MAX_TOKENS (output > maxOutputTokens). Tăng maxOutputTokens hoặc giảm phạm vi rubric. textLength="
-                                + text.length(),
-                        parseErr);
-            }
+            log.error("Claude VM trả về JSON không hợp lệ. textLength={} parseError={}\nRaw text:\n{}",
+                    text.length(), parseErr.getMessage(), text);
             throw parseErr;
         }
         return text;
@@ -559,16 +413,16 @@ public class GeminiServiceImpl implements AIService {
 
     private void logGeneratedRubric(String questionType, String rubricJson) {
         if (rubricJson == null || rubricJson.isBlank()) {
-            log.warn("Gemini trả về rubric rỗng cho questionType={}", questionType);
+            log.warn("Claude trả về rubric rỗng cho questionType={}", questionType);
             return;
         }
 
         try {
             JsonNode rubricNode = objectMapper.readTree(rubricJson);
             String prettyJson = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(rubricNode);
-            log.info("Gemini đã sinh rubric cho questionType={}:\n{}", questionType, prettyJson);
+            log.info("Claude đã sinh rubric cho questionType={}:\n{}", questionType, prettyJson);
         } catch (Exception e) {
-            log.warn("Gemini đã sinh rubric cho questionType={} nhưng không thể định dạng log đẹp. Rubric gốc: {}",
+            log.warn("Claude đã sinh rubric cho questionType={} nhưng không thể định dạng log đẹp. Rubric gốc: {}",
                     questionType, rubricJson);
         }
     }
@@ -2704,16 +2558,6 @@ public class GeminiServiceImpl implements AIService {
 
     @Override
     public JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Thiếu Gemini API key. Không thể sinh schema.");
-            return null;
-        }
-
-        HttpClient client = getOrCreateHttpClient();
-        if (client == null) {
-            return null;
-        }
-
         String currentSchemaText = (currentSchemaJson == null || currentSchemaJson.isNull())
                 ? "[]"
                 : currentSchemaJson.toString();
@@ -2724,52 +2568,23 @@ public class GeminiServiceImpl implements AIService {
                 specificationDescription == null ? "" : specificationDescription.trim());
 
         try {
-            String requestBody = buildSchemaJsonRequestBody(prompt, 64000);
-            log.info("Đang gọi Gemini để sinh schema đặc tả. Độ dài mô tả={}",
+            log.info("Đang gọi Claude VM để sinh schema đặc tả. Độ dài mô tả={}",
                     specificationDescription == null ? 0 : specificationDescription.length());
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(geminiEndpoint()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofSeconds(60))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                String body = response.body();
-                log.error("Gemini API trả lỗi {} khi sinh schema. Đoạn phản hồi: {}",
-                        response.statusCode(), safeSnippet(body, 1200));
-                throw mapGeminiSchemaError(response.statusCode(), body);
-            }
-
-            JsonNode root = objectMapper.readTree(response.body());
-            JsonNode candidate = root.path("candidates").get(0);
-            if (candidate == null || candidate.isMissingNode()) {
-                log.error("Phản hồi sinh schema của Gemini không có candidates. Đoạn phản hồi gốc: {}",
-                        safeSnippet(response.body(), 1200));
-                return null;
-            }
-
-            String text = candidate
-                    .path("content")
-                    .path("parts").get(0)
-                    .path("text").asText();
+            String text = claudeVmClient.askForJson(prompt, 180);
 
             if (text == null || text.isBlank()) {
-                log.error("Phần text trong phản hồi sinh schema của Gemini đang rỗng. Candidate gốc: {}",
-                        safeSnippet(candidate.toString(), 1200));
+                log.error("Claude VM trả về schema rỗng.");
                 return null;
             }
 
-            text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
             JsonNode parsed = objectMapper.readTree(text);
             if (!parsed.isArray()) {
-                log.error("Phản hồi sinh schema của Gemini không phải JSON array. Đoạn đã parse: {}",
+                log.error("Claude VM trả về schema không phải JSON array. Đoạn đã parse: {}",
                         safeSnippet(parsed.toString(), 1200));
                 return null;
             }
 
-            log.info("Gemini sinh schema thành công. Số bảng={}", parsed.size());
+            log.info("Claude VM sinh schema thành công. Số bảng={}", parsed.size());
             return parsed;
         } catch (Exception e) {
             if (e instanceof BadRequestException badRequestException) {
@@ -2778,51 +2593,6 @@ public class GeminiServiceImpl implements AIService {
             log.error("Không thể sinh schema đặc tả: {}", e.getMessage(), e);
             return null;
         }
-    }
-
-    private BadRequestException mapGeminiSchemaError(int statusCode, String responseBody) {
-        String providerMessage = extractGeminiProviderMessage(responseBody);
-        if (statusCode == 429) {
-            String retryDelay = extractRetryDelay(responseBody);
-            String retryHint = retryDelay == null ? "" : " Vui lòng thử lại sau " + retryDelay + ".";
-            return new BadRequestException(
-                    "Hệ thống AI đang vượt quota (Gemini 429)." + retryHint
-                            + " Nếu lỗi lặp lại, hãy kiểm tra billing/quota của Gemini.");
-        }
-
-        if (providerMessage != null && !providerMessage.isBlank()) {
-            return new BadRequestException("Không thể sinh schema từ AI: " + providerMessage);
-        }
-
-        return new BadRequestException(
-                "Không thể sinh schema từ AI (Gemini HTTP " + statusCode + "). Vui lòng thử lại sau.");
-    }
-
-    private String extractGeminiProviderMessage(String responseBody) {
-        if (responseBody == null || responseBody.isBlank()) {
-            return null;
-        }
-        try {
-            JsonNode body = objectMapper.readTree(responseBody);
-            String message = body.path("error").path("message").asText(null);
-            if (message == null || message.isBlank()) {
-                return null;
-            }
-            return safeSnippet(message, 300);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private String extractRetryDelay(String responseBody) {
-        if (responseBody == null || responseBody.isBlank()) {
-            return null;
-        }
-        Matcher matcher = RETRY_DELAY_PATTERN.matcher(responseBody);
-        if (!matcher.find()) {
-            return null;
-        }
-        return matcher.group(1);
     }
 
     private String safeSnippet(String value, int maxLen) {
@@ -2836,85 +2606,10 @@ public class GeminiServiceImpl implements AIService {
         return normalized.substring(0, maxLen) + "...(truncated)";
     }
 
-    private String buildSchemaJsonRequestBody(String prompt, int maxOutputTokens) {
-        try {
-            ObjectNode root = objectMapper.createObjectNode();
-            ArrayNode contents = root.putArray("contents");
-            ObjectNode content = contents.addObject();
-            ArrayNode parts = content.putArray("parts");
-            parts.addObject().put("text", prompt);
-
-            ObjectNode generationConfig = root.putObject("generationConfig");
-            generationConfig.put("temperature", 0.1);
-            generationConfig.put("maxOutputTokens", maxOutputTokens);
-            generationConfig.put("responseMimeType", "application/json");
-            generationConfig.set("responseSchema", buildSpecificationSchemaResponseSchema());
-
-            return objectMapper.writeValueAsString(root);
-        } catch (Exception e) {
-            throw new RuntimeException("Không thể tạo request body sinh schema cho Gemini", e);
-        }
-    }
-
-    private ObjectNode buildSpecificationSchemaResponseSchema() {
-        ObjectNode rootArray = objectMapper.createObjectNode();
-        rootArray.put("type", "ARRAY");
-
-        ObjectNode tableObject = objectMapper.createObjectNode();
-        tableObject.put("type", "OBJECT");
-        rootArray.set("items", tableObject);
-
-        ObjectNode tableProps = tableObject.putObject("properties");
-        tableProps.putObject("tableName").put("type", "STRING");
-
-        ObjectNode columnsArray = tableProps.putObject("columns");
-        columnsArray.put("type", "ARRAY");
-
-        ObjectNode columnObject = objectMapper.createObjectNode();
-        columnObject.put("type", "OBJECT");
-        columnsArray.set("items", columnObject);
-
-        ObjectNode columnProps = columnObject.putObject("properties");
-        columnProps.putObject("columnName").put("type", "STRING");
-        columnProps.putObject("dataType").put("type", "STRING");
-        columnProps.putObject("primaryKey").put("type", "BOOLEAN");
-        columnProps.putObject("foreignKey").put("type", "BOOLEAN");
-        columnProps.putObject("referencesTable").put("type", "STRING").put("nullable", true);
-        columnProps.putObject("referencesColumn").put("type", "STRING").put("nullable", true);
-        columnProps.putObject("nullable").put("type", "BOOLEAN");
-        columnProps.putObject("unique").put("type", "BOOLEAN");
-        columnProps.putObject("autoIncrement").put("type", "BOOLEAN");
-
-        ArrayNode requiredColumnFields = columnObject.putArray("required");
-        requiredColumnFields.add("columnName");
-        requiredColumnFields.add("dataType");
-        requiredColumnFields.add("primaryKey");
-        requiredColumnFields.add("foreignKey");
-        requiredColumnFields.add("referencesTable");
-        requiredColumnFields.add("referencesColumn");
-        requiredColumnFields.add("nullable");
-        requiredColumnFields.add("unique");
-        requiredColumnFields.add("autoIncrement");
-
-        ArrayNode requiredTableFields = tableObject.putArray("required");
-        requiredTableFields.add("tableName");
-        requiredTableFields.add("columns");
-
-        return rootArray;
-    }
-
     @Override
     public String generateEntityDescription(String entityName, String displayName,
                                             List<SpecAttribute> attributes,
                                             String schemaContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key missing — skipping entity description generation for {}", entityName);
-            return null;
-        }
-
-        HttpClient client = getOrCreateHttpClient();
-        if (client == null) return null;
-
         String pkList = attributes == null ? "" : attributes.stream()
                 .filter(SpecAttribute::isPrimaryKey)
                 .map(SpecAttribute::getAttributeName)
@@ -2935,43 +2630,24 @@ public class GeminiServiceImpl implements AIService {
                 fkHint.isBlank() ? "không xác định" : fkHint,
                 schemaContext == null || schemaContext.isBlank() ? "không có" : schemaContext);
 
-        String requestBody = buildRequestBody(prompt, 256);
-
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(geminiEndpoint()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofSeconds(10))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                log.warn("Gemini entity description API error {} for entity {}: {}",
-                        response.statusCode(), entityName, response.body());
-                return null;
-            }
-
-            JsonNode root = objectMapper.readTree(response.body());
-            JsonNode candidates = root.path("candidates");
-            if (!candidates.isArray() || candidates.isEmpty()) {
-                log.warn("Gemini entity description: empty candidates array for entity {}. Response snippet: {}",
-                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
-                return null;
-            }
-            JsonNode parts = candidates.get(0).path("content").path("parts");
-            if (!parts.isArray() || parts.isEmpty()) {
-                log.warn("Gemini entity description: empty parts array for entity {}. Response snippet: {}",
-                        entityName, response.body().substring(0, Math.min(200, response.body().length())));
-                return null;
-            }
-            String text = parts.get(0).path("text").asText("").trim();
-
-            // Strip control characters; keep only printable Unicode
+            String text = claudeVmClient.ask(prompt, 30).trim();
             text = text.replaceAll("[\\p{Cntrl}&&[^\n\t]]", "").trim();
             return text.isBlank() ? null : text;
         } catch (Exception e) {
             log.warn("Entity description generation failed for {}: {}", entityName, e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public AIService.StudentFeedbackDraft generateStudentFeedback(AIService.StudentFeedbackContext context) {
+        try {
+            String prompt = StudentFeedbackAiSupport.buildPrompt(context, objectMapper);
+            String text = claudeVmClient.askForJson(prompt, 180);
+            return StudentFeedbackAiSupport.parseDraft(text, objectMapper);
+        } catch (Exception e) {
+            log.warn("Student feedback generation failed via Claude VM: {}", e.getMessage());
             return null;
         }
     }
@@ -2981,95 +2657,45 @@ public class GeminiServiceImpl implements AIService {
 
     @Override
     public AIService.PdfExtractionResult extractQuestionsFromPdf(byte[] pdfBytes, String schemaContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key is missing. Cannot extract questions from PDF.");
-            return EMPTY_EXTRACTION;
-        }
-
-        HttpClient client = getOrCreateHttpClient();
-        if (client == null) {
-            return EMPTY_EXTRACTION;
-        }
-
         try {
-            String prompt = String.format(extractQuestionsFromPdfPromptTemplate,
-                    schemaContext != null && !schemaContext.isBlank() ? schemaContext : "No schema context available");
-
-            String requestBody = buildRequestBodyWithPdf(pdfBytes, prompt);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(geminiEndpoint()))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .timeout(Duration.ofSeconds(60))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                log.error("Gemini PDF extraction error {}: {}", response.statusCode(), response.body());
+            String pdfText = extractTextFromPdf(pdfBytes);
+            if (pdfText == null || pdfText.isBlank()) {
+                log.warn("PDF text extraction returned empty result.");
                 return EMPTY_EXTRACTION;
             }
 
-            return parsePdfExtractionResponse(response.body());
+            String basePrompt = String.format(extractQuestionsFromPdfPromptTemplate,
+                    schemaContext != null && !schemaContext.isBlank() ? schemaContext : "No schema context available");
+            String prompt = basePrompt + "\n\n=== NỘI DUNG PDF ===\n" + pdfText;
 
+            String text = claudeVmClient.askForJson(prompt, 120);
+            return parsePdfExtractionResponseFromText(text);
         } catch (Exception e) {
-            log.error("Failed to extract questions from PDF via Gemini: {}", e.getMessage(), e);
+            log.error("Failed to extract questions from PDF via Claude VM: {}", e.getMessage(), e);
             return EMPTY_EXTRACTION;
         }
     }
 
-    private String buildRequestBodyWithPdf(byte[] pdfBytes, String prompt) throws Exception {
-        String base64Pdf = Base64.getEncoder().encodeToString(pdfBytes);
-
-        ObjectNode inlineData = objectMapper.createObjectNode();
-        inlineData.put("mime_type", "application/pdf");
-        inlineData.put("data", base64Pdf);
-
-        ObjectNode pdfPart = objectMapper.createObjectNode();
-        pdfPart.set("inline_data", inlineData);
-
-        ObjectNode textPart = objectMapper.createObjectNode();
-        textPart.put("text", prompt);
-
-        ArrayNode parts = objectMapper.createArrayNode();
-        parts.add(pdfPart);
-        parts.add(textPart);
-
-        ObjectNode content = objectMapper.createObjectNode();
-        content.set("parts", parts);
-
-        ArrayNode contents = objectMapper.createArrayNode();
-        contents.add(content);
-
-        ObjectNode genConfig = objectMapper.createObjectNode();
-        genConfig.put("temperature", 0.1);
-        genConfig.put("maxOutputTokens", 8192);
-
-        ObjectNode root = objectMapper.createObjectNode();
-        root.set("contents", contents);
-        root.set("generationConfig", genConfig);
-
-        return objectMapper.writeValueAsString(root);
+    private String extractTextFromPdf(byte[] pdfBytes) {
+        try (org.apache.pdfbox.pdmodel.PDDocument doc =
+                     org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
+            org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
+            return stripper.getText(doc);
+        } catch (Exception e) {
+            log.error("PDFBox text extraction failed: {}", e.getMessage(), e);
+            return null;
+        }
     }
 
-    private AIService.PdfExtractionResult parsePdfExtractionResponse(String body) {
+    private AIService.PdfExtractionResult parsePdfExtractionResponseFromText(String text) {
         try {
-            JsonNode root = objectMapper.readTree(body);
-            String text = root
-                    .path("candidates").get(0)
-                    .path("content")
-                    .path("parts").get(0)
-                    .path("text").asText();
-
             text = text.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-
             JsonNode parsed = objectMapper.readTree(text);
             String schemaScript = parsed.path("schemaScript").asText("").trim();
 
             JsonNode questionsNode = parsed.path("questions");
             if (!questionsNode.isArray()) {
-                log.warn("Gemini PDF response missing 'questions' array");
+                log.warn("Claude VM PDF response missing 'questions' array");
                 return new AIService.PdfExtractionResult(Collections.emptyList(), schemaScript);
             }
 
@@ -3084,16 +2710,13 @@ public class GeminiServiceImpl implements AIService {
                 double points = q.path("points").asDouble(1.0);
                 int difficultyLevel = q.path("difficultyLevel").asInt(2);
                 int orderIndex = q.path("orderIndex").asInt(questions.size() + 1);
-
                 if (content.isBlank()) continue;
-
                 questions.add(new AIService.ExtractedQuestion(title, content, questionType, points, difficultyLevel, orderIndex));
             }
 
             return new AIService.PdfExtractionResult(questions, schemaScript);
-
         } catch (Exception e) {
-            log.error("Failed to parse Gemini PDF extraction response: {}", e.getMessage());
+            log.error("Failed to parse Claude VM PDF extraction response: {}", e.getMessage());
             return EMPTY_EXTRACTION;
         }
     }

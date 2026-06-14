@@ -2,7 +2,7 @@ package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import graduation_project_be.application.exceptions.BadRequestException;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GenerateSpecificationSchemaUsecase {
 
-    private final GeminiService geminiService;
+    private final AIService geminiService;
 
     public JsonNode execute(String description, JsonNode currentSchemaJson) {
         JsonNode schemaJson = geminiService.generateSpecificationSchema(description, currentSchemaJson);

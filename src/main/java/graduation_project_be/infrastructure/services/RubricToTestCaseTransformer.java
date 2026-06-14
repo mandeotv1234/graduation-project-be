@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -49,7 +48,7 @@ public class RubricToTestCaseTransformer {
     /**
      * @param questionId    Required to set on each TestCase.
      * @param questionType  Question type to determine default verification_type.
-     * @param rubricJson    JSON returned by GeminiService.generateGradingRubric.
+     * @param rubricJson    JSON returned by AIService.generateGradingRubric.
      *                      Expected shape (top-level): grading_payload.test_cases[]
      *                      OR test_cases[] at root (some prompts skip the wrapper).
      * @return List of TestCase models with expectedValue still null. Caller

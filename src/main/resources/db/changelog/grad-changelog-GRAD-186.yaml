@@ -1,0 +1,95 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1406261130
+      author: manhuynh
+      comment: "GRAD-186: store AI feedback snapshots per exam result"
+      changes:
+        - createTable:
+            tableName: exam_result_feedbacks
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_exam_result_feedbacks
+              - column:
+                  name: exam_result_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uk_exam_result_feedbacks_result
+              - column:
+                  name: exam_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: student_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempt_number
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: generated_by_ai
+                  type: BOOLEAN
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+              - column:
+                  name: generated_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: feedback_json
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: exam_result_feedbacks
+            baseColumnNames: exam_result_id
+            constraintName: fk_exam_result_feedbacks_exam_result
+            referencedTableName: exam_results
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_result_feedbacks
+            baseColumnNames: exam_id
+            constraintName: fk_exam_result_feedbacks_exam
+            referencedTableName: exams
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: exam_result_feedbacks
+            baseColumnNames: student_id
+            constraintName: fk_exam_result_feedbacks_student
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - createIndex:
+            tableName: exam_result_feedbacks
+            indexName: idx_exam_result_feedbacks_student_exam
+            columns:
+              - column:
+                  name: student_id
+              - column:
+                  name: exam_id

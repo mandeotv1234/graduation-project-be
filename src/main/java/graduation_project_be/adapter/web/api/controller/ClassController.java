@@ -1,5 +1,6 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import graduation_project_be.adapter.web.api.dtos.request.AddTeacherToClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.BanStudentRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.CreateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetClassDetailRequestDto;
@@ -7,9 +8,14 @@ import graduation_project_be.adapter.web.api.dtos.request.GetClassesRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.GetStudentsInClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateClassRequestDto;
 import graduation_project_be.adapter.web.api.dtos.response.*;
+import graduation_project_be.application.usecases.AddTeacherToClassUsecase;
 import graduation_project_be.application.usecases.BanStudentUsecase;
+import graduation_project_be.application.usecases.GetClassTeachersUsecase;
+import graduation_project_be.application.usecases.RemoveTeacherFromClassUsecase;
 import graduation_project_be.application.usecases.UnbanStudentUsecase;
 import graduation_project_be.application.usecases.GetClassBansUsecase;
+import graduation_project_be.application.usecases.request.AddTeacherToClassRequest;
+import graduation_project_be.application.usecases.response.GetClassTeachersResponse;
 import graduation_project_be.application.usecases.CreateClassUsecase;
 import graduation_project_be.application.usecases.UpdateClassUsecase;
 import graduation_project_be.application.usecases.GetClassDetailUsecase;
@@ -51,6 +57,9 @@ public class ClassController {
         private final BanStudentUsecase banStudentUsecase;
         private final UnbanStudentUsecase unbanStudentUsecase;
         private final GetClassBansUsecase getClassBansUsecase;
+        private final AddTeacherToClassUsecase addTeacherToClassUsecase;
+        private final GetClassTeachersUsecase getClassTeachersUsecase;
+        private final RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase;
 
         @PostMapping
         @PreAuthorize("hasRole('TEACHER')")
@@ -209,5 +218,34 @@ public class ClassController {
                         @PathVariable("studentId") Long studentId) {
                 unbanStudentUsecase.execute(classId, studentId);
                 return ResponseEntity.ok(ResponseDto.of(null, "OK", "Student unbanned successfully"));
+        }
+
+        @GetMapping("/{classId}/teachers")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getClassTeachers(@PathVariable("classId") Long classId) {
+                List<GetClassTeachersResponse> responses = getClassTeachersUsecase.execute(classId);
+                List<ClassTeacherResponseDto> dtos = responses.stream()
+                                .map(ClassTeacherResponseDto::fromResponse)
+                                .toList();
+                return ResponseEntity.ok(ResponseDto.of(dtos, "OK", "Class teachers retrieved successfully"));
+        }
+
+        @PostMapping("/{classId}/teachers")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> addTeacherToClass(
+                        @PathVariable("classId") Long classId,
+                        @RequestBody @Valid AddTeacherToClassRequestDto requestDto) {
+                AddTeacherToClassRequest request = requestDto.toRequest(classId);
+                addTeacherToClassUsecase.execute(request);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Thêm giảng viên vào lớp học thành công!"));
+        }
+
+        @DeleteMapping("/{classId}/teachers/{teacherId}")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> removeTeacherFromClass(
+                        @PathVariable("classId") Long classId,
+                        @PathVariable("teacherId") Long teacherId) {
+                removeTeacherFromClassUsecase.execute(classId, teacherId);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Xóa giảng viên khỏi lớp học thành công!"));
         }
 }

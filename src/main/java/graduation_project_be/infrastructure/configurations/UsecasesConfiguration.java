@@ -249,7 +249,7 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             CurrentUserService currentUserService,
             ExamSpecificationRepository examSpecificationRepository,
-            GeminiService geminiService) {
+            AIService geminiService) {
         return new CreateExamQuestionUsecase(classRepository, examQuestionRepository, examRepository,
                 currentUserService, examSpecificationRepository, geminiService);
     }
@@ -291,6 +291,27 @@ public class UsecasesConfiguration {
             CurrentUserService currentUserService,
             ObjectMapper objectMapper) {
         return new GetMyResultDetailUsecase(examResultRepository, examSubmissionRepository, examQuestionRepository, examRepository, userRepository, currentUserService, objectMapper);
+    }
+
+    @Bean
+    GetStudentFeedbackUsecase getStudentFeedbackUsecase(
+            ExamResultRepository examResultRepository,
+            ExamResultFeedbackRepository examResultFeedbackRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            CurrentUserService currentUserService,
+            AIService aiService,
+            ObjectMapper objectMapper) {
+        return new GetStudentFeedbackUsecase(
+                examResultRepository,
+                examResultFeedbackRepository,
+                examSubmissionRepository,
+                examQuestionRepository,
+                examRepository,
+                currentUserService,
+                aiService,
+                objectMapper);
     }
 
     @Bean
@@ -448,19 +469,20 @@ public class UsecasesConfiguration {
 
     @Bean
     RubricTestingUsecase rubricTestingUsecase(
-            GeminiService geminiService,
+            AIService geminiService,
             ExamSchemaService examSchemaService,
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             InsertDataQuestionGrader insertDataQuestionGrader,
             ObjectMapper objectMapper,
-            SelectQuestionGrader selectQuestionGrader) {
+            SelectQuestionGrader selectQuestionGrader,
+            WhiteboxEngine whiteboxEngine) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
                 examRepository, examSpecificationRepository,
                 getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper,
-                selectQuestionGrader);
+                selectQuestionGrader, whiteboxEngine);
     }
 
     @Bean
@@ -704,7 +726,7 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
-            GeminiService geminiService,
+            AIService geminiService,
             graduation_project_be.infrastructure.services.RubricToTestCaseTransformer rubricTransformer,
             graduation_project_be.infrastructure.services.ExpectedValueDeriver expectedValueDeriver) {
         return new CreateExamQuestionsUsecase(classRepository, examQuestionRepository, examRepository,
@@ -996,7 +1018,7 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             PdfStorageService pdfStorageService,
             CurrentUserService currentUserService,
-            GeminiService geminiService) {
+            AIService geminiService) {
         return new ExtractQuestionsFromPdfUsecase(examRepository, classRepository, examSpecificationRepository,
                 pdfStorageService, currentUserService, geminiService);
     }
@@ -1030,7 +1052,7 @@ public class UsecasesConfiguration {
             ClassRepository classRepository,
             SpecEntityRepository specEntityRepository,
             CurrentUserService currentUserService,
-            GeminiService geminiService) {
+            AIService geminiService) {
         return new GenerateSpecEntityDescriptionUsecase(
                 examRepository, classRepository, specEntityRepository, currentUserService, geminiService);
     }
@@ -1055,7 +1077,7 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             SpecEntityRepository specEntityRepository,
             CurrentUserService currentUserService,
-            GeminiService geminiService,
+            AIService geminiService,
             PdfRenderService pdfRenderService,
             @Qualifier("geminiExecutor") ExecutorService geminiExecutor) {
         return new ExportExamPdfUsecase(
@@ -1154,5 +1176,56 @@ public class UsecasesConfiguration {
                 currentUserService);
     }
 
-}
+    @Bean
+    GetExamPreviewUsecase getExamPreviewUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new GetExamPreviewUsecase(examRepository, classRepository,
+                currentUserService, examSchemaService);
+    }
 
+    @Bean
+    InitializePreviewSchemaUsecase initializePreviewSchemaUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            ExamSpecificationRepository examSpecificationRepository) {
+        return new InitializePreviewSchemaUsecase(examRepository, classRepository,
+                currentUserService, examSchemaService, examSpecificationRepository);
+    }
+
+    @Bean
+    ClearPreviewSchemaUsecase clearPreviewSchemaUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService) {
+        return new ClearPreviewSchemaUsecase(examRepository, classRepository,
+                currentUserService, examSchemaService);
+    }
+
+    @Bean
+    PreviewSubmitExamUsecase previewSubmitExamUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            GradingSupport gradingSupport,
+            CreateTableQuestionGrader createTableQuestionGrader,
+            InsertDataQuestionGrader insertDataQuestionGrader,
+            SelectQuestionGrader selectQuestionGrader,
+            RoutineQuestionGrader routineQuestionGrader,
+            TriggerQuestionGrader triggerQuestionGrader) {
+        return new PreviewSubmitExamUsecase(
+                examRepository, classRepository, examQuestionRepository,
+                examSpecificationRepository, currentUserService, examSchemaService,
+                gradingSupport, createTableQuestionGrader, insertDataQuestionGrader,
+                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader);
+    }
+
+}

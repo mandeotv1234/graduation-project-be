@@ -7,7 +7,6 @@ import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.*;
 import graduation_project_be.application.usecases.response.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graduation_project_be.domain.models.PaginatedResult;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
@@ -35,6 +34,7 @@ public class ExamController {
         private final GetStudentExamsUsecase getStudentExamsUsecase;
         private final GetStudentResultsUsecase getStudentResultsUsecase;
         private final GetMyResultDetailUsecase getMyResultDetailUsecase;
+        private final GetStudentFeedbackUsecase getStudentFeedbackUsecase;
         private final CreateExamQuestionsUsecase createExamQuestionsUsecase;
         private final GetExamQuestionsUsecase getExamQuestionsUsecase;
         private final ExecuteSqlUsecase executeSqlUsecase;
@@ -79,6 +79,10 @@ public class ExamController {
         private final DropAllExamSchemasUsecase dropAllExamSchemasUsecase;
         private final WhiteboxCatalogUsecase whiteboxCatalogUsecase;
         private final WhiteboxValidateUsecase whiteboxValidateUsecase;
+        private final GetExamPreviewUsecase getExamPreviewUsecase;
+        private final InitializePreviewSchemaUsecase initializePreviewSchemaUsecase;
+        private final ClearPreviewSchemaUsecase clearPreviewSchemaUsecase;
+        private final PreviewSubmitExamUsecase previewSubmitExamUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -494,7 +498,7 @@ public class ExamController {
         public ResponseEntity<ResponseDto> getMyResults(
                         @Valid GetStudentResultsRequestDto requestDto) {
                 GetStudentResultsRequest request = requestDto.toRequest();
-                PaginatedResult<StudentExamResultResponse> responses = getStudentResultsUsecase.execute(request);
+                var responses = getStudentResultsUsecase.execute(request);
                 return ResponseEntity.ok(
                                 ResponseDto.of(responses, "OK", "Student results retrieved successfully"));
         }
@@ -510,6 +514,16 @@ public class ExamController {
                 return ResponseEntity.ok(
                                 ResponseDto.of(GetExamResultDetailResponseDto.fromResponse(response), "OK",
                                                 "Result detail retrieved successfully"));
+        }
+
+        @GetMapping("/my-results/{resultId}/feedback")
+        @PreAuthorize("hasRole('STUDENT')")
+        public ResponseEntity<ResponseDto> getMyResultFeedback(
+                        @PathVariable("resultId") @Positive Long resultId) {
+                GetStudentFeedbackResponse response = getStudentFeedbackUsecase.execute(resultId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(GetStudentFeedbackResponseDto.fromResponse(response), "OK",
+                                                "Student feedback retrieved successfully"));
         }
 
         @PostMapping("/{examId}/execute-sql")
@@ -847,6 +861,7 @@ public class ExamController {
         }
 
         @PostMapping("/{examId}/students/{studentId}/remind")
+        @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> remindStudent(
                         @PathVariable Long examId,
                         @PathVariable Long studentId,
@@ -857,6 +872,7 @@ public class ExamController {
         }
 
         @PostMapping("/{examId}/students/{studentId}/force-submit")
+        @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> forceSubmitExam(
                         @PathVariable Long examId,
                         @PathVariable Long studentId) {
@@ -913,5 +929,46 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId) {
                 dropAllExamSchemasUsecase.execute(new DropAllExamSchemasRequest(examId));
                 return ResponseEntity.ok(ResponseDto.of(null, "OK", "Đã xóa toàn bộ schema của bài thi"));
+        }
+
+        // ===== PREVIEW ENDPOINTS =====
+
+        @GetMapping("/{examId}/preview")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamPreview(
+                        @PathVariable("examId") @Positive Long examId) {
+                GetStudentExamResponse response = getExamPreviewUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(GetStudentExamResponseDto.fromResponse(response), "OK",
+                                                "Preview exam retrieved successfully"));
+        }
+
+        @PostMapping("/{examId}/preview/initialize")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> initializePreviewSchema(
+                        @PathVariable("examId") @Positive Long examId) {
+                InitializePreviewSchemaResponse response = initializePreviewSchemaUsecase.execute(examId);
+                return ResponseEntity.ok(
+                                ResponseDto.of(InitializePreviewSchemaResponseDto.fromResponse(response), "OK",
+                                                "Preview schema initialized"));
+        }
+
+        @PostMapping("/{examId}/preview/clear-schema")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> clearPreviewSchema(
+                        @PathVariable("examId") @Positive Long examId) {
+                clearPreviewSchemaUsecase.execute(examId);
+                return ResponseEntity.ok(ResponseDto.of(null, "OK", "Preview schema cleared"));
+        }
+
+        @PostMapping("/{examId}/preview/submit")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> previewSubmitExam(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody @Valid PreviewSubmitRequestDto requestDto) {
+                SubmitExamResponse response = previewSubmitExamUsecase.execute(requestDto.toRequest(examId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(SubmitExamResponseDto.fromResponse(response), "OK",
+                                                "Preview graded successfully"));
         }
 }

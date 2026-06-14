@@ -1,45 +1,20 @@
 package graduation_project_be.application.usecases.grading;
 
-import graduation_project_be.shared.utils.TimeUtils;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graduation_project_be.domain.models.GradingTrace;
 import graduation_project_be.domain.models.GradingTraceItem;
-import graduation_project_be.domain.models.TableMetadata;
-import graduation_project_be.domain.models.RoutineMetadata;
-import graduation_project_be.domain.models.TriggerMetadata;
-import graduation_project_be.domain.models.TableMetadata.ColumnMetadata;
-import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.ExamSchemaService;
-import graduation_project_be.application.port.services.ExamSessionService;
-import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
-import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSpecification;
-import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.SpecDataset;
-import graduation_project_be.domain.models.TeacherClass;
-import graduation_project_be.domain.models.User;
-import graduation_project_be.domain.models.SqlExecutionResult;
-import graduation_project_be.domain.models.enums.GradingStatus;
-import graduation_project_be.domain.models.enums.SubmissionStatus;
-import graduation_project_be.domain.models.enums.VerificationType;
-import graduation_project_be.domain.models.TestCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.text.Normalizer;
-import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import graduation_project_be.application.usecases.GradingTraceCollector;
 
@@ -1531,58 +1506,6 @@ public class SelectQuestionGrader {
         return remapped;
     }
 
-    private int countMissingColumns(List<String> expectedColumns, List<String> actualColumns) {
-        if (expectedColumns == null || expectedColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> actualSet = new HashSet<>();
-        if (actualColumns != null) {
-            for (String actual : actualColumns) {
-                if (actual != null) {
-                    actualSet.add(actual.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int missing = 0;
-        for (String expected : expectedColumns) {
-            if (expected == null) {
-                continue;
-            }
-            if (!actualSet.contains(expected.toLowerCase(Locale.ROOT))) {
-                missing++;
-            }
-        }
-        return missing;
-    }
-
-    private int countExtraColumns(List<String> expectedColumns, List<String> actualColumns) {
-        if (actualColumns == null || actualColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> expectedSet = new HashSet<>();
-        if (expectedColumns != null) {
-            for (String expected : expectedColumns) {
-                if (expected != null) {
-                    expectedSet.add(expected.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int extra = 0;
-        for (String actual : actualColumns) {
-            if (actual == null) {
-                continue;
-            }
-            if (!expectedSet.contains(actual.toLowerCase(Locale.ROOT))) {
-                extra++;
-            }
-        }
-        return extra;
-    }
-
     private boolean sameColumnOrderIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
         if (expectedColumns == null || actualColumns == null) {
             return false;
@@ -2065,27 +1988,4 @@ public class SelectQuestionGrader {
         }
     }
 
-    private String extractSetupScriptFromRubric(String gradingRubricJson) {
-        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
-            return "";
-        }
-        try {
-            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
-            JsonNode testCases = rubric.path("grading_payload").path("test_cases");
-            if (testCases.isArray() && testCases.size() > 0) {
-                StringBuilder setupBuilder = new StringBuilder();
-                for (JsonNode tc : testCases) {
-                    String setupScript = tc.path("setup_script").asText("");
-                    if (!setupScript.isBlank()) {
-                        setupScript = setupScript.replace("\\n", "\n").replace("\\t", "\t");
-                        setupBuilder.append(setupScript).append("\n");
-                    }
-                }
-                return setupBuilder.toString();
-            }
-        } catch (Exception e) {
-            return "";
-        }
-        return "";
-    }
 }

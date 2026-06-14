@@ -7,6 +7,7 @@ import java.util.List;
 import java.math.BigDecimal;
 
 public record SubmitExamResponse(
+        Long resultId,
         Long examId,
         Long studentId,
         LocalDateTime submittedAt,

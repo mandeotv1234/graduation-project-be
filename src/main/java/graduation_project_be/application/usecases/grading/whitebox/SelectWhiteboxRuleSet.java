@@ -30,16 +30,47 @@ final class SelectWhiteboxRuleSet {
                              Map<String, WhiteboxRuleEvaluator> evaluators) {
         // ---- Group 1: Subquery & CTE ----
         reg(entries, evaluators, "FORBIDDEN_SUBQUERY", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
-                "Cấm truy vấn lồng", "Cấm mọi SELECT lồng trong dấu ngoặc (WHERE/FROM/HAVING/SELECT).",
+                "Cấm tất cả truy vấn lồng", "Cấm mọi SELECT lồng trong bất kỳ mệnh đề nào (SELECT/FROM/WHERE/HAVING).",
                 25, true,
                 WhiteboxFeature.SUBQUERY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
-                List.of("MAX_SUBQUERY_DEPTH"), List.of(),
+                List.of("MAX_SUBQUERY_DEPTH",
+                        "FORBIDDEN_SUBQUERY_IN_SELECT", "FORBIDDEN_SUBQUERY_IN_FROM",
+                        "FORBIDDEN_SUBQUERY_IN_WHERE", "FORBIDDEN_SUBQUERY_IN_HAVING"),
+                List.of(),
                 (ctx, rule) -> {
                     QueryStructureFacts f = ctx.facts();
                     boolean v = f.hasSubqueryInSelect() || f.hasSubqueryInFrom()
                             || f.hasSubqueryInWhere() || f.hasSubqueryInHaving();
                     return WhiteboxEvaluation.of(v, "Phát hiện truy vấn con lồng");
                 });
+        reg(entries, evaluators, "FORBIDDEN_SUBQUERY_IN_SELECT", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
+                "Cấm subquery trong SELECT", "Cấm dùng SELECT lồng trong danh sách cột SELECT.",
+                15, true,
+                WhiteboxFeature.SUBQUERY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
+                List.of("FORBIDDEN_SUBQUERY"), List.of(),
+                (ctx, rule) -> WhiteboxEvaluation.of(ctx.facts().hasSubqueryInSelect(),
+                        "Phát hiện truy vấn con trong SELECT list"));
+        reg(entries, evaluators, "FORBIDDEN_SUBQUERY_IN_FROM", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
+                "Cấm subquery trong FROM", "Cấm dùng bảng dẫn xuất (derived table) trong FROM.",
+                15, true,
+                WhiteboxFeature.SUBQUERY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
+                List.of("FORBIDDEN_SUBQUERY"), List.of(),
+                (ctx, rule) -> WhiteboxEvaluation.of(ctx.facts().hasSubqueryInFrom(),
+                        "Phát hiện derived table (subquery) trong FROM"));
+        reg(entries, evaluators, "FORBIDDEN_SUBQUERY_IN_WHERE", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
+                "Cấm subquery trong WHERE", "Cấm dùng SELECT lồng trong điều kiện WHERE.",
+                20, true,
+                WhiteboxFeature.SUBQUERY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
+                List.of("FORBIDDEN_SUBQUERY"), List.of(),
+                (ctx, rule) -> WhiteboxEvaluation.of(ctx.facts().hasSubqueryInWhere(),
+                        "Phát hiện truy vấn con trong WHERE"));
+        reg(entries, evaluators, "FORBIDDEN_SUBQUERY_IN_HAVING", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
+                "Cấm subquery trong HAVING", "Cấm dùng SELECT lồng trong điều kiện HAVING.",
+                10, true,
+                WhiteboxFeature.SUBQUERY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
+                List.of("FORBIDDEN_SUBQUERY"), List.of(),
+                (ctx, rule) -> WhiteboxEvaluation.of(ctx.facts().hasSubqueryInHaving(),
+                        "Phát hiện truy vấn con trong HAVING"));
         reg(entries, evaluators, "MAX_SUBQUERY_DEPTH", WhiteboxRuleType.LIMIT, "SUBQUERY_CTE",
                 "Giới hạn độ sâu subquery", "Độ sâu lồng truy vấn con không vượt quá max_depth.",
                 15, true,

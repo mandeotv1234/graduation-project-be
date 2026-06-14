@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
+import graduation_project_be.application.port.repositories.ExamResultFeedbackRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamResultRepository;
@@ -13,17 +14,18 @@ import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.response.GetStudentFeedbackResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamResultFeedback;
 import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.GradingTrace;
 import graduation_project_be.domain.models.GradingTraceItem;
 import graduation_project_be.domain.models.enums.GradingStatus;
+import graduation_project_be.shared.utils.TimeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -40,6 +42,7 @@ public class GetStudentFeedbackUsecase {
     private static final int MAX_EVIDENCE_ITEMS = 5;
 
     private final ExamResultRepository examResultRepository;
+    private final ExamResultFeedbackRepository examResultFeedbackRepository;
     private final ExamSubmissionRepository examSubmissionRepository;
     private final ExamQuestionRepository examQuestionRepository;
     private final ExamRepository examRepository;
@@ -68,6 +71,11 @@ public class GetStudentFeedbackUsecase {
             throw new UnauthorizedException("Giáo viên không cho phép xem lại feedback bài làm này.");
         }
 
+        GetStudentFeedbackResponse cachedFeedback = loadStoredFeedback(result);
+        if (cachedFeedback != null) {
+            return cachedFeedback;
+        }
+
         List<ExamResult> attempts = examResultRepository
                 .findByStudentIdAndExamIdIn(studentId, List.of(exam.getId()))
                 .stream()
@@ -86,7 +94,57 @@ public class GetStudentFeedbackUsecase {
             return fallback;
         }
 
-        return mergeAiDraft(fallback, aiDraft);
+        GetStudentFeedbackResponse feedback = mergeAiDraft(fallback, aiDraft);
+        saveFeedbackSnapshot(result, feedback);
+        return feedback;
+    }
+
+    private GetStudentFeedbackResponse loadStoredFeedback(ExamResult result) {
+        return examResultFeedbackRepository.findByExamResultId(result.getId())
+                .filter(snapshot -> !isFeedbackStale(result, snapshot))
+                .map(ExamResultFeedback::getFeedbackJson)
+                .map(this::parseStoredFeedback)
+                .orElse(null);
+    }
+
+    private boolean isFeedbackStale(ExamResult result, ExamResultFeedback snapshot) {
+        return result.getLastGradedAt() != null
+                && snapshot.getGeneratedAt() != null
+                && snapshot.getGeneratedAt().isBefore(result.getLastGradedAt());
+    }
+
+    private GetStudentFeedbackResponse parseStoredFeedback(String feedbackJson) {
+        if (feedbackJson == null || feedbackJson.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(feedbackJson, GetStudentFeedbackResponse.class);
+        } catch (Exception e) {
+            log.warn("Cannot parse stored student feedback snapshot: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private void saveFeedbackSnapshot(ExamResult result, GetStudentFeedbackResponse feedback) {
+        try {
+            ExamResultFeedback existing = examResultFeedbackRepository.findByExamResultId(result.getId())
+                    .orElse(null);
+            var now = TimeUtils.now();
+            examResultFeedbackRepository.save(ExamResultFeedback.builder()
+                    .id(existing != null ? existing.getId() : null)
+                    .examResultId(result.getId())
+                    .examId(result.getExamId())
+                    .studentId(result.getStudentId())
+                    .attemptNumber(result.getAttemptNumber())
+                    .generatedByAi(feedback.generatedByAi())
+                    .generatedAt(feedback.generatedAt() != null ? feedback.generatedAt() : now)
+                    .feedbackJson(objectMapper.writeValueAsString(feedback))
+                    .createdAt(existing != null ? existing.getCreatedAt() : now)
+                    .updatedAt(now)
+                    .build());
+        } catch (Exception e) {
+            log.warn("Cannot save student feedback snapshot for result {}: {}", result.getId(), e.getMessage());
+        }
     }
 
     private List<QuestionContext> loadQuestionContexts(ExamResult result) {
@@ -134,7 +192,7 @@ public class GetStudentFeedbackUsecase {
                 valueOrZero(result.getMaxScore()),
                 result.getSubmittedAt(),
                 false,
-                LocalDateTime.now(),
+                TimeUtils.now(),
                 progress,
                 buildOverallFeedback(result),
                 buildProgressFeedback(progress),
@@ -356,7 +414,7 @@ public class GetStudentFeedbackUsecase {
                 fallback.maxScore(),
                 fallback.submittedAt(),
                 true,
-                LocalDateTime.now(),
+                TimeUtils.now(),
                 fallback.progress(),
                 chooseText(draft.overallFeedback(), fallback.overallFeedback()),
                 chooseText(draft.progressFeedback(), fallback.progressFeedback()),

@@ -934,12 +934,23 @@ public class RubricTestingUsecase {
                     .points(maxPoints)
                     .gradingRubric(gradingRubric)
                     .build();
+            BigDecimal preWhiteboxEarned = finalEarned;
             GradeDecision whiteboxAdjusted = applySelectWhiteboxPreview(whiteboxQ, studentQuery,
                     allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0
                             ? GradeDecision.pass(finalEarned) : GradeDecision.partial(finalEarned, ""));
             if (whiteboxAdjusted.scoreEarned() != null) {
                 finalEarned = whiteboxAdjusted.scoreEarned();
                 if (!whiteboxAdjusted.isCorrect()) allPassed = false;
+                BigDecimal whiteboxDeduction = preWhiteboxEarned.subtract(finalEarned);
+                if (whiteboxDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                    String wbMsg = (whiteboxAdjusted.errorMessage() != null && !whiteboxAdjusted.errorMessage().isBlank())
+                            ? whiteboxAdjusted.errorMessage()
+                            : "Bị trừ " + whiteboxDeduction.toPlainString() + " điểm do vi phạm quy tắc whitebox (phương pháp viết câu lệnh).";
+                    details.add(Map.of(
+                            "type", "warning",
+                            "message", "[Whitebox] " + wbMsg,
+                            "points", -whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+                }
             }
 
             return RubricTestGradeResponse.of(
@@ -1023,6 +1034,9 @@ public class RubricTestingUsecase {
         BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
         BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction()).setScale(2, java.math.RoundingMode.HALF_UP);
         if (finalScore.signum() < 0) finalScore = BigDecimal.ZERO;
+        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
+            return GradeDecision.pass(finalScore);
+        }
         String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
                 ? blackbox.errorMessage()
                 : "Bị trừ " + whitebox.cappedDeduction().toPlainString() + " điểm do vi phạm quy tắc whitebox.";

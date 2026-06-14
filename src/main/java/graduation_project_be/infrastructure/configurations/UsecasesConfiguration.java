@@ -296,6 +296,7 @@ public class UsecasesConfiguration {
     @Bean
     GetStudentFeedbackUsecase getStudentFeedbackUsecase(
             ExamResultRepository examResultRepository,
+            ExamResultFeedbackRepository examResultFeedbackRepository,
             ExamSubmissionRepository examSubmissionRepository,
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
@@ -304,6 +305,7 @@ public class UsecasesConfiguration {
             ObjectMapper objectMapper) {
         return new GetStudentFeedbackUsecase(
                 examResultRepository,
+                examResultFeedbackRepository,
                 examSubmissionRepository,
                 examQuestionRepository,
                 examRepository,

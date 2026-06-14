@@ -33,10 +33,25 @@ public class RulePresetController {
 
     @GetMapping
     @PreAuthorize("hasRole('TEACHER')")
-    public ResponseEntity<ResponseDto> getPresets(@RequestParam("questionType") QuestionType questionType) {
+    public ResponseEntity<ResponseDto> getPresets(
+            @RequestParam(name = "questionType") QuestionType questionType,
+            @RequestParam(name = "kind", required = false) String kind) {
         Long teacherId = currentUserService.getCurrentUserId();
-        List<RulePresetDto.Response> responses = rulePresetUseCase.getPresetsByTeacherIdAndQuestionType(teacherId, questionType);
+        // The use case canonicalizes kind (trim/upper, blank -> BLACKBOX) so legacy callers never
+        // receive white-box presets mixed in; existing rows were backfilled to BLACKBOX.
+        List<RulePresetDto.Response> responses =
+                rulePresetUseCase.getPresetsByTeacherIdAndQuestionTypeAndKind(teacherId, questionType, kind);
         return ResponseEntity.ok(ResponseDto.of(responses, "OK", "Danh sách mẫu quy tắc"));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('TEACHER')")
+    public ResponseEntity<ResponseDto> updatePreset(
+            @PathVariable("id") Long id,
+            @RequestBody @Valid RulePresetDto.UpdateRequest request) {
+        Long teacherId = currentUserService.getCurrentUserId();
+        RulePresetDto.Response response = rulePresetUseCase.updatePreset(id, teacherId, request);
+        return ResponseEntity.ok(ResponseDto.of(response, "OK", "Mẫu quy tắc đã được cập nhật"));
     }
 
     @DeleteMapping("/{id}")

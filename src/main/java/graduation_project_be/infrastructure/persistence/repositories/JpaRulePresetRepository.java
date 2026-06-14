@@ -10,4 +10,5 @@ import java.util.List;
 @Repository
 public interface JpaRulePresetRepository extends JpaRepository<RulePresetEntity, Long> {
     List<RulePresetEntity> findByTeacherIdAndQuestionTypeOrderByCreatedAtDesc(Long teacherId, QuestionType questionType);
+    List<RulePresetEntity> findByTeacherIdAndQuestionTypeAndKindOrderByCreatedAtDesc(Long teacherId, QuestionType questionType, String kind);
 }

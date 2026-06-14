@@ -7,7 +7,10 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
+import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
+import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -68,6 +71,10 @@ public class RubricTestingUsecase {
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
     private final InsertDataQuestionGrader insertDataGrader;
     private final ObjectMapper objectMapper;
+    // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
+    private final SelectQuestionGrader selectGrader;
+    // Stateless helper; constructed directly so it stays out of the generated constructor.
+    private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
         String sc = request.schemaContext();
@@ -105,13 +112,15 @@ public class RubricTestingUsecase {
             priorQuestionContext = "";
         }
 
-        return geminiService.generateGradingRubric(
+        String rubricJson = geminiService.generateGradingRubric(
                 request.correctQuery(),
                 request.questionContent(),
                 request.totalPoints(),
                 request.questionType(),
                 priorQuestionContext,
                 request.schemaContext());
+
+        return rubricJson;
     }
 
     public RubricTestGradeResponse testGradeInsert(TestGradeInsertRequest request) {
@@ -704,14 +713,11 @@ public class RubricTestingUsecase {
             boolean strictOrdering = readBoolean(globalRules.path("strict_ordering"), false);
 
             if (testCases.isMissingNode() || !testCases.isArray() || testCases.size() == 0) {
-                return RubricTestGradeResponse.of(
-                        0,
-                        totalPoints,
-                        false,
-                        List.of(Map.of(
-                                "type", "error",
-                                "message", "Rubric SELECT không có test_cases",
-                                "points", 0)));
+                // No test_cases: mirror runtime, which grades by comparing the student query
+                // against correctQuery across the spec datasets (gradeSelectByRubricTestCases
+                // itself delegates here when test_cases is empty). Erroring out instead would
+                // make the preview diverge from the real grade for correctQuery-only questions.
+                return previewSelectAcrossDatasets(request, totalPoints);
             }
 
             BigDecimal totalDeduction = BigDecimal.ZERO;
@@ -820,6 +826,8 @@ public class RubricTestingUsecase {
                                 "type", "info",
                                 "message", "[" + caseId + "] Dùng kết quả đáp án giáo viên làm expected cho test case",
                                 "points", 0));
+
+                        checkTrapDiscrimination(caseSchema, caseId, caseName, correctQuery, teacherRows, details);
                     } else {
                         JsonNode expectedResult = tc.path("expected_result");
                         JsonNode columnsConfig = expectedResult.path("columns_config");
@@ -924,6 +932,64 @@ public class RubricTestingUsecase {
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử SELECT: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Preview path for SELECT questions without explicit test_cases. Mirrors the runtime fallback
+     * (SelectQuestionGrader.gradeSelectAcrossDatasets) so the teacher's "Chấm Giả Lập" matches the
+     * real grade for correctQuery-only questions. Runs on a throwaway schema that the dataset grader
+     * resets/populates itself; the schema is dropped afterwards.
+     */
+    private RubricTestGradeResponse previewSelectAcrossDatasets(TestGradeSelectRequest request, double totalPoints) {
+        String correctQuery = request.correctQuery();
+        if (correctQuery == null || correctQuery.isBlank()) {
+            return RubricTestGradeResponse.of(
+                    0,
+                    totalPoints,
+                    false,
+                    List.of(Map.of(
+                            "type", "error",
+                            "message", "Rubric SELECT không có test_cases và thiếu đáp án mẫu (correctQuery) để chấm so sánh dataset",
+                            "points", 0)));
+        }
+
+        Exam exam = examRepository.findById(request.examId()).orElse(null);
+        ExamSpecification specification = (exam != null && exam.getSpecificationId() != null)
+                ? examSpecificationRepository.findById(exam.getSpecificationId()).orElse(null)
+                : null;
+
+        ExamQuestion question = ExamQuestion.builder()
+                .examId(request.examId())
+                .questionType(QuestionType.SELECT_QUERY)
+                .correctQuery(correctQuery)
+                .points(BigDecimal.valueOf(totalPoints))
+                .gradingRubric(request.gradingRubric())
+                .build();
+
+        String previewSchema = "rubric_test_select_" + request.examId() + "_" + System.currentTimeMillis();
+        try {
+            GradeDecision decision = selectGrader.gradeSelectAcrossDatasets(
+                    specification, previewSchema, question, request.studentQuery());
+            BigDecimal earned = decision.scoreEarned() != null ? decision.scoreEarned() : BigDecimal.ZERO;
+            String message = decision.isCorrect()
+                    ? "Chấm so sánh dataset: kết quả khớp đáp án mẫu"
+                    : (decision.errorMessage() != null && !decision.errorMessage().isBlank()
+                            ? decision.errorMessage()
+                            : "Kết quả không khớp đáp án mẫu");
+            return RubricTestGradeResponse.of(
+                    earned.doubleValue(),
+                    totalPoints,
+                    decision.isCorrect(),
+                    List.of(Map.of(
+                            "type", decision.isCorrect() ? "success" : "error",
+                            "message", message,
+                            "points", earned.doubleValue())));
+        } finally {
+            try {
+                examSchemaService.dropSchema(previewSchema);
+            } catch (Exception ignore) {
+            }
         }
     }
 
@@ -1038,6 +1104,47 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    /**
+     * Runs known-wrong mutants of the model answer on the trap data already loaded in
+     * {@code caseSchema} and warns the teacher about any mutant the trap cannot distinguish from the
+     * correct answer. Read-only against the schema; touches the response details only.
+     */
+    private void checkTrapDiscrimination(
+            String caseSchema,
+            String caseId,
+            String caseName,
+            String correctQuery,
+            List<Map<String, Object>> teacherRows,
+            List<Map<String, Object>> details) {
+        List<SelectTrapDiscriminationChecker.Mutation> mutations = trapChecker.mutate(correctQuery);
+        if (mutations.isEmpty()) {
+            return;
+        }
+
+        List<String> nonDiscriminating = new ArrayList<>();
+        for (SelectTrapDiscriminationChecker.Mutation mutation : mutations) {
+            List<Map<String, Object>> mutantRows;
+            try {
+                mutantRows = examSchemaService.executeSql(caseSchema, mutation.mutatedSql()).getResultSet();
+            } catch (Exception ex) {
+                // A mutant that fails to run is already distinguishable from the answer -> trap is fine.
+                continue;
+            }
+            if (trapChecker.sameResult(teacherRows, mutantRows)) {
+                nonDiscriminating.add(mutation.label());
+            }
+        }
+
+        if (!nonDiscriminating.isEmpty()) {
+            details.add(Map.of(
+                    "type", "warning",
+                    "message", "[" + caseId + "] Bẫy \"" + caseName
+                            + "\" CHƯA phân biệt được lỗi: " + String.join("; ", nonDiscriminating)
+                            + ". Hãy bổ sung dữ liệu bẫy để câu sai cho kết quả khác đáp án mẫu.",
+                    "points", 0));
         }
     }
 

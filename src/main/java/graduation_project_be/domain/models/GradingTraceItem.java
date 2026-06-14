@@ -29,10 +29,14 @@ public record GradingTraceItem(
     public static final String KIND_EXECUTION_ERROR = "EXECUTION_ERROR";
     public static final String KIND_TEACHER_CONFIG = "TEACHER_CONFIG";
     public static final String KIND_SUMMARY = "SUMMARY";
+    // White-box method check (grading_payload.whitebox_rules); ruleCondition carries the rule_id.
+    public static final String KIND_WHITEBOX_CHECK = "WHITEBOX_CHECK";
 
     // Status constants
     public static final String STATUS_PASS = "PASS";
     public static final String STATUS_FAIL = "FAIL";
     public static final String STATUS_WARN = "WARN";
     public static final String STATUS_INFO = "INFO";
+    // A parser-dependent white-box check whose SQL could not be parsed: deducts 0, not a pass.
+    public static final String STATUS_UNVERIFIED = "UNVERIFIED";
 }

@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 @Table(name = "rule_presets")
 @Entity
@@ -35,6 +36,9 @@ public class RulePresetEntity {
 
     @Column(name = "rules_json", nullable = false, columnDefinition = "TEXT")
     private String rulesJson;
+
+    @Column(name = "kind", nullable = false, length = 20)
+    private String kind;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -64,6 +68,7 @@ public class RulePresetEntity {
                 .name(name)
                 .questionType(questionType)
                 .rulesJson(rulesJson)
+                .kind(kind)
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -76,8 +81,15 @@ public class RulePresetEntity {
                 .name(model.getName())
                 .questionType(model.getQuestionType())
                 .rulesJson(model.getRulesJson())
+                .kind(canonicalKind(model.getKind()))
                 .createdAt(model.getCreatedAt())
                 .updatedAt(model.getUpdatedAt())
                 .build();
+    }
+
+    // Persistence-boundary guard for the non-null kind column: default BLACKBOX on null/blank,
+    // canonicalize to upper-case so the discriminator never stores casing/whitespace variants.
+    private static String canonicalKind(String kind) {
+        return (kind == null || kind.isBlank()) ? "BLACKBOX" : kind.trim().toUpperCase(Locale.ROOT);
     }
 }

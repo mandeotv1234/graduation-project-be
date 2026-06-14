@@ -48,6 +48,9 @@ import graduation_project_be.application.usecases.grading.InsertDataQuestionGrad
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.RoutineQuestionGrader;
 import graduation_project_be.application.usecases.grading.TriggerQuestionGrader;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
+import com.fasterxml.jackson.databind.node.MissingNode;
 
 /**
  * Background grading usecase — extracted from the old synchronous
@@ -77,6 +80,47 @@ public class GradeExamUsecase {
     private final SelectQuestionGrader selectGrader;
     private final RoutineQuestionGrader routineGrader;
     private final TriggerQuestionGrader triggerGrader;
+    private final WhiteboxEngine whiteboxEngine;
+
+    /**
+     * Applies SELECT white-box deduction on top of the black-box score. The engine emits its own
+     * trace; with no {@code whitebox_rules} (or a zero deduction) the black-box decision is returned
+     * unchanged so existing behaviour is preserved. A deduction that drops the score below max points
+     * makes the answer no longer fully correct (resolved downstream from the final score).
+     */
+    private GradeDecision applySelectWhitebox(ExamQuestion question, String studentQuery, GradeDecision blackbox) {
+        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                QuestionType.SELECT_QUERY.name(), studentQuery, whiteboxPayload(question), points, true);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
+        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction()).setScale(2, RoundingMode.HALF_UP);
+        if (finalScore.signum() < 0) {
+            finalScore = BigDecimal.ZERO;
+        }
+        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
+            return GradeDecision.pass(finalScore);
+        }
+        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString()
+                        + " điểm do vi phạm quy tắc whitebox (phương pháp viết câu lệnh).";
+        return GradeDecision.partial(finalScore, message);
+    }
+
+    /** The {@code grading_payload} node of a question's rubric, or a missing node if unavailable. */
+    private JsonNode whiteboxPayload(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return MissingNode.getInstance();
+        }
+        try {
+            return objectMapper.readTree(question.getGradingRubric()).path("grading_payload");
+        } catch (Exception e) {
+            return MissingNode.getInstance();
+        }
+    }
 
     @Transactional
     public void markSystemError(Long examId, Long studentId, int attemptNumber) {
@@ -298,6 +342,9 @@ public class GradeExamUsecase {
                                             schemaName,
                                             question,
                                             studentQuery);
+                            // White-box method grading is applied after the black-box score; with no
+                            // whitebox_rules configured the score is returned unchanged.
+                            decision = applySelectWhitebox(question, studentQuery, decision);
                             isCorrect = decision.isCorrect();
                             errorMessage = decision.errorMessage();
                             if (submission != null) {

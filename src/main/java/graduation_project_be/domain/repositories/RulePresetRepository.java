@@ -10,5 +10,6 @@ public interface RulePresetRepository {
     RulePreset save(RulePreset rulePreset);
     Optional<RulePreset> findById(Long id);
     List<RulePreset> findByTeacherIdAndQuestionType(Long teacherId, QuestionType questionType);
+    List<RulePreset> findByTeacherIdAndQuestionTypeAndKind(Long teacherId, QuestionType questionType, String kind);
     void deleteById(Long id);
 }

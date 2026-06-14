@@ -17,6 +17,7 @@ public class RulePreset {
     private String name;
     private QuestionType questionType;
     private String rulesJson;
+    private String kind;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

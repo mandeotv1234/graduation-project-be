@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1306262015
+      author: tdhoang
+      comment: "GRAD-180: add kind to rule_presets for whitebox presets"
+      changes:
+        - addColumn:
+            tableName: rule_presets
+            columns:
+              - column:
+                  name: kind
+                  type: VARCHAR(20)
+                  defaultValue: "BLACKBOX"
+                  constraints:
+                    nullable: false

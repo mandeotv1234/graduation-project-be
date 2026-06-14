@@ -511,6 +511,21 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    GetExamMutationAnalyticsUsecase getExamMutationAnalyticsUsecase(
+            ExamRepository examRepository,
+            ExamResultRepository examResultRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ObjectMapper objectMapper) {
+        return new GetExamMutationAnalyticsUsecase(
+                examRepository,
+                examResultRepository,
+                examSubmissionRepository,
+                examQuestionRepository,
+                objectMapper);
+    }
+
+    @Bean
     GetExamResultDetailUsecase getExamResultDetailUsecase(
             ExamResultRepository examResultRepository,
             ExamSubmissionRepository examSubmissionRepository,

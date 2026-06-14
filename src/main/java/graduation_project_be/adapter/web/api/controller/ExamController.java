@@ -72,6 +72,7 @@ public class ExamController {
         private final RemindStudentUsecase remindStudentUsecase;
         private final ForceSubmitExamUsecase forceSubmitExamUsecase;
         private final GetExamStatisticsUsecase getExamStatisticsUsecase;
+        private final GetExamMutationAnalyticsUsecase getExamMutationAnalyticsUsecase;
         private final ExportExamPdfUsecase exportExamPdfUsecase;
         private final ExtractQuestionsFromPdfUsecase extractQuestionsFromPdfUsecase;
         private final TeacherExecuteSqlOnResultUsecase teacherExecuteSqlOnResultUsecase;
@@ -376,6 +377,16 @@ public class ExamController {
                                 .fromResponse(getExamStatisticsUsecase.execute(examId));
                 return ResponseEntity.ok(
                                 ResponseDto.of(dto, "OK", "Exam statistics retrieved successfully"));
+        }
+
+        @GetMapping("/{examId}/mutation-analytics")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> getExamMutationAnalytics(
+                        @PathVariable("examId") @Positive Long examId) {
+                GetExamMutationAnalyticsResponseDto dto = GetExamMutationAnalyticsResponseDto
+                                .fromResponse(getExamMutationAnalyticsUsecase.execute(examId));
+                return ResponseEntity.ok(
+                                ResponseDto.of(dto, "OK", "Exam mutation analytics retrieved successfully"));
         }
 
         @GetMapping("/{examId}/results/{resultId}")

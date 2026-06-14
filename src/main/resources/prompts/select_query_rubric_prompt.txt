@@ -36,6 +36,7 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
       {
         "case_id": "TC_01",
         "case_name": "Dữ liệu cơ bản",
+        "mutation_type": "HAPPY_PATH",
         "penalty_value": 1.00,
         "setup_custom_script": "",
         "expected_result": {
@@ -57,12 +58,22 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 - Bạn có quyền điều chỉnh `penalty_value` (điểm trừ cho mỗi testcase/rule) sao cho tổng trừ tối đa tương đương total_points.
 - `weight_ratio` là tỉ trọng điểm của test_case (tổng tất cả weight_ratio = 1.0). Điểm mỗi test case = total_points * weight_ratio. Sau đó áp dụng luật `grading_rules` để phạt/trừ điểm sinh viên trong nội bộ test case đó.
 - BẮT BUỘC tạo ít nhất 3-4 test cases chất lượng cao `setup_custom_script` (kịch bản tạo dữ liệu), bao phủ các lỗi thường gặp của sinh viên nhưng KHÔNG CẦN điền `expected_result` (Backend sẽ tự sinh `expected_result` bằng cách chạy script đáp án chuẩn).
+- Mỗi test case BẮT BUỘC có trường `"mutation_type"` chọn từ taxonomy sau (dựa trên XData mutation model):
+  - `HAPPY_PATH` — Dữ liệu bình thường, kiểm tra logic chính
+  - `MISSING_JOIN_CONDITION` — Bẫy JOIN thiếu điều kiện ON (trùng một phần khóa, khác phần còn lại)
+  - `WRONG_JOIN_TYPE` — Bẫy nhầm INNER JOIN / LEFT JOIN (bảng con rỗng để lộ JOIN sai loại)
+  - `MISSING_WHERE_FILTER` — Bẫy thiếu/sai điều kiện WHERE
+  - `STRING_MATCHING` — Bẫy dùng '=' thay LIKE hoặc LIKE pattern sai
+  - `NULL_HANDLING` — Bẫy NULL: SUM trả NULL thay vì 0, ISNULL/COALESCE bị bỏ sót
+  - `WRONG_AGGREGATE` — Bẫy SUM/COUNT/AVG sai hoặc thiếu DISTINCT
+  - `MISSING_GROUP_BY` — Bẫy thiếu cột trong GROUP BY
+  - `WRONG_HAVING_VS_WHERE` — Bẫy đặt điều kiện aggregate vào WHERE thay vì HAVING
 - YÊU CẦU CÁC LOẠI TEST CASE (Dựa trên phân tích SQL đáp án mẫu):
-  1. Happy Path (Dữ liệu chuẩn): Dữ liệu bình thường để kiểm tra logic chính.
-  2. Bẫy Khóa chính kép / Thiếu JOIN (Composite Key / Missing JOIN Trap): Phân tích nếu có JOIN, hãy cố tình tạo dữ liệu ở bảng cha/con có trùng một phần khóa nhưng khác phần còn lại (ví dụ trùng Ma nhưng khác MaCongTy) để bắt lỗi sinh viên JOIN thiếu điều kiện. Hệ thống phải sinh ra bản ghi đánh lừa (dummy record).
-  3. Bẫy lọc chuỗi (String Matching Trap): Nếu có WHERE chuỗi, hãy tạo dữ liệu cố tình gần giống để kiểm tra sinh viên dùng LIKE hay '=' (ví dụ đề yêu cầu LIKE bắt đầu bằng thì tạo bản ghi có thêm phía sau thay vì đúng y hệt).
-  4. Bẫy dữ liệu rỗng (Empty State / Null Trap): Tạo dữ liệu thỏa mãn WHERE nhưng bảng con chưa có dữ liệu để tính toán, nhằm bắt lỗi sai hàm tổng hợp (SUM ra NULL thay vì COUNT ra 0) hoặc nhầm INNER/LEFT JOIN.
-  5. Các bẫy khác (Grouping/Having): Tùy thuộc vào câu truy vấn.
+  1. Happy Path (Dữ liệu chuẩn): Dữ liệu bình thường để kiểm tra logic chính. mutation_type=HAPPY_PATH
+  2. Bẫy Khóa chính kép / Thiếu JOIN (Composite Key / Missing JOIN Trap): Phân tích nếu có JOIN, hãy cố tình tạo dữ liệu ở bảng cha/con có trùng một phần khóa nhưng khác phần còn lại (ví dụ trùng Ma nhưng khác MaCongTy) để bắt lỗi sinh viên JOIN thiếu điều kiện. Hệ thống phải sinh ra bản ghi đánh lừa (dummy record). mutation_type=MISSING_JOIN_CONDITION
+  3. Bẫy lọc chuỗi (String Matching Trap): Nếu có WHERE chuỗi, hãy tạo dữ liệu cố tình gần giống để kiểm tra sinh viên dùng LIKE hay '=' (ví dụ đề yêu cầu LIKE bắt đầu bằng thì tạo bản ghi có thêm phía sau thay vì đúng y hệt). mutation_type=STRING_MATCHING
+  4. Bẫy dữ liệu rỗng (Empty State / Null Trap): Tạo dữ liệu thỏa mãn WHERE nhưng bảng con chưa có dữ liệu để tính toán, nhằm bắt lỗi sai hàm tổng hợp (SUM ra NULL thay vì COUNT ra 0) hoặc nhầm INNER/LEFT JOIN. mutation_type=NULL_HANDLING hoặc WRONG_JOIN_TYPE
+  5. Các bẫy khác (Grouping/Having): Tùy thuộc vào câu truy vấn. mutation_type=MISSING_GROUP_BY hoặc WRONG_HAVING_VS_WHERE
 - case_name phải là tiếng Việt, dễ hiểu với giáo viên (VD: "Bẫy Khóa chính kép", "Bẫy lọc chuỗi (LIKE)", "Bẫy dữ liệu rỗng (SUM/COUNT)").
 - setup_dependency_id chỉ điền khi thực sự cần phụ thuộc câu khác; nếu không để chuỗi rỗng
 - setup_custom_script phải là script SQL đầy đủ để tạo dữ liệu test cho từng case. KỊCH BẢN PHẢI THỰC SỰ TẠO RA DỮ LIỆU "BẪY" (TRAP).

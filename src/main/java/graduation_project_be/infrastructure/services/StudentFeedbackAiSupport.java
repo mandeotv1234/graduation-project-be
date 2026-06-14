@@ -24,6 +24,15 @@ final class StudentFeedbackAiSupport {
                 - Feedback phải cụ thể theo lỗi: JOIN, điều kiện WHERE, ORDER BY, PK/FK, kiểu dữ liệu, test case, trigger/procedure/function nếu có.
                 - Giọng văn thẳng, dễ hiểu, có định hướng học tập.
                 - Chỉ trả JSON hợp lệ, không markdown.
+                - Nếu trace item có trường `mutation_type=<loại>`, hãy dùng loại đó để chỉ đích danh lỗi sinh viên mắc:
+                  MISSING_JOIN_CONDITION=thiếu điều kiện JOIN, WRONG_JOIN_TYPE=sai loại JOIN, NULL_HANDLING=xử lý NULL sai,
+                  WRONG_AGGREGATE=hàm tổng hợp sai, MISSING_GROUP_BY=thiếu GROUP BY, WRONG_HAVING_VS_WHERE=nhầm HAVING/WHERE,
+                  STRING_MATCHING=điều kiện chuỗi sai, MISSING_WHERE_FILTER=thiếu điều kiện lọc.
+                - Nếu trace item có `expected=` và `actual=`, đây là dữ liệu counterexample từ hệ thống chấm điểm.
+                  Hãy trích dẫn cụ thể để giải thích sự khác biệt (ví dụ: "Query trả 2 dòng nhưng đáp án cần 3 dòng").
+                  Đây là bằng chứng trực tiếp — ưu tiên dùng thay vì suy đoán.
+                - Nếu trace message chứa [CARDINAL_MISMATCH], sinh viên trả sai số dòng — đây là lỗi nghiêm trọng (JOIN/WHERE sai).
+                  Nếu chứa [FULL_MISMATCH], số dòng đúng nhưng giá trị sai — thường do sai cột SELECT hoặc tính toán sai.
 
                 Schema JSON trả về:
                 {

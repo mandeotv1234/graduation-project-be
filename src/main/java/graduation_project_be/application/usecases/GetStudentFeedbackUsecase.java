@@ -573,6 +573,15 @@ public class GetStudentFeedbackUsecase {
         if (item.deductedPoints() != null) {
             parts.add("deducted=" + formatScore(item.deductedPoints()));
         }
+        if (hasText(item.configSummary()) && item.configSummary().contains("mutation_type=")) {
+            parts.add(item.configSummary().substring(item.configSummary().indexOf("mutation_type=")));
+        }
+        if (hasText(item.expected())) {
+            parts.add("expected=" + truncate(item.expected(), 300));
+        }
+        if (hasText(item.actual())) {
+            parts.add("actual=" + truncate(item.actual(), 300));
+        }
         return String.join(" | ", parts);
     }
 

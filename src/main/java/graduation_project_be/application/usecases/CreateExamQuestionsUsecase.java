@@ -7,7 +7,7 @@ import graduation_project_be.application.port.repositories.ExamQuestionRepositor
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.request.CreateExamQuestionsRequest;
 import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
 import graduation_project_be.domain.models.Exam;
@@ -34,7 +34,7 @@ public class CreateExamQuestionsUsecase {
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
-    private final GeminiService geminiService;
+    private final AIService geminiService;
     // T09: services for the rubric+test-case pipeline (SP/Function/Trigger only)
     private final RubricToTestCaseTransformer rubricTransformer;
     private final ExpectedValueDeriver expectedValueDeriver;
@@ -84,7 +84,7 @@ public class CreateExamQuestionsUsecase {
             if (needsAi) {
                 // Call Gemini to generate correctQuery + verifyScript
                 log.info("Calling Gemini for question: {}", item.content());
-                GeminiService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+                AIService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
                         item.content(),
                         questionType.name(),
                         schemaContext);

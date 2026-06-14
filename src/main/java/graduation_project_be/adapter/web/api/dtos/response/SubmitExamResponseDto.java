@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.util.stream.Collectors;
 
 public record SubmitExamResponseDto(
+        Long resultId,
         Long examId,
         Long studentId,
         LocalDateTime submittedAt,
@@ -59,7 +60,7 @@ public record SubmitExamResponseDto(
                 .collect(Collectors.toList()) : null;
 
         return new SubmitExamResponseDto(
-                r.examId(), r.studentId(), r.submittedAt(), r.status(),
+                r.resultId(), r.examId(), r.studentId(), r.submittedAt(), r.status(),
                 r.totalScore(), r.maxScore(), r.correctCount(), r.totalQuestions(),
                 detailDtos, resultDtos);
     }

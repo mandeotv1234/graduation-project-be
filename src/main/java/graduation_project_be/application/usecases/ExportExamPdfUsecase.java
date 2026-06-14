@@ -9,7 +9,7 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.repositories.SpecEntityRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.port.services.PdfRenderService;
 import graduation_project_be.application.usecases.helpers.ExamPdfModelBuilder;
 import graduation_project_be.application.usecases.request.ExportExamPdfRequest;
@@ -53,7 +53,7 @@ public class ExportExamPdfUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final SpecEntityRepository specEntityRepository;
     private final CurrentUserService currentUserService;
-    private final GeminiService geminiService;
+    private final AIService geminiService;
     private final PdfRenderService pdfRenderService;
     private final ExecutorService geminiExecutor;
 

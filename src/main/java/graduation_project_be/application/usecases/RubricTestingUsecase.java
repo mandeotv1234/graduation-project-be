@@ -6,7 +6,7 @@ import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
@@ -64,7 +64,7 @@ public class RubricTestingUsecase {
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?i)\\bCREATE\\s+TABLE\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
-    private final GeminiService geminiService;
+    private final AIService geminiService;
     private final ExamSchemaService examSchemaService;
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
@@ -2002,25 +2002,6 @@ public class RubricTestingUsecase {
         return objectMapper.createArrayNode();
     }
 
-    private boolean hasSelectGradingRules(JsonNode gradingRules) {
-        if (gradingRules == null || !gradingRules.isArray()) {
-            return false;
-        }
-
-        for (JsonNode ruleNode : gradingRules) {
-            if (!ruleNode.isObject()) {
-                continue;
-            }
-            String target = ruleNode.path("target").asText("").trim();
-            String condition = ruleNode.path("condition").asText("").trim();
-            if (!target.isBlank() && !condition.isBlank()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private JsonNode findSelectRule(JsonNode gradingRules, String target, String condition) {
         if (gradingRules == null || !gradingRules.isArray()) {
             return null;
@@ -2130,58 +2111,6 @@ public class RubricTestingUsecase {
         }
 
         return actualSignatures.equals(expectedSignatures);
-    }
-
-    private int countMissingColumnsIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
-        if (expectedColumns == null || expectedColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> actualSet = new HashSet<>();
-        if (actualColumns != null) {
-            for (String column : actualColumns) {
-                if (column != null) {
-                    actualSet.add(column.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int missing = 0;
-        for (String expected : expectedColumns) {
-            if (expected == null) {
-                continue;
-            }
-            if (!actualSet.contains(expected.toLowerCase(Locale.ROOT))) {
-                missing++;
-            }
-        }
-        return missing;
-    }
-
-    private int countExtraColumnsIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
-        if (actualColumns == null || actualColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> expectedSet = new HashSet<>();
-        if (expectedColumns != null) {
-            for (String expected : expectedColumns) {
-                if (expected != null) {
-                    expectedSet.add(expected.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int extra = 0;
-        for (String actual : actualColumns) {
-            if (actual == null) {
-                continue;
-            }
-            if (!expectedSet.contains(actual.toLowerCase(Locale.ROOT))) {
-                extra++;
-            }
-        }
-        return extra;
     }
 
     private int countSelectRowOrderViolations(
@@ -2724,49 +2653,6 @@ public class RubricTestingUsecase {
         }
     }
 
-    private int findBestRowMatchIndex(List<List<String>> actualRows, List<String> expectedRow) {
-        int bestIdx = -1;
-        int bestScore = -1;
-        for (int i = 0; i < actualRows.size(); i++) {
-            List<String> actual = actualRows.get(i);
-            int score = 0;
-            int limit = Math.min(actual.size(), expectedRow.size());
-            for (int c = 0; c < limit; c++) {
-                if (valuesEqualFlexible(actual.get(c), expectedRow.get(c))) {
-                    score++;
-                }
-            }
-            if (score > bestScore) {
-                bestScore = score;
-                bestIdx = i;
-            }
-        }
-        return bestIdx;
-    }
-
-    private BigDecimal scoreRow(List<String> actual, List<String> expected, BigDecimal rowScore, boolean allowPartial) {
-        int expectedCells = expected == null ? 0 : expected.size();
-        if (expectedCells == 0) {
-            return rowScore;
-        }
-
-        int matched = 0;
-        int limit = Math.min(actual.size(), expected.size());
-        for (int i = 0; i < limit; i++) {
-            if (valuesEqualFlexible(actual.get(i), expected.get(i))) {
-                matched++;
-            }
-        }
-
-        if (!allowPartial) {
-            return matched == expectedCells ? rowScore : BigDecimal.ZERO;
-        }
-
-        BigDecimal ratio = BigDecimal.valueOf(matched)
-                .divide(BigDecimal.valueOf(expectedCells), 6, RoundingMode.HALF_UP);
-        return rowScore.multiply(ratio);
-    }
-
     private List<String> toRowValues(Map<String, Object> row, List<String> orderedColumns) {
         List<String> values = new ArrayList<>();
         if (orderedColumns == null || orderedColumns.isEmpty()) {
@@ -2809,29 +2695,6 @@ public class RubricTestingUsecase {
             }
         }
         return true;
-    }
-
-    private boolean valuesEqualFlexible(String actual, String expected) {
-        if (Objects.equals(actual, expected)) {
-            return true;
-        }
-        if (actual == null || expected == null) {
-            return false;
-        }
-
-        String a = actual.trim();
-        String e = expected.trim();
-        if (a.equalsIgnoreCase(e)) {
-            return true;
-        }
-
-        try {
-            BigDecimal an = new BigDecimal(a);
-            BigDecimal en = new BigDecimal(e);
-            return an.compareTo(en) == 0;
-        } catch (Exception ex) {
-            return false;
-        }
     }
 
     private RubricTestGradeResponse executeRubricGradingV2(

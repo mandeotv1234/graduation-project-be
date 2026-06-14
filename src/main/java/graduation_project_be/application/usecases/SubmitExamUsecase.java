@@ -79,15 +79,14 @@ public class SubmitExamUsecase {
                 // If session is missing but exam is already submitted, it means auto-submit
                 // probably just finished.
                 // We should return the existing result instead of throwing 401.
-                boolean alreadySubmitted = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId)
-                        .isPresent();
-                if (alreadySubmitted) {
+                Optional<ExamResult> existingResult = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId);
+                if (existingResult.isPresent()) {
                     log.info(
                             "Session invalid but exam {} already submitted for student {}. Returning successful status.",
                             request.examId(), studentId);
                     // Return a "fake" successful response so FE doesn't logout
                     return new SubmitExamResponse(
-                            request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
+                            existingResult.get().getId(), request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
                             BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
                 }
                 throw new UnauthorizedException(
@@ -95,9 +94,10 @@ public class SubmitExamUsecase {
             }
         } catch (UnauthorizedException e) {
             // Re-check submission state one last time in case of race condition
-            if (examResultRepository.findByExamIdAndStudentId(request.examId(), studentId).isPresent()) {
+            Optional<ExamResult> existingResult = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId);
+            if (existingResult.isPresent()) {
                 return new SubmitExamResponse(
-                        request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
+                        existingResult.get().getId(), request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
                         BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
             }
             throw e;
@@ -196,7 +196,7 @@ public class SubmitExamUsecase {
                 .submittedAt(submittedAt)
                 .status(GradingStatus.PENDING)
                 .build();
-        examResultRepository.save(examResult);
+        ExamResult savedExamResult = examResultRepository.save(examResult);
 
         User student = userRepository.findById(studentId).orElse(null);
         String studentName = student != null ? student.getFullName() : "Unknown";
@@ -249,7 +249,7 @@ public class SubmitExamUsecase {
         );
 
         return new SubmitExamResponse(
-                examId, studentId, submittedAt, GradingStatus.PENDING,
+                savedExamResult.getId(), examId, studentId, submittedAt, GradingStatus.PENDING,
                 BigDecimal.ZERO, maxScore, 0, totalQuestions,
                 details, null);
     }

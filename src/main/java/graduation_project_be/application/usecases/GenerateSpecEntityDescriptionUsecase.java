@@ -7,7 +7,7 @@ import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.SpecEntityRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.response.GenerateSpecEntityDescriptionResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.SpecEntity;
@@ -26,7 +26,7 @@ public class GenerateSpecEntityDescriptionUsecase {
     private final ClassRepository classRepository;
     private final SpecEntityRepository specEntityRepository;
     private final CurrentUserService currentUserService;
-    private final GeminiService geminiService;
+    private final AIService geminiService;
 
     public GenerateSpecEntityDescriptionResponse execute(Long specId, Long entityId, Long examId) {
         Long userId = currentUserService.getCurrentUserId();

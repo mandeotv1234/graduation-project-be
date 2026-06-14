@@ -6,7 +6,7 @@ import graduation_project_be.application.port.repositories.ExamQuestionRepositor
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.request.CreateExamQuestionRequest;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.domain.models.Exam;
@@ -24,7 +24,7 @@ public class CreateExamQuestionUsecase {
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
     private final ExamSpecificationRepository examSpecificationRepository;
-    private final GeminiService geminiService;
+    private final AIService geminiService;
 
     public ExamQuestionResponse execute(CreateExamQuestionRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -56,7 +56,7 @@ public class CreateExamQuestionUsecase {
         if (needsAi) {
             String schemaContext = buildSchemaContext(request.examId());
             log.info("Calling Gemini for question: {}", request.content());
-            GeminiService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+            AIService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
                     request.content(),
                     questionType.name(),
                     schemaContext);

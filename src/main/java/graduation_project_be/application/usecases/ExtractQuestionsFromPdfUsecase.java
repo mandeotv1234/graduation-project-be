@@ -6,7 +6,7 @@ import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.GeminiService;
+import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.port.services.PdfStorageService;
 import graduation_project_be.application.usecases.request.ExtractQuestionsFromPdfRequest;
 import graduation_project_be.application.usecases.response.ExtractQuestionsFromPdfResponse;
@@ -26,7 +26,7 @@ public class ExtractQuestionsFromPdfUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final PdfStorageService pdfStorageService;
     private final CurrentUserService currentUserService;
-    private final GeminiService geminiService;
+    private final AIService geminiService;
 
     public ExtractQuestionsFromPdfResponse execute(ExtractQuestionsFromPdfRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -45,7 +45,7 @@ public class ExtractQuestionsFromPdfUsecase {
         byte[] pdfBytes = pdfStorageService.loadPdf(exam.getPdfFilePath());
         String schemaContext = buildSchemaContext(exam);
 
-        GeminiService.PdfExtractionResult extracted =
+        AIService.PdfExtractionResult extracted =
                 geminiService.extractQuestionsFromPdf(pdfBytes, schemaContext);
 
         if (!extracted.schemaScript().isBlank() && exam.getSpecificationId() != null) {

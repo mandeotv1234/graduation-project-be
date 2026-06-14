@@ -1,45 +1,20 @@
 package graduation_project_be.application.usecases.grading;
 
-import graduation_project_be.shared.utils.TimeUtils;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graduation_project_be.domain.models.GradingTrace;
 import graduation_project_be.domain.models.GradingTraceItem;
-import graduation_project_be.domain.models.TableMetadata;
-import graduation_project_be.domain.models.RoutineMetadata;
-import graduation_project_be.domain.models.TriggerMetadata;
-import graduation_project_be.domain.models.TableMetadata.ColumnMetadata;
-import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.port.repositories.*;
 import graduation_project_be.application.port.services.ExamSchemaService;
-import graduation_project_be.application.port.services.ExamSessionService;
-import graduation_project_be.application.port.services.GradingNotificationService;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
-import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSpecification;
-import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.SpecDataset;
-import graduation_project_be.domain.models.TeacherClass;
-import graduation_project_be.domain.models.User;
-import graduation_project_be.domain.models.SqlExecutionResult;
-import graduation_project_be.domain.models.enums.GradingStatus;
-import graduation_project_be.domain.models.enums.SubmissionStatus;
-import graduation_project_be.domain.models.enums.VerificationType;
-import graduation_project_be.domain.models.TestCase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.text.Normalizer;
-import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import graduation_project_be.application.usecases.GradingTraceCollector;
 
@@ -81,7 +56,21 @@ public class SelectQuestionGrader {
             JsonNode payload = rubric.path("grading_payload");
             JsonNode testCases = payload.path("test_cases");
             if (!testCases.isArray() || testCases.size() == 0) {
-                return gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
+                GradeDecision base = gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
+                // Apply whitebox even when there are no rubric test cases
+                JsonNode wbRules = payload.path("whitebox_rules");
+                if (!wbRules.isMissingNode() && !wbRules.isNull()) {
+                    StringBuilder wbIssues = new StringBuilder();
+                    BigDecimal wbDeduction = applyWhiteboxDeduction(studentQuery, wbRules, wbIssues);
+                    if (wbDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                        BigDecimal adjusted = base.scoreEarned().subtract(wbDeduction);
+                        if (adjusted.compareTo(BigDecimal.ZERO) < 0) adjusted = BigDecimal.ZERO;
+                        String msg = (base.errorMessage() != null && !base.errorMessage().isBlank()
+                                ? base.errorMessage() + " | " : "") + wbIssues.toString().trim();
+                        return GradeDecision.partial(adjusted, msg);
+                    }
+                }
+                return base;
             }
 
             JsonNode selectRules = resolveSelectGradingRules(question);
@@ -244,6 +233,14 @@ public class SelectQuestionGrader {
             if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
                 allPassed = false;
                 totalDeduction = totalDeduction.add(structuralDeduction);
+            }
+
+            // --- Whitebox structural analysis (subquery clause check) ---
+            JsonNode whiteboxRules = payload.path("whitebox_rules");
+            BigDecimal whiteboxDeduction = applyWhiteboxDeduction(studentQuery, whiteboxRules, issues);
+            if (whiteboxDeduction.compareTo(BigDecimal.ZERO) > 0) {
+                allPassed = false;
+                totalDeduction = totalDeduction.add(whiteboxDeduction);
             }
 
             BigDecimal finalEarned = totalPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
@@ -1531,58 +1528,6 @@ public class SelectQuestionGrader {
         return remapped;
     }
 
-    private int countMissingColumns(List<String> expectedColumns, List<String> actualColumns) {
-        if (expectedColumns == null || expectedColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> actualSet = new HashSet<>();
-        if (actualColumns != null) {
-            for (String actual : actualColumns) {
-                if (actual != null) {
-                    actualSet.add(actual.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int missing = 0;
-        for (String expected : expectedColumns) {
-            if (expected == null) {
-                continue;
-            }
-            if (!actualSet.contains(expected.toLowerCase(Locale.ROOT))) {
-                missing++;
-            }
-        }
-        return missing;
-    }
-
-    private int countExtraColumns(List<String> expectedColumns, List<String> actualColumns) {
-        if (actualColumns == null || actualColumns.isEmpty()) {
-            return 0;
-        }
-
-        Set<String> expectedSet = new HashSet<>();
-        if (expectedColumns != null) {
-            for (String expected : expectedColumns) {
-                if (expected != null) {
-                    expectedSet.add(expected.toLowerCase(Locale.ROOT));
-                }
-            }
-        }
-
-        int extra = 0;
-        for (String actual : actualColumns) {
-            if (actual == null) {
-                continue;
-            }
-            if (!expectedSet.contains(actual.toLowerCase(Locale.ROOT))) {
-                extra++;
-            }
-        }
-        return extra;
-    }
-
     private boolean sameColumnOrderIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
         if (expectedColumns == null || actualColumns == null) {
             return false;
@@ -2065,27 +2010,85 @@ public class SelectQuestionGrader {
         }
     }
 
-    private String extractSetupScriptFromRubric(String gradingRubricJson) {
-        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
-            return "";
+    // ──────────────────────────────────────────────────────────────────────────
+    // Whitebox: subquery clause analysis
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Reads {@code whitebox_rules} from the rubric payload, runs
+     * {@link graduation_project_be.shared.utils.SqlWhiteboxAnalyzer} on the student query, and
+     * returns the total deduction to subtract from the earned score.
+     *
+     * <p>Supported rules:
+     * <ul>
+     *   <li>{@code no_subquery_in_select} — subquery in the SELECT list is forbidden</li>
+     *   <li>{@code no_subquery_in_from}   — derived-table subquery in FROM is forbidden</li>
+     * </ul>
+     * Each rule node: {@code { "enabled": true, "penalty_value": <points> }}
+     */
+    private BigDecimal applyWhiteboxDeduction(
+            String studentQuery,
+            JsonNode whiteboxRules,
+            StringBuilder issues) {
+
+        if (whiteboxRules == null || whiteboxRules.isMissingNode() || whiteboxRules.isNull()) {
+            return BigDecimal.ZERO;
         }
-        try {
-            JsonNode rubric = objectMapper.readTree(gradingRubricJson);
-            JsonNode testCases = rubric.path("grading_payload").path("test_cases");
-            if (testCases.isArray() && testCases.size() > 0) {
-                StringBuilder setupBuilder = new StringBuilder();
-                for (JsonNode tc : testCases) {
-                    String setupScript = tc.path("setup_script").asText("");
-                    if (!setupScript.isBlank()) {
-                        setupScript = setupScript.replace("\\n", "\n").replace("\\t", "\t");
-                        setupBuilder.append(setupScript).append("\n");
-                    }
+
+        graduation_project_be.shared.utils.SqlWhiteboxAnalyzer.SubqueryAnalysisResult analysis =
+                graduation_project_be.shared.utils.SqlWhiteboxAnalyzer.analyzeSubqueries(studentQuery);
+
+        BigDecimal totalDeduction = BigDecimal.ZERO;
+
+        JsonNode noSubInSelect = whiteboxRules.path("no_subquery_in_select");
+        if (noSubInSelect.path("enabled").asBoolean(false) && analysis.hasForbiddenInSelect()) {
+            double penaltyVal = noSubInSelect.path("penalty_value").asDouble(0d);
+            BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, penaltyVal)).setScale(4, RoundingMode.HALF_UP);
+            if (deduction.compareTo(BigDecimal.ZERO) > 0) {
+                totalDeduction = totalDeduction.add(deduction);
+                appendSelectIssue(issues, String.format(Locale.ROOT,
+                        "[Whitebox] Truy vấn lồng trong SELECT bị cấm (%d truy vấn), trừ %.2f điểm.",
+                        analysis.subqueriesInSelect(), deduction.doubleValue()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_FAIL,
+                            "Whitebox — truy vấn lồng trong SELECT",
+                            String.format(Locale.ROOT, "Phát hiện %d truy vấn lồng trong SELECT (không cho phép), trừ %.2f điểm.",
+                                    analysis.subqueriesInSelect(), deduction.doubleValue()),
+                            null, null, null, null, null, null,
+                            null, null, deduction,
+                            null, null,
+                            "Whitebox subquery check"));
                 }
-                return setupBuilder.toString();
             }
-        } catch (Exception e) {
-            return "";
         }
-        return "";
+
+        JsonNode noSubInFrom = whiteboxRules.path("no_subquery_in_from");
+        if (noSubInFrom.path("enabled").asBoolean(false) && analysis.hasForbiddenInFrom()) {
+            double penaltyVal = noSubInFrom.path("penalty_value").asDouble(0d);
+            BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, penaltyVal)).setScale(4, RoundingMode.HALF_UP);
+            if (deduction.compareTo(BigDecimal.ZERO) > 0) {
+                totalDeduction = totalDeduction.add(deduction);
+                appendSelectIssue(issues, String.format(Locale.ROOT,
+                        "[Whitebox] Truy vấn lồng trong FROM bị cấm (%d truy vấn), trừ %.2f điểm.",
+                        analysis.subqueriesInFrom(), deduction.doubleValue()));
+                if (GradingTraceCollector.isActive()) {
+                    GradingTraceCollector.add(new GradingTraceItem(
+                            GradingTraceItem.KIND_SUMMARY,
+                            GradingTraceItem.STATUS_FAIL,
+                            "Whitebox — truy vấn lồng trong FROM",
+                            String.format(Locale.ROOT, "Phát hiện %d truy vấn lồng trong FROM (không cho phép), trừ %.2f điểm.",
+                                    analysis.subqueriesInFrom(), deduction.doubleValue()),
+                            null, null, null, null, null, null,
+                            null, null, deduction,
+                            null, null,
+                            "Whitebox subquery check"));
+                }
+            }
+        }
+
+        return totalDeduction;
     }
+
 }

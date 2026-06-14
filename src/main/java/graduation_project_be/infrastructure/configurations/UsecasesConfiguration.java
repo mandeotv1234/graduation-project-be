@@ -474,12 +474,13 @@ public class UsecasesConfiguration {
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             InsertDataQuestionGrader insertDataQuestionGrader,
             ObjectMapper objectMapper,
-            SelectQuestionGrader selectQuestionGrader) {
+            SelectQuestionGrader selectQuestionGrader,
+            WhiteboxEngine whiteboxEngine) {
         return new RubricTestingUsecase(
                 geminiService, examSchemaService,
                 examRepository, examSpecificationRepository,
                 getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper,
-                selectQuestionGrader);
+                selectQuestionGrader, whiteboxEngine);
     }
 
     @Bean

@@ -861,6 +861,7 @@ public class ExamController {
         }
 
         @PostMapping("/{examId}/students/{studentId}/remind")
+        @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> remindStudent(
                         @PathVariable Long examId,
                         @PathVariable Long studentId,
@@ -871,6 +872,7 @@ public class ExamController {
         }
 
         @PostMapping("/{examId}/students/{studentId}/force-submit")
+        @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> forceSubmitExam(
                         @PathVariable Long examId,
                         @PathVariable Long studentId) {

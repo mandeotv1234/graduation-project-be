@@ -2,6 +2,7 @@ package graduation_project_be.adapter.web.api.dtos.request;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import graduation_project_be.application.usecases.request.WhiteboxValidateRequest;
+import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 
 /**
@@ -11,6 +12,7 @@ import java.math.BigDecimal;
  */
 public record WhiteboxValidateRequestDto(
         String questionType,
+        @NotBlank(message = "sql is required")
         String sql,
         JsonNode whiteboxRules,
         JsonNode whiteboxSettings,

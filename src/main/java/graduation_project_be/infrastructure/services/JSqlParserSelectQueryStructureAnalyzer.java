@@ -73,9 +73,9 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
             // Top-level derived tables (FROM/JOIN subselects) are nesting too; scan their interiors so
             // deeper nesting inside them counts toward maxNestingDepth (otherwise it would cap at 1).
             Acc fromAcc = new Acc();
-            if (isSubselect(ps.getFromItem())) {
+            if (ps.getFromItem() instanceof Select fromSubselect) {
                 fromAcc.maxDepth = Math.max(fromAcc.maxDepth, 1);
-                scanInner((Select) ps.getFromItem(), 1, fromAcc);
+                scanInner(fromSubselect, 1, fromAcc);
             }
             List<Join> joins = ps.getJoins();
             if (joins != null) {
@@ -84,10 +84,10 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
                     if (!join.isSimple()) {
                         joinCount++;
                     }
-                    if (isSubselect(join.getRightItem())) {
+                    if (join.getRightItem() instanceof Select joinSubselect) {
                         subqueryInFrom = true;
                         fromAcc.maxDepth = Math.max(fromAcc.maxDepth, 1);
-                        scanInner((Select) join.getRightItem(), 1, fromAcc);
+                        scanInner(joinSubselect, 1, fromAcc);
                     }
                     // ON conditions can carry subqueries/aggregates that drive REQUIRE_* and nesting depth.
                     if (join.getOnExpressions() != null) {
@@ -433,15 +433,15 @@ public class JSqlParserSelectQueryStructureAnalyzer implements SelectQueryStruct
         }
         walk(ps.getWhere(), depth, acc, false);
         walk(ps.getHaving(), depth, acc, false);
-        if (isSubselect(ps.getFromItem())) {
+        if (ps.getFromItem() instanceof Select innerFromSubselect) {
             acc.maxDepth = Math.max(acc.maxDepth, depth + 1);
-            scanInner((Select) ps.getFromItem(), depth + 1, acc);
+            scanInner(innerFromSubselect, depth + 1, acc);
         }
         if (ps.getJoins() != null) {
             for (Join join : ps.getJoins()) {
-                if (isSubselect(join.getRightItem())) {
+                if (join.getRightItem() instanceof Select innerJoinSubselect) {
                     acc.maxDepth = Math.max(acc.maxDepth, depth + 1);
-                    scanInner((Select) join.getRightItem(), depth + 1, acc);
+                    scanInner(innerJoinSubselect, depth + 1, acc);
                 }
                 if (join.getOnExpressions() != null) {
                     for (Expression on : join.getOnExpressions()) {

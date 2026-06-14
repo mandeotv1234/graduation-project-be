@@ -56,21 +56,7 @@ public class SelectQuestionGrader {
             JsonNode payload = rubric.path("grading_payload");
             JsonNode testCases = payload.path("test_cases");
             if (!testCases.isArray() || testCases.size() == 0) {
-                GradeDecision base = gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
-                // Apply whitebox even when there are no rubric test cases
-                JsonNode wbRules = payload.path("whitebox_rules");
-                if (!wbRules.isMissingNode() && !wbRules.isNull()) {
-                    StringBuilder wbIssues = new StringBuilder();
-                    BigDecimal wbDeduction = applyWhiteboxDeduction(studentQuery, wbRules, wbIssues);
-                    if (wbDeduction.compareTo(BigDecimal.ZERO) > 0) {
-                        BigDecimal adjusted = base.scoreEarned().subtract(wbDeduction);
-                        if (adjusted.compareTo(BigDecimal.ZERO) < 0) adjusted = BigDecimal.ZERO;
-                        String msg = (base.errorMessage() != null && !base.errorMessage().isBlank()
-                                ? base.errorMessage() + " | " : "") + wbIssues.toString().trim();
-                        return GradeDecision.partial(adjusted, msg);
-                    }
-                }
-                return base;
+                return gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
             }
 
             JsonNode selectRules = resolveSelectGradingRules(question);
@@ -233,14 +219,6 @@ public class SelectQuestionGrader {
             if (structuralDeduction.compareTo(BigDecimal.ZERO) > 0) {
                 allPassed = false;
                 totalDeduction = totalDeduction.add(structuralDeduction);
-            }
-
-            // --- Whitebox structural analysis (subquery clause check) ---
-            JsonNode whiteboxRules = payload.path("whitebox_rules");
-            BigDecimal whiteboxDeduction = applyWhiteboxDeduction(studentQuery, whiteboxRules, issues);
-            if (whiteboxDeduction.compareTo(BigDecimal.ZERO) > 0) {
-                allPassed = false;
-                totalDeduction = totalDeduction.add(whiteboxDeduction);
             }
 
             BigDecimal finalEarned = totalPoints.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
@@ -2008,87 +1986,6 @@ public class SelectQuestionGrader {
                 BigDecimal earnedPoints) {
             return new SelectDatasetDecision(false, allChecksPassed, failAllTriggered, errorMessage, earnedPoints);
         }
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Whitebox: subquery clause analysis
-    // ──────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Reads {@code whitebox_rules} from the rubric payload, runs
-     * {@link graduation_project_be.shared.utils.SqlWhiteboxAnalyzer} on the student query, and
-     * returns the total deduction to subtract from the earned score.
-     *
-     * <p>Supported rules:
-     * <ul>
-     *   <li>{@code no_subquery_in_select} — subquery in the SELECT list is forbidden</li>
-     *   <li>{@code no_subquery_in_from}   — derived-table subquery in FROM is forbidden</li>
-     * </ul>
-     * Each rule node: {@code { "enabled": true, "penalty_value": <points> }}
-     */
-    private BigDecimal applyWhiteboxDeduction(
-            String studentQuery,
-            JsonNode whiteboxRules,
-            StringBuilder issues) {
-
-        if (whiteboxRules == null || whiteboxRules.isMissingNode() || whiteboxRules.isNull()) {
-            return BigDecimal.ZERO;
-        }
-
-        graduation_project_be.shared.utils.SqlWhiteboxAnalyzer.SubqueryAnalysisResult analysis =
-                graduation_project_be.shared.utils.SqlWhiteboxAnalyzer.analyzeSubqueries(studentQuery);
-
-        BigDecimal totalDeduction = BigDecimal.ZERO;
-
-        JsonNode noSubInSelect = whiteboxRules.path("no_subquery_in_select");
-        if (noSubInSelect.path("enabled").asBoolean(false) && analysis.hasForbiddenInSelect()) {
-            double penaltyVal = noSubInSelect.path("penalty_value").asDouble(0d);
-            BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, penaltyVal)).setScale(4, RoundingMode.HALF_UP);
-            if (deduction.compareTo(BigDecimal.ZERO) > 0) {
-                totalDeduction = totalDeduction.add(deduction);
-                appendSelectIssue(issues, String.format(Locale.ROOT,
-                        "[Whitebox] Truy vấn lồng trong SELECT bị cấm (%d truy vấn), trừ %.2f điểm.",
-                        analysis.subqueriesInSelect(), deduction.doubleValue()));
-                if (GradingTraceCollector.isActive()) {
-                    GradingTraceCollector.add(new GradingTraceItem(
-                            GradingTraceItem.KIND_SUMMARY,
-                            GradingTraceItem.STATUS_FAIL,
-                            "Whitebox — truy vấn lồng trong SELECT",
-                            String.format(Locale.ROOT, "Phát hiện %d truy vấn lồng trong SELECT (không cho phép), trừ %.2f điểm.",
-                                    analysis.subqueriesInSelect(), deduction.doubleValue()),
-                            null, null, null, null, null, null,
-                            null, null, deduction,
-                            null, null,
-                            "Whitebox subquery check"));
-                }
-            }
-        }
-
-        JsonNode noSubInFrom = whiteboxRules.path("no_subquery_in_from");
-        if (noSubInFrom.path("enabled").asBoolean(false) && analysis.hasForbiddenInFrom()) {
-            double penaltyVal = noSubInFrom.path("penalty_value").asDouble(0d);
-            BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, penaltyVal)).setScale(4, RoundingMode.HALF_UP);
-            if (deduction.compareTo(BigDecimal.ZERO) > 0) {
-                totalDeduction = totalDeduction.add(deduction);
-                appendSelectIssue(issues, String.format(Locale.ROOT,
-                        "[Whitebox] Truy vấn lồng trong FROM bị cấm (%d truy vấn), trừ %.2f điểm.",
-                        analysis.subqueriesInFrom(), deduction.doubleValue()));
-                if (GradingTraceCollector.isActive()) {
-                    GradingTraceCollector.add(new GradingTraceItem(
-                            GradingTraceItem.KIND_SUMMARY,
-                            GradingTraceItem.STATUS_FAIL,
-                            "Whitebox — truy vấn lồng trong FROM",
-                            String.format(Locale.ROOT, "Phát hiện %d truy vấn lồng trong FROM (không cho phép), trừ %.2f điểm.",
-                                    analysis.subqueriesInFrom(), deduction.doubleValue()),
-                            null, null, null, null, null, null,
-                            null, null, deduction,
-                            null, null,
-                            "Whitebox subquery check"));
-                }
-            }
-        }
-
-        return totalDeduction;
     }
 
 }

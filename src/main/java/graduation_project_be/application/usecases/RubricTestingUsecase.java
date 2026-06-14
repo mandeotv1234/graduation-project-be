@@ -11,6 +11,8 @@ import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -73,6 +75,7 @@ public class RubricTestingUsecase {
     private final ObjectMapper objectMapper;
     // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
     private final SelectQuestionGrader selectGrader;
+    private final WhiteboxEngine whiteboxEngine;
     // Stateless helper; constructed directly so it stays out of the generated constructor.
     private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
 
@@ -924,6 +927,21 @@ public class RubricTestingUsecase {
                 finalEarned = maxPoints;
             }
 
+            // Apply whitebox on top of rubric test-case score (mirrors GradeExamUsecase.applySelectWhitebox)
+            ExamQuestion whiteboxQ = ExamQuestion.builder()
+                    .examId(request.examId())
+                    .questionType(QuestionType.SELECT_QUERY)
+                    .points(maxPoints)
+                    .gradingRubric(gradingRubric)
+                    .build();
+            GradeDecision whiteboxAdjusted = applySelectWhiteboxPreview(whiteboxQ, studentQuery,
+                    allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0
+                            ? GradeDecision.pass(finalEarned) : GradeDecision.partial(finalEarned, ""));
+            if (whiteboxAdjusted.scoreEarned() != null) {
+                finalEarned = whiteboxAdjusted.scoreEarned();
+                if (!whiteboxAdjusted.isCorrect()) allPassed = false;
+            }
+
             return RubricTestGradeResponse.of(
                     finalEarned.doubleValue(),
                     totalPoints,
@@ -971,6 +989,7 @@ public class RubricTestingUsecase {
         try {
             GradeDecision decision = selectGrader.gradeSelectAcrossDatasets(
                     specification, previewSchema, question, request.studentQuery());
+            decision = applySelectWhiteboxPreview(question, request.studentQuery(), decision);
             BigDecimal earned = decision.scoreEarned() != null ? decision.scoreEarned() : BigDecimal.ZERO;
             String message = decision.isCorrect()
                     ? "Chấm so sánh dataset: kết quả khớp đáp án mẫu"
@@ -990,6 +1009,34 @@ public class RubricTestingUsecase {
                 examSchemaService.dropSchema(previewSchema);
             } catch (Exception ignore) {
             }
+        }
+    }
+
+    private GradeDecision applySelectWhiteboxPreview(ExamQuestion question, String studentQuery, GradeDecision blackbox) {
+        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                graduation_project_be.domain.models.QuestionType.SELECT_QUERY.name(),
+                studentQuery, gradingPayloadNode(question), points, false);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
+        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction()).setScale(2, java.math.RoundingMode.HALF_UP);
+        if (finalScore.signum() < 0) finalScore = BigDecimal.ZERO;
+        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString() + " điểm do vi phạm quy tắc whitebox.";
+        return GradeDecision.partial(finalScore, message);
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode gradingPayloadNode(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+        try {
+            return objectMapper.readTree(question.getGradingRubric()).path("grading_payload");
+        } catch (Exception e) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
         }
     }
 

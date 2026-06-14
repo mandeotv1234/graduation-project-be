@@ -53,6 +53,16 @@ public final class WhiteboxParams {
         return out;
     }
 
+    /** Reads a single string param; returns {@code fallback} when absent or blank. */
+    public static String stringParam(WhiteboxRule rule, String name, String fallback) {
+        JsonNode params = rule.params();
+        if (params == null) return fallback;
+        JsonNode node = params.path(name);
+        if (node.isMissingNode() || node.isNull()) return fallback;
+        String value = node.asText("").trim();
+        return value.isEmpty() ? fallback : value;
+    }
+
     private static void addToken(List<String> out, String raw) {
         String token = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
         if (!token.isEmpty() && !out.contains(token)) {

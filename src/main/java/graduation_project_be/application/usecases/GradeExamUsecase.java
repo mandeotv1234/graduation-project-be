@@ -102,6 +102,33 @@ public class GradeExamUsecase {
         return GradeDecision.partial(finalScore, message);
     }
 
+    /**
+     * Applies FUNCTION/STORED_PROCEDURE white-box deduction on top of the black-box score.
+     * Mirrors {@link #applySelectWhitebox} — the engine handles non-SELECT types via parseFailed() facts.
+     */
+    private GradeDecision applyRoutineWhitebox(QuestionType questionType, ExamQuestion question,
+                                               String studentQuery, GradeDecision blackbox) {
+        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                questionType.name(), studentQuery, whiteboxPayload(question), points, true);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
+        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction()).setScale(2, RoundingMode.HALF_UP);
+        if (finalScore.signum() < 0) {
+            finalScore = BigDecimal.ZERO;
+        }
+        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
+            return GradeDecision.pass(finalScore);
+        }
+        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString()
+                        + " điểm do vi phạm quy tắc whitebox (phương pháp viết câu lệnh).";
+        return GradeDecision.partial(finalScore, message);
+    }
+
     /** The {@code grading_payload} node of a question's rubric, or a missing node if unavailable. */
     private JsonNode whiteboxPayload(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
@@ -397,6 +424,19 @@ public class GradeExamUsecase {
                             } else if (!isCorrect && errorMessage == null) {
                                 errorMessage = "Kết quả không khớp với đáp án mẫu.";
                             }
+                            // Apply STORED_PROCEDURE white-box on top of black-box score
+                            if (submission != null) {
+                                BigDecimal spScore = submission.getScoreEarned() != null
+                                        ? submission.getScoreEarned() : BigDecimal.ZERO;
+                                GradeDecision spDecision = isCorrect
+                                        ? GradeDecision.pass(spScore)
+                                        : GradeDecision.partial(spScore, errorMessage);
+                                spDecision = applyRoutineWhitebox(
+                                        QuestionType.STORED_PROCEDURE, question, studentQuery, spDecision);
+                                isCorrect = spDecision.isCorrect();
+                                errorMessage = spDecision.errorMessage();
+                                submission.setScoreEarned(spDecision.scoreEarned());
+                            }
                         } else {
                             boolean fallbackTriggered = false;
                             try {
@@ -478,6 +518,19 @@ public class GradeExamUsecase {
                                 }
                             } else if (!isCorrect && errorMessage == null) {
                                 errorMessage = "Kết quả không khớp với đáp án mẫu.";
+                            }
+                            // Apply FUNCTION white-box on top of black-box score
+                            if (question.getQuestionType() == QuestionType.FUNCTION && submission != null) {
+                                BigDecimal fnScore = submission.getScoreEarned() != null
+                                        ? submission.getScoreEarned() : BigDecimal.ZERO;
+                                GradeDecision fnDecision = isCorrect
+                                        ? GradeDecision.pass(fnScore)
+                                        : GradeDecision.partial(fnScore, errorMessage);
+                                fnDecision = applyRoutineWhitebox(
+                                        QuestionType.FUNCTION, question, studentQuery, fnDecision);
+                                isCorrect = fnDecision.isCorrect();
+                                errorMessage = fnDecision.errorMessage();
+                                submission.setScoreEarned(fnDecision.scoreEarned());
                             }
                         }
                         executionTimeMs = (int) (System.currentTimeMillis() - startTime);

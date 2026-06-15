@@ -11,7 +11,6 @@ import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
@@ -34,7 +33,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
-@Primary
 @Service
 public class CodexServiceImpl implements AIService {
     private static final int CODEX_TIMEOUT_SECONDS = 600;

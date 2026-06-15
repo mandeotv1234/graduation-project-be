@@ -26,7 +26,7 @@ public class ExtractQuestionsFromPdfUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final PdfStorageService pdfStorageService;
     private final CurrentUserService currentUserService;
-    private final AIService geminiService;
+    private final AIService aiService;
 
     public ExtractQuestionsFromPdfResponse execute(ExtractQuestionsFromPdfRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -46,7 +46,7 @@ public class ExtractQuestionsFromPdfUsecase {
         String schemaContext = buildSchemaContext(exam);
 
         AIService.PdfExtractionResult extracted =
-                geminiService.extractQuestionsFromPdf(pdfBytes, schemaContext);
+                aiService.extractQuestionsFromPdf(pdfBytes, schemaContext);
 
         if (!extracted.schemaScript().isBlank() && exam.getSpecificationId() != null) {
             persistExtractedDdl(exam.getSpecificationId(), extracted.schemaScript());

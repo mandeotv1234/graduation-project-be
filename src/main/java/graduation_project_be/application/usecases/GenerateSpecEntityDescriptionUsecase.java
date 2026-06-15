@@ -15,7 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Generate a Gemini AI description for a spec entity (no persist).
+ * Generate an AI description for a spec entity (no persist).
  * Auth: caller must be class teacher of the exam that uses this spec.
  */
 @Slf4j
@@ -26,7 +26,7 @@ public class GenerateSpecEntityDescriptionUsecase {
     private final ClassRepository classRepository;
     private final SpecEntityRepository specEntityRepository;
     private final CurrentUserService currentUserService;
-    private final AIService geminiService;
+    private final AIService aiService;
 
     public GenerateSpecEntityDescriptionResponse execute(Long specId, Long entityId, Long examId) {
         Long userId = currentUserService.getCurrentUserId();
@@ -50,7 +50,7 @@ public class GenerateSpecEntityDescriptionUsecase {
             throw new ResourceNotFoundException("SpecEntity", "specificationId", specId);
         }
 
-        String description = geminiService.generateEntityDescription(
+        String description = aiService.generateEntityDescription(
                 entity.getEntityName(),
                 entity.getDisplayName(),
                 entity.getAttributes(),

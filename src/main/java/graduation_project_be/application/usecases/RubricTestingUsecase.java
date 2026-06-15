@@ -66,7 +66,7 @@ public class RubricTestingUsecase {
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?i)\\bCREATE\\s+TABLE\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
-    private final AIService geminiService;
+    private final AIService aiService;
     private final ExamSchemaService examSchemaService;
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
@@ -115,7 +115,7 @@ public class RubricTestingUsecase {
             priorQuestionContext = "";
         }
 
-        String rubricJson = geminiService.generateGradingRubric(
+        String rubricJson = aiService.generateGradingRubric(
                 request.correctQuery(),
                 request.questionContent(),
                 request.totalPoints(),

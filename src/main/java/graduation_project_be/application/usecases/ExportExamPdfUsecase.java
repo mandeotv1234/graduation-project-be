@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  *   <li>Exam has ≥1 question → else 400 EXAM_NO_QUESTIONS</li>
  * </ol>
  *
- * <p>Entities with blank descriptions are lazily generated via Gemini in parallel
+ * <p>Entities with blank descriptions are lazily generated via AIService in parallel
  * (8s per-call timeout, 20s total), then persisted before rendering.
  */
 @Slf4j
@@ -53,9 +53,9 @@ public class ExportExamPdfUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final SpecEntityRepository specEntityRepository;
     private final CurrentUserService currentUserService;
-    private final AIService geminiService;
+    private final AIService aiService;
     private final PdfRenderService pdfRenderService;
-    private final ExecutorService geminiExecutor;
+    private final ExecutorService aiExecutor;
 
     public ExportExamPdfResponse execute(ExportExamPdfRequest request) {
         Long userId = currentUserService.getCurrentUserId();
@@ -114,7 +114,7 @@ public class ExportExamPdfUsecase {
     }
 
     /**
-     * For each entity with a blank description, fire a Gemini call on the shared executor
+     * For each entity with a blank description, fire an AIService call on the shared executor
      * with an 8-second per-call timeout. Total wait is capped at 20 seconds.
      * Failures are swallowed — PDF renders without description for that entity.
      */
@@ -129,11 +129,11 @@ public class ExportExamPdfUsecase {
 
         List<CompletableFuture<Void>> tasks = needsGen.stream()
                 .map(entity -> CompletableFuture
-                        .supplyAsync(() -> geminiService.generateEntityDescription(
+                        .supplyAsync(() -> aiService.generateEntityDescription(
                                 entity.getEntityName(),
                                 entity.getDisplayName(),
                                 entity.getAttributes(),
-                                null), geminiExecutor)
+                                null), aiExecutor)
                         .orTimeout(8, TimeUnit.SECONDS)
                         .thenAccept(desc -> {
                             if (desc != null && !desc.isBlank()

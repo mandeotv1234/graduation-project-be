@@ -66,7 +66,7 @@ public class RubricTestingUsecase {
     private static final Pattern CREATE_TABLE_PATTERN = Pattern.compile(
             "(?i)\\bCREATE\\s+TABLE\\s+((?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)(?:\\s*\\.\\s*(?:\\[[^\\]]+\\]|[A-Za-z0-9_]+)){0,2})");
 
-    private final AIService geminiService;
+    private final AIService aiService;
     private final ExamSchemaService examSchemaService;
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
@@ -115,7 +115,7 @@ public class RubricTestingUsecase {
             priorQuestionContext = "";
         }
 
-        String rubricJson = geminiService.generateGradingRubric(
+        String rubricJson = aiService.generateGradingRubric(
                 request.correctQuery(),
                 request.questionContent(),
                 request.totalPoints(),
@@ -1043,6 +1043,29 @@ public class RubricTestingUsecase {
         return GradeDecision.partial(finalScore, message);
     }
 
+    private GradeDecision applyRoutineWhiteboxPreview(String questionType, String studentQuery,
+                                                       JsonNode gradingPayloadNode, double totalPoints,
+                                                       GradeDecision blackbox) {
+        java.math.BigDecimal points = java.math.BigDecimal.valueOf(totalPoints);
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                questionType, studentQuery, gradingPayloadNode, points, false);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        java.math.BigDecimal blackboxScore = blackbox.scoreEarned() == null
+                ? java.math.BigDecimal.ZERO : blackbox.scoreEarned();
+        java.math.BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (finalScore.signum() < 0) finalScore = java.math.BigDecimal.ZERO;
+        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
+            return GradeDecision.pass(finalScore);
+        }
+        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString() + " điểm do vi phạm quy tắc whitebox.";
+        return GradeDecision.partial(finalScore, message);
+    }
+
     private com.fasterxml.jackson.databind.JsonNode gradingPayloadNode(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
             return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
@@ -1129,7 +1152,7 @@ public class RubricTestingUsecase {
             }
 
             return executeRoutineRubricGrading(
-                    studentSchema, teacherSchema, gradingRubric, totalPoints);
+                    studentSchema, teacherSchema, gradingRubric, totalPoints, studentQuery);
 
         } catch (Exception e) {
             System.err.println("[DEBUG] Lỗi chấm thử routine: " + e.getMessage());
@@ -3088,7 +3111,8 @@ public class RubricTestingUsecase {
             String studentSchema,
             String teacherSchema,
             String gradingRubricJson,
-            double totalPoints) {
+            double totalPoints,
+            String studentQuery) {
 
         List<Map<String, Object>> details = new ArrayList<>();
 
@@ -3226,6 +3250,31 @@ public class RubricTestingUsecase {
             double finalScore = Math.min(earnedPoints, totalPoints);
             if (positiveOnlyScoring && finalScore < 0) {
                 finalScore = 0;
+            }
+
+            // Apply routine white-box on top of black-box score (mirrors testGradeSelect)
+            String questionTypeStr = isStoredProcedureRubric(rubric, expectedRoutines)
+                    ? "STORED_PROCEDURE" : "FUNCTION";
+            GradeDecision bbDecision = allPassed
+                    ? GradeDecision.pass(java.math.BigDecimal.valueOf(finalScore))
+                    : GradeDecision.partial(java.math.BigDecimal.valueOf(finalScore), null);
+            GradeDecision wbDecision = applyRoutineWhiteboxPreview(
+                    questionTypeStr, studentQuery,
+                    objectMapper.readTree(gradingRubricJson).path("grading_payload"),
+                    totalPoints, bbDecision);
+            if (wbDecision.scoreEarned() != null
+                    && wbDecision.scoreEarned().doubleValue() < finalScore) {
+                double whiteboxDeduction = finalScore - wbDecision.scoreEarned().doubleValue();
+                finalScore = wbDecision.scoreEarned().doubleValue();
+                allPassed = wbDecision.isCorrect();
+                String wbMsg = wbDecision.errorMessage() != null
+                        ? wbDecision.errorMessage()
+                        : "Bị trừ " + String.format("%.2f", whiteboxDeduction)
+                                + " điểm do vi phạm quy tắc whitebox.";
+                details.add(java.util.Map.of(
+                        "type", "warning",
+                        "message", "[Whitebox] " + wbMsg,
+                        "points", -Math.round(whiteboxDeduction * 100.0) / 100.0));
             }
 
             return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);

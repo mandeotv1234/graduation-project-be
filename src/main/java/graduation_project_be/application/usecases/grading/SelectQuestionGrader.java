@@ -74,6 +74,7 @@ public class SelectQuestionGrader {
                 JsonNode tc = testCases.get(i);
                 String caseId = tc.path("case_id").asText("TC_" + (i + 1));
                 String caseName = tc.path("case_name").asText(caseId);
+                String mutationType = tc.path("mutation_type").asText("").trim();
                 BigDecimal caseMaxPenalty = BigDecimal
                         .valueOf(Math.max(0d, tc.path("penalty_value").asDouble(1.0)))
                         .setScale(4, RoundingMode.HALF_UP);
@@ -158,6 +159,15 @@ public class SelectQuestionGrader {
                             String addedIssues = issues.substring(issuesBefore).trim();
                             traceMessage = addedIssues.isEmpty() ? "Kết quả không khớp với đáp án mẫu" : addedIssues;
                         }
+                        String traceExpected = null;
+                        String traceActual = null;
+                        if (!casePassed) {
+                            traceExpected = formatRowsForTrace(expected.columns(), expected.rows());
+                            traceActual = formatRowsForTrace(null, actualRows);
+                        }
+                        String configSummary = mutationType.isBlank()
+                                ? "SELECT rubric test case"
+                                : "SELECT rubric test case | mutation_type=" + mutationType;
                         GradingTraceCollector.add(new GradingTraceItem(
                                 GradingTraceItem.KIND_TEST_CASE,
                                 casePassed ? GradingTraceItem.STATUS_PASS : GradingTraceItem.STATUS_FAIL,
@@ -168,8 +178,8 @@ public class SelectQuestionGrader {
                                 casePassed ? null : caseMaxPenalty,
                                 null, caseMaxPenalty,
                                 casePassed ? null : caseDeduction,
-                                null, null,
-                                "SELECT rubric test case"));
+                                traceExpected, traceActual,
+                                configSummary));
                     }
                 } catch (Exception caseEx) {
                     String message = caseEx.getMessage() != null ? caseEx.getMessage() : caseEx.getClass().getSimpleName();
@@ -488,6 +498,14 @@ public class SelectQuestionGrader {
         int actualRowsCount = safeActualRows.size();
         int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
         int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
+
+        if (missingRows > 0 || extraRows > 0) {
+            appendSelectIssue(issues, "[" + caseId + "][CARDINAL_MISMATCH] Trả " + actualRowsCount
+                    + " dòng, đáp án " + expectedRowsCount + " dòng.");
+        } else if (expectedRowsCount > 0) {
+            appendSelectIssue(issues, "[" + caseId + "][FULL_MISMATCH] Số dòng đúng (" + expectedRowsCount
+                    + ") nhưng giá trị sai.");
+        }
 
         JsonNode rowOrderRule = support.findInsertRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
         int rowOrderViolations = 0;
@@ -1895,6 +1913,27 @@ public class SelectQuestionGrader {
             builder.append(' ');
         }
         builder.append(message.trim());
+    }
+
+    private String formatRowsForTrace(List<String> columns, List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) return "0 dòng";
+        List<String> effectiveCols = (columns != null && !columns.isEmpty())
+                ? columns
+                : new ArrayList<>(rows.get(0).keySet());
+        int shown = Math.min(3, rows.size());
+        List<String> rowStrs = new ArrayList<>();
+        for (int i = 0; i < shown; i++) {
+            Map<String, Object> row = rows.get(i);
+            List<String> vals = effectiveCols.stream()
+                    .map(col -> {
+                        Object v = row.get(col);
+                        return v == null ? "null" : String.valueOf(v);
+                    })
+                    .collect(Collectors.toList());
+            rowStrs.add("[" + String.join(",", vals) + "]");
+        }
+        String suffix = rows.size() > shown ? "(+" + (rows.size() - shown) + ")" : "";
+        return rows.size() + " dòng: " + String.join("|", rowStrs) + suffix;
     }
 
     private record SelectExpectedRows(List<String> columns, List<Map<String, Object>> rows) {

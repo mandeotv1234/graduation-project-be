@@ -34,7 +34,7 @@ public class CreateExamQuestionsUsecase {
     private final ExamRepository examRepository;
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
-    private final AIService geminiService;
+    private final AIService aiService;
     // T09: services for the rubric+test-case pipeline (SP/Function/Trigger only)
     private final RubricToTestCaseTransformer rubricTransformer;
     private final ExpectedValueDeriver expectedValueDeriver;
@@ -82,9 +82,8 @@ public class CreateExamQuestionsUsecase {
             boolean needsAi = (correctQuery == null || correctQuery.isBlank());
 
             if (needsAi) {
-                // Call Gemini to generate correctQuery + verifyScript
-                log.info("Calling Gemini for question: {}", item.content());
-                AIService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+                log.info("Calling AIService.generateSqlAnswer for question: {}", item.content());
+                AIService.GeneratedQuestion generated = aiService.generateSqlAnswer(
                         item.content(),
                         questionType.name(),
                         schemaContext);
@@ -117,7 +116,7 @@ public class CreateExamQuestionsUsecase {
 
         // T09: post-save pipeline for SP/Function/Trigger.
         // Order:
-        //   1. Generate rubric JSON via Gemini if not provided.
+        //   1. Generate rubric JSON via AIService if not provided.
         //   2. Parse → in-memory TestCase list (no expectedValue yet).
         //   3. Sandbox-derive expectedValue from teacher's correctQuery.
         //   4. Persist TestCase rows.
@@ -162,8 +161,8 @@ public class CreateExamQuestionsUsecase {
 
     private String generateRubricViaAi(ExamQuestion q, ExamSpecification specification) {
         try {
-            log.info("Calling Gemini.generateGradingRubric for Q{} ({})", q.getId(), q.getQuestionType());
-            return geminiService.generateGradingRubric(
+            log.info("Calling AIService.generateGradingRubric for Q{} ({})", q.getId(), q.getQuestionType());
+            return aiService.generateGradingRubric(
                     q.getCorrectQuery(),
                     q.getContent(),
                     q.getPoints() != null ? q.getPoints().doubleValue() : 0d,
@@ -171,7 +170,7 @@ public class CreateExamQuestionsUsecase {
                     null,
                     specification != null ? specification.getDdlScript() : null);
         } catch (Exception e) {
-            log.error("Gemini.generateGradingRubric failed for Q{}: {}", q.getId(), e.getMessage());
+            log.error("AIService.generateGradingRubric failed for Q{}: {}", q.getId(), e.getMessage());
             return null;
         }
     }

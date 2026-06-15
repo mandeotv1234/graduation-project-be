@@ -24,7 +24,28 @@ public enum WhiteboxFeature {
     WINDOW_FUNCTION("Window function"),
     SET_OPERATOR("Toán tử tập hợp"),
     FUNCTION("Hàm cụ thể"),
-    KEYWORD("Từ khóa cụ thể");
+    KEYWORD("Từ khóa cụ thể"),
+    // FUNCTION question type features
+    RETURN_STMT("Câu lệnh RETURN"),
+    SCALAR_FUNCTION("Hàm vô hướng (scalar)"),
+    TABLE_VALUED_FUNCTION("Hàm trả về bảng (TVF)"),
+    RETURN_TYPE("Kiểu trả về"),
+    SCHEMABINDING("WITH SCHEMABINDING"),
+    NONDETERMINISTIC("Hàm không tất định"),
+    DML_IN_FUNCTION("DML trong hàm"),
+    CURSOR("CURSOR"),
+    DYNAMIC_SQL("SQL động"),
+    // STORED_PROCEDURE question type features
+    TRY_CATCH("TRY/CATCH"),
+    TRANSACTION("Transaction"),
+    SET_NOCOUNT("SET NOCOUNT ON"),
+    INPUT_VALIDATION("Kiểm tra tham số đầu vào"),
+    OUTPUT_PARAM("Tham số OUTPUT"),
+    DDL_IN_PROC("DDL trong stored procedure"),
+    TRUNCATE("TRUNCATE TABLE"),
+    PRINT("PRINT"),
+    RAISERROR("RAISERROR"),
+    PARAM_COUNT("Số lượng tham số");
 
     private final String label;
 

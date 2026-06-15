@@ -19,6 +19,7 @@ public record WhiteboxParamSpec(
 
     public static final String TYPE_NUMBER = "NUMBER";
     public static final String TYPE_STRING_LIST = "STRING_LIST";
+    public static final String TYPE_STRING = "STRING";
 
     public static WhiteboxParamSpec number(String name, String label, boolean required, Integer defaultValue) {
         return new WhiteboxParamSpec(name, TYPE_NUMBER, label, required, defaultValue);
@@ -26,5 +27,9 @@ public record WhiteboxParamSpec(
 
     public static WhiteboxParamSpec stringList(String name, String label, boolean required) {
         return new WhiteboxParamSpec(name, TYPE_STRING_LIST, label, required, null);
+    }
+
+    public static WhiteboxParamSpec string(String name, String label, boolean required) {
+        return new WhiteboxParamSpec(name, TYPE_STRING, label, required, null);
     }
 }

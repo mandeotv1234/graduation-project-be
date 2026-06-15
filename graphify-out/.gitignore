@@ -1,0 +1,11 @@
+*
+!.gitignore
+!graph.json
+!GRAPH_REPORT.md
+!graph.html
+!GRAPH_TREE.html
+!*callflow.html
+!wiki/
+!wiki/**
+!obsidian/
+!obsidian/**

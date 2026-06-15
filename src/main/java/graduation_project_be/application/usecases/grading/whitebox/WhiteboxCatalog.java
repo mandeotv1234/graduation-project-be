@@ -17,6 +17,8 @@ public class WhiteboxCatalog {
 
     public WhiteboxCatalog() {
         SelectWhiteboxRuleSet.registerInto(entries, evaluators);
+        FunctionWhiteboxRuleSet.registerInto(entries, evaluators);
+        StoredProcedureWhiteboxRuleSet.registerInto(entries, evaluators);
     }
 
     /** Catalog entries applicable to one question type (insertion order preserved). */

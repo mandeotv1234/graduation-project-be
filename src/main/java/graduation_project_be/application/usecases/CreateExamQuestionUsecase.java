@@ -24,7 +24,7 @@ public class CreateExamQuestionUsecase {
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
     private final ExamSpecificationRepository examSpecificationRepository;
-    private final AIService geminiService;
+    private final AIService aiService;
 
     public ExamQuestionResponse execute(CreateExamQuestionRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
@@ -55,8 +55,8 @@ public class CreateExamQuestionUsecase {
 
         if (needsAi) {
             String schemaContext = buildSchemaContext(request.examId());
-            log.info("Calling Gemini for question: {}", request.content());
-            AIService.GeneratedQuestion generated = geminiService.generateSqlAnswer(
+            log.info("Calling AIService.generateSqlAnswer for question: {}", request.content());
+            AIService.GeneratedQuestion generated = aiService.generateSqlAnswer(
                     request.content(),
                     questionType.name(),
                     schemaContext);

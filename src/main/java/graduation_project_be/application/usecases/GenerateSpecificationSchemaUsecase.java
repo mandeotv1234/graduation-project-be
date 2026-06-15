@@ -10,10 +10,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class GenerateSpecificationSchemaUsecase {
 
-    private final AIService geminiService;
+    private final AIService aiService;
 
     public JsonNode execute(String description, JsonNode currentSchemaJson) {
-        JsonNode schemaJson = geminiService.generateSpecificationSchema(description, currentSchemaJson);
+        JsonNode schemaJson = aiService.generateSpecificationSchema(description, currentSchemaJson);
         if (schemaJson == null || !schemaJson.isArray() || schemaJson.isEmpty()) {
             throw new BadRequestException("Không thể sinh schema JSON từ mô tả đã nhập");
         }

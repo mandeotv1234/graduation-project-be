@@ -11,7 +11,6 @@ import graduation_project_be.domain.models.SpecAttribute;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
@@ -34,7 +33,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
-@Primary
 @Service
 public class CodexServiceImpl implements AIService {
     private static final int CODEX_TIMEOUT_SECONDS = 600;
@@ -300,7 +298,7 @@ public class CodexServiceImpl implements AIService {
             if ("FUNCTION".equalsIgnoreCase(questionType)) {
                 String prompt = basePrompt;
                 String latestJson = null;
-                for (int attempt = 0; attempt < 3; attempt++) {
+                for (int attempt = 0; attempt < 2; attempt++) {
                     latestJson = callCodexForJson(prompt);
                     if (latestJson == null) {
                         return null;
@@ -314,11 +312,14 @@ public class CodexServiceImpl implements AIService {
                         return latestJson;
                     }
 
-                    if (attempt == 2) {
+                    if (attempt == 1) {
                         log.warn("Rubric ROUTINE vẫn còn lỗi sau khi thử lại: {}", issues);
                         logGeneratedRubric(questionType, latestJson);
                         logRoutineRubricDiagnostics(questionType, latestJson);
-                        return null;
+                        List<RoutineRubricIssue> rubricIssues = issues.stream()
+                                .map(msg -> new RoutineRubricIssue("RUBRIC", "VALIDATION", "HEURISTIC_ISSUE", msg, null))
+                                .collect(java.util.stream.Collectors.toList());
+                        return buildNeedsReviewRubricResponse(latestJson, rubricIssues);
                     }
 
                     prompt = basePrompt + "\n\n=== CÁC LỖI BẮT BUỘC PHẢI SỬA CHO RUBRIC ROUTINE ===\n"

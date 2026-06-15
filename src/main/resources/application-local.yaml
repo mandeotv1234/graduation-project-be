@@ -37,6 +37,10 @@ spring:
     codex:
       api-url: ${CODEX_VM_API_URL}
       api-key: ${CODEX_VM_API_KEY}
+    openai:
+      api-url: ${OPENAI_API_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      model: ${OPENAI_MODEL:gpt-5.4}
     security:
       jwt:
         secret-key: ${SPRING_APPLICATION_SECURITY_JWT_SECRET_KEY:}

@@ -19,6 +19,7 @@ import java.util.List;
 
 @RequiredArgsConstructor
 public class GetStudentExamUsecase {
+    private static final String STUDENT_SCHEMA_FORMAT = "exam_%d_student_%d_att_%d";
 
     private final ExamRepository examRepository;
     private final ClassRepository classRepository;
@@ -47,10 +48,10 @@ public class GetStudentExamUsecase {
             }
         }
 
-        String schemaName = String.format("exam_%d_student_%d", examId, studentId);
-        List<TableMetadata> schema = examSchemaService.extractMetadata(schemaName);
-
         Long usedAttempts = examResultRepository.countByExamIdAndStudentId(examId, studentId);
+        int currentAttempt = usedAttempts.intValue() + 1;
+        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId, currentAttempt);
+        List<TableMetadata> schema = examSchemaService.extractMetadata(schemaName);
 
         return GetStudentExamResponse.fromModel(exam, className, schema, usedAttempts);
     }

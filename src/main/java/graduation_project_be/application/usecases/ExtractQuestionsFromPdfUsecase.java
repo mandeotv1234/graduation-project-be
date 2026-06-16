@@ -48,16 +48,26 @@ public class ExtractQuestionsFromPdfUsecase {
         AIService.PdfExtractionResult extracted =
                 aiService.extractQuestionsFromPdf(pdfBytes, schemaContext);
 
-        if (!extracted.schemaScript().isBlank() && exam.getSpecificationId() != null) {
-            persistExtractedDdl(exam.getSpecificationId(), extracted.schemaScript());
+        if (extracted == null
+                || ((extracted.questions() == null || extracted.questions().isEmpty())
+                && (extracted.schemaScript() == null || extracted.schemaScript().isBlank()))) {
+            throw new BadRequestException("Không trích xuất được câu hỏi từ PDF. "
+                    + "PDF có thể là ảnh scan khó đọc hoặc model AI hiện tại không hỗ trợ đọc ảnh PDF.");
         }
 
-        List<ExtractQuestionsFromPdfResponse.QuestionDraft> drafts = extracted.questions().stream()
+        String schemaScript = extracted.schemaScript() != null ? extracted.schemaScript() : "";
+        if (!schemaScript.isBlank() && exam.getSpecificationId() != null) {
+            persistExtractedDdl(exam.getSpecificationId(), schemaScript);
+        }
+
+        List<AIService.ExtractedQuestion> extractedQuestions =
+                extracted.questions() != null ? extracted.questions() : List.of();
+        List<ExtractQuestionsFromPdfResponse.QuestionDraft> drafts = extractedQuestions.stream()
                 .map(q -> new ExtractQuestionsFromPdfResponse.QuestionDraft(
                         q.title(), q.content(), q.questionType(), q.points(), q.difficultyLevel(), q.orderIndex()))
                 .toList();
 
-        return new ExtractQuestionsFromPdfResponse(drafts, extracted.schemaScript());
+        return new ExtractQuestionsFromPdfResponse(drafts, schemaScript);
     }
 
     private void persistExtractedDdl(Long specificationId, String schemaScript) {

@@ -302,13 +302,21 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "    ON tc_pk.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_pk.TABLE_NAME = t.TABLE_NAME AND tc_pk.CONSTRAINT_TYPE = 'PRIMARY KEY' "
                 +
                 "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_pk " +
-                "    ON kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
+                "    ON kcu_pk.CONSTRAINT_SCHEMA = tc_pk.CONSTRAINT_SCHEMA " +
+                "    AND kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME " +
+                "    AND kcu_pk.TABLE_SCHEMA = t.TABLE_SCHEMA " +
+                "    AND kcu_pk.TABLE_NAME = t.TABLE_NAME " +
+                "    AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
                 // Unique constraint
                 "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_uq " +
                 "    ON tc_uq.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_uq.TABLE_NAME = t.TABLE_NAME AND tc_uq.CONSTRAINT_TYPE = 'UNIQUE' "
                 +
                 "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_uq " +
-                "    ON kcu_uq.CONSTRAINT_NAME = tc_uq.CONSTRAINT_NAME AND kcu_uq.COLUMN_NAME = c.COLUMN_NAME " +
+                "    ON kcu_uq.CONSTRAINT_SCHEMA = tc_uq.CONSTRAINT_SCHEMA " +
+                "    AND kcu_uq.CONSTRAINT_NAME = tc_uq.CONSTRAINT_NAME " +
+                "    AND kcu_uq.TABLE_SCHEMA = t.TABLE_SCHEMA " +
+                "    AND kcu_uq.TABLE_NAME = t.TABLE_NAME " +
+                "    AND kcu_uq.COLUMN_NAME = c.COLUMN_NAME " +
                 // SQL Server identity
                 "LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA " +
                 "LEFT JOIN sys.columns sc ON sc.object_id = st.object_id AND sc.name = c.COLUMN_NAME " +
@@ -318,9 +326,18 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 "           kcu_ref.TABLE_NAME AS REFERENCED_TABLE_NAME, " +
                 "           kcu_ref.COLUMN_NAME AS REFERENCED_COLUMN_NAME " +
                 "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc ON rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref ON kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION "
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
+                "        ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA " +
+                "        AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
+                "        AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA " +
+                "        AND kcu.TABLE_NAME = tc.TABLE_NAME " +
+                "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc " +
+                "        ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA " +
+                "        AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
+                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref " +
+                "        ON kcu_ref.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA " +
+                "        AND kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME " +
+                "        AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION "
                 +
                 "    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' " +
                 ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME "

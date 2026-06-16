@@ -8,12 +8,18 @@ import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.domain.models.SpecAttribute;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,16 +28,18 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Slf4j
-@Primary
 @Service
 public class OpenAiServiceImpl implements AIService {
     private static final int OPENAI_TIMEOUT_SECONDS = 180;
+    private static final int PDF_IMAGE_RENDER_DPI = 144;
+    private static final int PDF_IMAGE_MAX_PAGES = 8;
     private static final AIService.PdfExtractionResult EMPTY_EXTRACTION =
             new AIService.PdfExtractionResult(Collections.emptyList(), "");
 
@@ -233,16 +241,29 @@ public class OpenAiServiceImpl implements AIService {
     @Override
     public PdfExtractionResult extractQuestionsFromPdf(byte[] pdfBytes, String schemaContext) {
         try {
-            String pdfText = extractTextFromPdf(pdfBytes);
-            if (pdfText == null || pdfText.isBlank()) {
-                log.warn("PDF text extraction returned empty result.");
-                return EMPTY_EXTRACTION;
-            }
-
             String basePrompt = String.format(extractQuestionsFromPdfPromptTemplate,
                     schemaContext != null && !schemaContext.isBlank() ? schemaContext : "No schema context available");
-            String prompt = basePrompt + "\n\n=== PDF TEXT ===\n" + pdfText;
-            String text = callOpenAiForJson(prompt, 12000);
+            String pdfText = extractTextFromPdf(pdfBytes);
+            String text;
+
+            if (pdfText != null && !pdfText.isBlank()) {
+                String prompt = basePrompt + "\n\n=== PDF TEXT ===\n" + pdfText;
+                text = callOpenAiForJson(prompt, 12000);
+            } else {
+                log.warn("PDF text extraction returned empty result. Rendering PDF pages for OpenAI vision extraction.");
+                List<String> pageImages = renderPdfPagesAsImageDataUrls(pdfBytes);
+                if (pageImages.isEmpty()) {
+                    log.warn("PDF image rendering returned empty result.");
+                    return EMPTY_EXTRACTION;
+                }
+
+                String prompt = basePrompt
+                        + "\n\n=== PDF RENDERED PAGE IMAGES ===\n"
+                        + "PDFBox text extraction returned empty text, so read the attached rendered page images. "
+                        + "Extract schemaScript and questions only from visible text in these images.";
+                text = callOpenAiForJsonWithImages(prompt, pageImages, 12000);
+            }
+
             return parsePdfExtractionResponse(text);
         } catch (Exception e) {
             log.error("OpenAI PDF question extraction failed: {}", e.getMessage(), e);
@@ -383,9 +404,8 @@ public class OpenAiServiceImpl implements AIService {
     }
 
     private String extractTextFromPdf(byte[] pdfBytes) {
-        try (org.apache.pdfbox.pdmodel.PDDocument document =
-                     org.apache.pdfbox.pdmodel.PDDocument.load(pdfBytes)) {
-            org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper();
+        try (PDDocument document = PDDocument.load(pdfBytes)) {
+            PDFTextStripper stripper = new PDFTextStripper();
             return stripper.getText(document);
         } catch (Exception e) {
             log.error("PDF text extraction failed: {}", e.getMessage(), e);
@@ -393,8 +413,44 @@ public class OpenAiServiceImpl implements AIService {
         }
     }
 
+    private List<String> renderPdfPagesAsImageDataUrls(byte[] pdfBytes) {
+        try (PDDocument document = PDDocument.load(pdfBytes)) {
+            int pageCount = Math.min(document.getNumberOfPages(), PDF_IMAGE_MAX_PAGES);
+            if (document.getNumberOfPages() > PDF_IMAGE_MAX_PAGES) {
+                log.warn("PDF has {} pages; rendering first {} pages for OpenAI extraction.",
+                        document.getNumberOfPages(), PDF_IMAGE_MAX_PAGES);
+            }
+
+            PDFRenderer renderer = new PDFRenderer(document);
+            List<String> images = new ArrayList<>();
+            for (int pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+                BufferedImage image = renderer.renderImageWithDPI(
+                        pageIndex,
+                        PDF_IMAGE_RENDER_DPI,
+                        ImageType.RGB);
+                try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                    if (ImageIO.write(image, "jpg", output) && output.size() > 0) {
+                        images.add("data:image/jpeg;base64,"
+                                + Base64.getEncoder().encodeToString(output.toByteArray()));
+                    }
+                }
+            }
+            return images;
+        } catch (Exception e) {
+            log.error("PDF image rendering failed: {}", e.getMessage(), e);
+            return List.of();
+        }
+    }
+
     private String callOpenAiForJson(String prompt, int maxTokens) throws Exception {
         String text = callOpenAi(prompt, true, maxTokens);
+        objectMapper.readTree(stripMarkdown(text));
+        return stripMarkdown(text);
+    }
+
+    private String callOpenAiForJsonWithImages(String prompt, List<String> imageDataUrls, int maxTokens)
+            throws Exception {
+        String text = callOpenAiWithImages(prompt, imageDataUrls, true, maxTokens);
         objectMapper.readTree(stripMarkdown(text));
         return stripMarkdown(text);
     }
@@ -424,13 +480,50 @@ public class OpenAiServiceImpl implements AIService {
                     + safeSnippet(response.body(), 1200));
         }
 
-        JsonNode root = objectMapper.readTree(response.body());
-        JsonNode messageContent = root.path("choices").path(0).path("message").path("content");
-        String content = readMessageContent(messageContent);
-        if (content == null || content.isBlank()) {
-            throw new IllegalStateException("OpenAI API returned empty message content");
+        return readOpenAiResponseContent(response.body());
+    }
+
+    private String callOpenAiWithImages(
+            String prompt,
+            List<String> imageDataUrls,
+            boolean jsonObjectResponse,
+            int maxTokens) throws Exception {
+        validateApiKey();
+
+        ObjectNode payload = buildChatCompletionPayloadWithImages(
+                prompt,
+                imageDataUrls,
+                jsonObjectResponse,
+                maxTokens,
+                "max_tokens");
+        HttpResponse<String> response = sendChatCompletion(payload);
+
+        if (!isSuccess(response) && shouldRetryWithCompletionTokens(response.body())) {
+            ObjectNode retryPayload = buildChatCompletionPayloadWithImages(
+                    prompt,
+                    imageDataUrls,
+                    jsonObjectResponse,
+                    maxTokens,
+                    "max_completion_tokens");
+            response = sendChatCompletion(retryPayload);
         }
-        return stripMarkdown(content);
+
+        if (!isSuccess(response) && jsonObjectResponse && mentionsResponseFormat(response.body())) {
+            ObjectNode retryPayload = buildChatCompletionPayloadWithImages(
+                    prompt,
+                    imageDataUrls,
+                    false,
+                    maxTokens,
+                    "max_tokens");
+            response = sendChatCompletion(retryPayload);
+        }
+
+        if (!isSuccess(response)) {
+            throw new IllegalStateException("OpenAI API returned HTTP " + response.statusCode() + ": "
+                    + safeSnippet(response.body(), 1200));
+        }
+
+        return readOpenAiResponseContent(response.body());
     }
 
     private ObjectNode buildChatCompletionPayload(
@@ -456,6 +549,53 @@ public class OpenAiServiceImpl implements AIService {
                 .put("role", "user")
                 .put("content", prompt);
         return payload;
+    }
+
+    private ObjectNode buildChatCompletionPayloadWithImages(
+            String prompt,
+            List<String> imageDataUrls,
+            boolean jsonObjectResponse,
+            int maxTokens,
+            String tokenFieldName) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        payload.put(tokenFieldName, maxTokens);
+
+        if (jsonObjectResponse) {
+            payload.putObject("response_format").put("type", "json_object");
+        }
+
+        ArrayNode messages = payload.putArray("messages");
+        messages.addObject()
+                .put("role", "system")
+                .put("content", jsonObjectResponse
+                        ? "Return only valid JSON. Do not wrap the response in markdown."
+                        : "Return a direct answer. Do not wrap the response in markdown unless requested.");
+
+        ObjectNode userMessage = messages.addObject();
+        userMessage.put("role", "user");
+        ArrayNode content = userMessage.putArray("content");
+        content.addObject()
+                .put("type", "text")
+                .put("text", prompt);
+        for (String imageDataUrl : imageDataUrls) {
+            ObjectNode imagePart = content.addObject();
+            imagePart.put("type", "image_url");
+            ObjectNode imageUrl = imagePart.putObject("image_url");
+            imageUrl.put("url", imageDataUrl);
+            imageUrl.put("detail", "high");
+        }
+        return payload;
+    }
+
+    private String readOpenAiResponseContent(String responseBody) throws Exception {
+        JsonNode root = objectMapper.readTree(responseBody);
+        JsonNode messageContent = root.path("choices").path(0).path("message").path("content");
+        String content = readMessageContent(messageContent);
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("OpenAI API returned empty message content");
+        }
+        return stripMarkdown(content);
     }
 
     private HttpResponse<String> sendChatCompletion(ObjectNode payload) throws Exception {

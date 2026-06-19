@@ -15,14 +15,31 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Date;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.text.Normalizer;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import graduation_project_be.application.usecases.GradingTraceCollector;
 
 /** Cross-cutting grading helpers shared by all per-question-type graders. */
 @Slf4j
 @RequiredArgsConstructor
 public class GradingSupport {
+
+    private static final ZoneId VIETNAM_ZONE_ID = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final Pattern SQL_DATE_TIME_PREFIX = Pattern.compile(
+            "^(\\d{4}-\\d{2}-\\d{2})(?:[ T](\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?(?:\\s*(?:Z|[+-]\\d{2}:?\\d{2}))?)?$");
 
     private final ExamSchemaService examSchemaService;
     private final ObjectMapper objectMapper;
@@ -264,6 +281,27 @@ public class GradingSupport {
     public String normalizeValueStr(Object val, boolean trimSpaces, boolean caseInsensitive) {
         if (val == null)
             return null;
+        if (val instanceof Date date) {
+            return date.toLocalDate().toString();
+        }
+        if (val instanceof Timestamp timestamp) {
+            return canonicalizeDateTime(timestamp.toLocalDateTime());
+        }
+        if (val instanceof Time time) {
+            return time.toLocalTime().toString();
+        }
+        if (val instanceof LocalDate date) {
+            return date.toString();
+        }
+        if (val instanceof LocalDateTime dateTime) {
+            return canonicalizeDateTime(dateTime);
+        }
+        if (val instanceof OffsetDateTime dateTime) {
+            return canonicalizeDateTime(dateTime.toLocalDateTime());
+        }
+        if (val instanceof LocalTime time) {
+            return time.toString();
+        }
         String s = String.valueOf(val);
         if (trimSpaces)
             s = s.trim();
@@ -305,6 +343,16 @@ public class GradingSupport {
             return aNum.compareTo(eNum) == 0;
         }
 
+        Set<String> aTemporal = canonicalizeTemporalCandidates(actual);
+        Set<String> eTemporal = canonicalizeTemporalCandidates(expected);
+        if (!aTemporal.isEmpty() && !eTemporal.isEmpty()) {
+            for (String candidate : aTemporal) {
+                if (eTemporal.contains(candidate)) {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 
@@ -335,6 +383,111 @@ public class GradingSupport {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private Set<String> canonicalizeTemporalCandidates(String value) {
+        Set<String> candidates = new LinkedHashSet<>();
+        String canonical = canonicalizeTemporal(value);
+        if (canonical != null) {
+            candidates.add(canonical);
+        }
+
+        String trimmed = value == null ? null : value.trim();
+        if (trimmed == null || trimmed.isBlank()) {
+            return candidates;
+        }
+
+        try {
+            OffsetDateTime dateTime = OffsetDateTime.parse(trimmed, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+            candidates.add(canonicalizeTemporalDateTime(dateTime.toLocalDateTime()));
+            candidates.add(canonicalizeTemporalDateTime(LocalDateTime.ofInstant(
+                    dateTime.toInstant(),
+                    ZoneId.systemDefault())));
+            candidates.add(canonicalizeTemporalDateTime(LocalDateTime.ofInstant(
+                    dateTime.toInstant(),
+                    VIETNAM_ZONE_ID)));
+        } catch (DateTimeParseException ignored) {
+        }
+
+        if (!trimmed.matches("-?\\d{11,}")) {
+            return candidates;
+        }
+
+        try {
+            long epochMillis = Long.parseLong(trimmed);
+            if (Math.abs(epochMillis) < 10_000_000_000L) {
+                return candidates;
+            }
+
+            Instant instant = Instant.ofEpochMilli(epochMillis);
+            candidates.add(canonicalizeTemporalDateTime(LocalDateTime.ofInstant(instant, ZoneId.systemDefault())));
+            candidates.add(canonicalizeTemporalDateTime(LocalDateTime.ofInstant(instant, VIETNAM_ZONE_ID)));
+            candidates.add(canonicalizeTemporalDateTime(LocalDateTime.ofInstant(instant, ZoneId.of("UTC"))));
+        } catch (Exception ignored) {
+        }
+
+        return candidates;
+    }
+
+    private String canonicalizeTemporal(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isBlank()) {
+            return null;
+        }
+
+        try {
+            LocalDate date = LocalDate.parse(trimmed, DateTimeFormatter.ISO_LOCAL_DATE);
+            return "D:" + date;
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            OffsetDateTime dateTime = OffsetDateTime.parse(trimmed, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+            return canonicalizeTemporalDateTime(dateTime.toLocalDateTime());
+        } catch (DateTimeParseException ignored) {
+        }
+
+        String normalized = trimmed.replace(' ', 'T');
+        try {
+            LocalDateTime dateTime = LocalDateTime.parse(normalized, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            return canonicalizeTemporalDateTime(dateTime);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        Matcher matcher = SQL_DATE_TIME_PREFIX.matcher(trimmed);
+        if (matcher.matches()) {
+            String datePart = matcher.group(1);
+            String timePart = matcher.group(2);
+            if (timePart == null || "00:00:00".equals(timePart)) {
+                return "D:" + datePart;
+            }
+            return "DT:" + datePart + "T" + timePart;
+        }
+
+        return null;
+    }
+
+    private String canonicalizeTemporalDateTime(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return null;
+        }
+        if (dateTime.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+            return "D:" + dateTime.toLocalDate();
+        }
+        return "DT:" + dateTime;
+    }
+
+    private String canonicalizeDateTime(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return null;
+        }
+        if (dateTime.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+            return dateTime.toLocalDate().toString();
+        }
+        return dateTime.toString();
     }
 
     public boolean readBooleanSetting(JsonNode node, boolean defaultValue) {

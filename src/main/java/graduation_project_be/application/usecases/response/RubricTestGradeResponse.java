@@ -8,14 +8,16 @@ public record RubricTestGradeResponse(
         double totalPoints,
         boolean allPassed,
         List<Map<String, Object>> details,
-        Double totalDeductions) {
+        Double totalDeductions,
+        Double blackboxScore,
+        Double whiteboxDeduction) {
 
     public static RubricTestGradeResponse of(
             double earnedPoints,
             double totalPoints,
             boolean allPassed,
             List<Map<String, Object>> details) {
-        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details, null);
+        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details, null, null, null);
     }
 
     public static RubricTestGradeResponse of(
@@ -24,6 +26,19 @@ public record RubricTestGradeResponse(
             boolean allPassed,
             List<Map<String, Object>> details,
             Double totalDeductions) {
-        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details, totalDeductions);
+        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details,
+                totalDeductions, null, null);
+    }
+
+    public static RubricTestGradeResponse of(
+            double earnedPoints,
+            double totalPoints,
+            boolean allPassed,
+            List<Map<String, Object>> details,
+            Double totalDeductions,
+            Double blackboxScore,
+            Double whiteboxDeduction) {
+        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details,
+                totalDeductions, blackboxScore, whiteboxDeduction);
     }
 }

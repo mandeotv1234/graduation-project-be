@@ -475,13 +475,14 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             GetExamQuestionsUsecase getExamQuestionsUsecase,
             InsertDataQuestionGrader insertDataQuestionGrader,
+            GradingSupport gradingSupport,
             ObjectMapper objectMapper,
             SelectQuestionGrader selectQuestionGrader,
             WhiteboxEngine whiteboxEngine) {
         return new RubricTestingUsecase(
                 aiService, examSchemaService,
                 examRepository, examSpecificationRepository,
-                getExamQuestionsUsecase, insertDataQuestionGrader, objectMapper,
+                getExamQuestionsUsecase, insertDataQuestionGrader, gradingSupport, objectMapper,
                 selectQuestionGrader, whiteboxEngine);
     }
 
@@ -1235,12 +1236,15 @@ public class UsecasesConfiguration {
             InsertDataQuestionGrader insertDataQuestionGrader,
             SelectQuestionGrader selectQuestionGrader,
             RoutineQuestionGrader routineQuestionGrader,
-            TriggerQuestionGrader triggerQuestionGrader) {
+            TriggerQuestionGrader triggerQuestionGrader,
+            ObjectMapper objectMapper,
+            WhiteboxEngine whiteboxEngine) {
         return new PreviewSubmitExamUsecase(
                 examRepository, classRepository, examQuestionRepository,
                 examSpecificationRepository, currentUserService, examSchemaService,
                 gradingSupport, createTableQuestionGrader, insertDataQuestionGrader,
-                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader);
+                selectQuestionGrader, routineQuestionGrader, triggerQuestionGrader,
+                objectMapper, whiteboxEngine);
     }
 
 }

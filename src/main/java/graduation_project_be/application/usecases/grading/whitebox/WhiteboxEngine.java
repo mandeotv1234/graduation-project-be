@@ -16,14 +16,13 @@ import java.util.Locale;
  * Shared white-box engine: applies {@code whitebox_rules} with {@code whitebox_settings} to a SQL
  * answer using catalog evaluators selected by {@code questionType + rule_id}, computes the capped
  * deduction, and emits white-box trace items. No white-box rules => {@link WhiteboxResult#empty()}
- * (the grader's black-box behaviour is unchanged). v1 only has SELECT_QUERY evaluators.
+ * (the grader's black-box behaviour is unchanged).
  */
 public class WhiteboxEngine {
 
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
     private static final String QUESTION_TYPE_SELECT = "SELECT_QUERY";
     private static final String TRACE_RULE_TARGET = "SQL_SCRIPT";
-    private static final String TRACE_CONFIG_SUMMARY = "Whitebox SELECT";
 
     private final SelectQueryStructureAnalyzer selectAnalyzer;
     private final WhiteboxCatalog catalog;
@@ -110,7 +109,7 @@ public class WhiteboxEngine {
 
             violations.add(violation);
             if (emitTrace && violation.isDetailed()) {
-                emitDetail(violation, rule);
+                emitDetail(violation, rule, traceConfigSummary(normalizedType));
             }
             if (effectiveSettings.stopOnFirstViolation() && violation.status() == WhiteboxStatus.FAIL) {
                 break;
@@ -123,7 +122,8 @@ public class WhiteboxEngine {
         capped = scaleNonNegative(capped);
 
         if (emitTrace) {
-            emitSummary(passCount, failCount, warnCount, unverifiedCount, capped);
+            emitSummary(passCount, failCount, warnCount, unverifiedCount, capped,
+                    traceConfigSummary(normalizedType));
         }
         return new WhiteboxResult(violations, rawDeduction, capped, facts.parseOk());
     }
@@ -148,7 +148,11 @@ public class WhiteboxEngine {
         return "Vi phạm: " + label;
     }
 
-    private void emitDetail(WhiteboxViolation v, WhiteboxRule rule) {
+    private static String traceConfigSummary(String questionType) {
+        return "Whitebox " + (questionType == null || questionType.isBlank() ? "SQL" : questionType);
+    }
+
+    private void emitDetail(WhiteboxViolation v, WhiteboxRule rule, String configSummary) {
         if (!GradingTraceCollector.isActive()) {
             return;
         }
@@ -168,10 +172,11 @@ public class WhiteboxEngine {
                 v.deductedPoints(),
                 v.expected(),
                 v.actual(),
-                TRACE_CONFIG_SUMMARY));
+                configSummary));
     }
 
-    private void emitSummary(int pass, int fail, int warn, int unverified, BigDecimal capped) {
+    private void emitSummary(int pass, int fail, int warn, int unverified, BigDecimal capped,
+                             String configSummary) {
         if (!GradingTraceCollector.isActive()) {
             return;
         }
@@ -185,6 +190,6 @@ public class WhiteboxEngine {
                 "[Whitebox] Tổng kết",
                 message,
                 null, null, TRACE_RULE_TARGET, null, null, null, null, null,
-                capped, null, null, TRACE_CONFIG_SUMMARY));
+                capped, null, null, configSummary));
     }
 }

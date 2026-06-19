@@ -45,7 +45,16 @@ public enum WhiteboxFeature {
     TRUNCATE("TRUNCATE TABLE"),
     PRINT("PRINT"),
     RAISERROR("RAISERROR"),
-    PARAM_COUNT("Số lượng tham số");
+    PARAM_COUNT("Số lượng tham số"),
+    // INSERT_DATA question type features
+    NOCHECK_CONSTRAINT("NOCHECK CONSTRAINT"),
+    IDENTITY_INSERT("IDENTITY_INSERT"),
+    DISABLE_TRIGGER("DISABLE TRIGGER"),
+    INSERT_COLUMN_LIST("Danh sách cột INSERT"),
+    INSERT_SELECT("INSERT ... SELECT"),
+    UPDATE_DELETE("UPDATE/DELETE"),
+    MERGE("MERGE"),
+    STATEMENT_COUNT("Số câu lệnh");
 
     private final String label;
 

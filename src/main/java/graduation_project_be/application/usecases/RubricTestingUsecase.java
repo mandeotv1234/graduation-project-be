@@ -8,11 +8,13 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.grading.GradeDecision;
+import graduation_project_be.application.usecases.grading.GradingSupport;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxViolation;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
@@ -72,6 +74,7 @@ public class RubricTestingUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final GetExamQuestionsUsecase getExamQuestionsUsecase;
     private final InsertDataQuestionGrader insertDataGrader;
+    private final GradingSupport gradingSupport;
     private final ObjectMapper objectMapper;
     // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
     private final SelectQuestionGrader selectGrader;
@@ -331,9 +334,25 @@ public class RubricTestingUsecase {
                             fallbackTriggered);
                 }
 
-                double earnedPoints = fakeSubmission.getScoreEarned() != null
-                        ? fakeSubmission.getScoreEarned().doubleValue()
-                        : 0d;
+                BigDecimal blackboxScore = fakeSubmission.getScoreEarned() != null
+                        ? fakeSubmission.getScoreEarned()
+                        : BigDecimal.ZERO;
+                WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                        QuestionType.INSERT_DATA.name(), studentQuery, payload,
+                        BigDecimal.valueOf(totalPoints), false);
+                BigDecimal whiteboxDeduction = whitebox.cappedDeduction() == null
+                        ? BigDecimal.ZERO : whitebox.cappedDeduction();
+                BigDecimal finalScore = blackboxScore.subtract(whiteboxDeduction)
+                        .setScale(2, RoundingMode.HALF_UP);
+                if (finalScore.signum() < 0) {
+                    finalScore = BigDecimal.ZERO;
+                }
+                if (!whitebox.isEmpty()) {
+                    appendWhiteboxDetails(details, whitebox, whiteboxDeduction);
+                }
+                fakeSubmission.setScoreEarned(finalScore);
+
+                double earnedPoints = finalScore.doubleValue();
                 double totalDeduction = Math.max(0d, totalPoints - earnedPoints);
 
                 boolean allPassed = fakeSubmission.getScoreEarned() != null
@@ -352,7 +371,10 @@ public class RubricTestingUsecase {
                                 : 0,
                         totalPoints,
                         allPassed,
-                        details);
+                        details,
+                        totalDeduction,
+                        blackboxScore.setScale(2, RoundingMode.HALF_UP).doubleValue(),
+                        whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue());
             }
             throw new IllegalStateException("Unexpected flow in testGradeInsert");
         } catch (Exception e) {
@@ -515,9 +537,10 @@ public class RubricTestingUsecase {
                     continue;
                 }
 
-                List<Map<String, Object>> expectedData = examSchemaService.executeAdminSql(
+                List<Map<String, Object>> rawExpectedData = examSchemaService.executeAdminSql(
                         "SELECT * FROM [" + safeSchema + "].[" + safeTableName + "]")
                         .getResultSet();
+                List<Map<String, Object>> expectedData = normalizeInsertExpectedDataForRubric(rawExpectedData);
 
                 List<BuildInsertTablesResponse.InsertColumnConfig> columnsConfig = new ArrayList<>();
                 for (TableMetadata.ColumnMetadata column : tableMetadata.getColumns()) {
@@ -532,7 +555,7 @@ public class RubricTestingUsecase {
                         tableMetadata.getTableName(),
                         "PARTIAL_BY_COLUMN",
                         columnsConfig,
-                        expectedData == null ? List.of() : expectedData));
+                        expectedData));
             }
 
             return new BuildInsertTablesResponse(
@@ -545,6 +568,37 @@ public class RubricTestingUsecase {
             } catch (Exception ignore) {
             }
         }
+    }
+
+    private List<Map<String, Object>> normalizeInsertExpectedDataForRubric(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> normalizedRows = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> normalizedRow = new LinkedHashMap<>();
+            if (row != null) {
+                for (Map.Entry<String, Object> entry : row.entrySet()) {
+                    normalizedRow.put(entry.getKey(), normalizeInsertExpectedValueForRubric(entry.getValue()));
+                }
+            }
+            normalizedRows.add(normalizedRow);
+        }
+        return normalizedRows;
+    }
+
+    private Object normalizeInsertExpectedValueForRubric(Object value) {
+        if (value instanceof java.sql.Date
+                || value instanceof java.sql.Timestamp
+                || value instanceof java.sql.Time
+                || value instanceof java.time.LocalDate
+                || value instanceof java.time.LocalDateTime
+                || value instanceof java.time.LocalTime
+                || value instanceof java.time.OffsetDateTime) {
+            return gradingSupport.normalizeValueStr(value, false, false);
+        }
+        return value;
     }
 
     public BuildCreateTablesResponse buildCreateTablesFromAnswer(Long examId, String correctQuery) {
@@ -2993,6 +3047,44 @@ public class RubricTestingUsecase {
                 "type", "error",
                 "message", rawMessage,
                 "points", -roundTo2(Math.max(0d, fallbackTotalDeduction))));
+    }
+
+    private void appendWhiteboxDetails(
+            List<Map<String, Object>> details,
+            WhiteboxResult whitebox,
+            BigDecimal whiteboxDeduction) {
+        if (whitebox == null || whitebox.isEmpty()) {
+            return;
+        }
+
+        if (whiteboxDeduction != null && whiteboxDeduction.signum() > 0) {
+            details.add(Map.of(
+                    "type", "warning",
+                    "message", "[Whitebox] Tổng trừ "
+                            + whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).toPlainString()
+                            + " điểm do vi phạm quy tắc phương pháp.",
+                    "points", -whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+        }
+
+        for (WhiteboxViolation violation : whitebox.violations()) {
+            String status = violation.status() == null ? "" : violation.status().name();
+            if ("PASS".equals(status)) {
+                continue;
+            }
+            String type = "FAIL".equals(status) ? "error"
+                    : ("WARN".equals(status) ? "warning" : "info");
+            BigDecimal deducted = violation.deductedPoints() == null
+                    ? BigDecimal.ZERO : violation.deductedPoints();
+            String evidence = violation.actual() == null || violation.actual().isBlank()
+                    ? ""
+                    : " | SQL: " + violation.actual();
+            String label = violation.label() == null ? violation.ruleId() : violation.label();
+            String reason = violation.reason() == null ? status : violation.reason();
+            details.add(Map.of(
+                    "type", type,
+                    "message", "[Whitebox] " + label + " - " + reason + evidence,
+                    "points", -deducted.setScale(2, RoundingMode.HALF_UP).doubleValue()));
+        }
     }
 
     private int parseIntegerSafe(String rawValue) {

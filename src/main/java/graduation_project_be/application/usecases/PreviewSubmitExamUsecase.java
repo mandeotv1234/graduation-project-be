@@ -1,5 +1,8 @@
 package graduation_project_be.application.usecases;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
@@ -15,6 +18,8 @@ import graduation_project_be.application.usecases.grading.InsertDataQuestionGrad
 import graduation_project_be.application.usecases.grading.RoutineQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.TriggerQuestionGrader;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
+import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
 import graduation_project_be.application.usecases.request.PreviewSubmitRequest;
 import graduation_project_be.application.usecases.response.SubmitExamResponse;
 import graduation_project_be.domain.models.Exam;
@@ -28,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -55,6 +61,43 @@ public class PreviewSubmitExamUsecase {
     private final SelectQuestionGrader selectGrader;
     private final RoutineQuestionGrader routineGrader;
     private final TriggerQuestionGrader triggerGrader;
+    private final ObjectMapper objectMapper;
+    private final WhiteboxEngine whiteboxEngine;
+
+    private GradeDecision applyWhitebox(QuestionType questionType, ExamQuestion question,
+                                        String studentQuery, GradeDecision blackbox) {
+        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                questionType.name(), studentQuery, whiteboxPayload(question), points, false);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
+        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction())
+                .setScale(2, RoundingMode.HALF_UP);
+        if (finalScore.signum() < 0) {
+            finalScore = BigDecimal.ZERO;
+        }
+        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
+            return GradeDecision.pass(finalScore);
+        }
+        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString()
+                        + " điểm do vi phạm quy tắc whitebox (phương pháp viết câu lệnh).";
+        return GradeDecision.partial(finalScore, message);
+    }
+
+    private JsonNode whiteboxPayload(ExamQuestion question) {
+        if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
+            return MissingNode.getInstance();
+        }
+        try {
+            return objectMapper.readTree(question.getGradingRubric()).path("grading_payload");
+        } catch (Exception e) {
+            return MissingNode.getInstance();
+        }
+    }
 
     public SubmitExamResponse execute(PreviewSubmitRequest request) {
         Long teacherId = currentUserService.getCurrentUserId();
@@ -133,6 +176,7 @@ public class PreviewSubmitExamUsecase {
                                         exam, specification, sortedQuestions, schemaName, question, studentQuery)
                                 : selectGrader.gradeSelectAcrossDatasets(
                                         specification, schemaName, question, studentQuery);
+                        decision = applyWhitebox(QuestionType.SELECT_QUERY, question, studentQuery, decision);
                         isCorrect = decision.isCorrect();
                         errorMessage = decision.errorMessage();
                         submission.setScoreEarned(decision.scoreEarned());
@@ -151,12 +195,23 @@ public class PreviewSubmitExamUsecase {
                             if (!hasExecError || !support.isSyntaxErrorFailAllMode(question)) {
                                 isCorrect = routineGrader.gradeRoutineAlgorithmic(
                                         routineSchema, gradeSchemaName, question, submission);
+                                BigDecimal currentScore = submission.getScoreEarned() != null
+                                        ? submission.getScoreEarned() : BigDecimal.ZERO;
+                                GradeDecision decision = isCorrect
+                                        ? GradeDecision.pass(currentScore)
+                                        : GradeDecision.partial(currentScore, errorMessage);
+                                decision = applyWhitebox(QuestionType.STORED_PROCEDURE, question, studentQuery,
+                                        decision);
+                                isCorrect = decision.isCorrect();
+                                errorMessage = decision.errorMessage();
+                                submission.setScoreEarned(decision.scoreEarned());
                             }
                         } finally {
                             try { examSchemaService.dropSchema(routineSchema); } catch (Exception ignore) {}
                         }
                     } else {
                         boolean hasExecError = false;
+                        boolean fallbackTriggered = false;
                         try {
                             examSchemaService.executeSql(schemaName, studentQuery);
                         } catch (Exception execErr) {
@@ -167,6 +222,7 @@ public class PreviewSubmitExamUsecase {
                                                 || compileError.toLowerCase().contains("reference")
                                                 || compileError.toLowerCase().contains("conflict"));
                                 if (fkError) {
+                                    fallbackTriggered = true;
                                     try { support.setAllConstraintsEnabled(schemaName, false); } catch (Exception ignore) {}
                                     try {
                                         examSchemaService.executeSql(schemaName, studentQuery);
@@ -185,13 +241,26 @@ public class PreviewSubmitExamUsecase {
                             }
                         }
                         if (!hasExecError || !support.isSyntaxErrorFailAllMode(question)) {
-                            isCorrect = gradeAnswer(schemaName, gradeSchemaName, question, submission, false);
+                            isCorrect = gradeAnswer(schemaName, gradeSchemaName, question, submission,
+                                    fallbackTriggered);
                             if (submission.getErrorMessage() != null && !submission.getErrorMessage().isBlank()) {
                                 errorMessage = errorMessage != null
                                         ? errorMessage + " | " + submission.getErrorMessage()
                                         : submission.getErrorMessage();
                             } else if (!isCorrect && errorMessage == null) {
                                 errorMessage = "Kết quả không khớp với đáp án mẫu.";
+                            }
+                            if (question.getQuestionType() == QuestionType.FUNCTION
+                                    || question.getQuestionType() == QuestionType.INSERT_DATA) {
+                                BigDecimal currentScore = submission.getScoreEarned() != null
+                                        ? submission.getScoreEarned() : BigDecimal.ZERO;
+                                GradeDecision decision = isCorrect
+                                        ? GradeDecision.pass(currentScore)
+                                        : GradeDecision.partial(currentScore, errorMessage);
+                                decision = applyWhitebox(question.getQuestionType(), question, studentQuery, decision);
+                                isCorrect = decision.isCorrect();
+                                errorMessage = decision.errorMessage();
+                                submission.setScoreEarned(decision.scoreEarned());
                             }
                         }
                     }

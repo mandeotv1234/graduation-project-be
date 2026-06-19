@@ -6,9 +6,8 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Backend-owned source of truth for supported white-box rules and their evaluators. v1 registers the
- * SELECT_QUERY rule set only; non-SELECT question types are intentionally absent until a teammate
- * adds real evaluators. Frontend renders {@link #entriesFor} and never hardcodes a parallel catalog.
+ * Backend-owned source of truth for supported white-box rules and their evaluators. Frontend renders
+ * {@link #entriesFor} and never hardcodes a parallel catalog.
  */
 public class WhiteboxCatalog {
 
@@ -17,6 +16,7 @@ public class WhiteboxCatalog {
 
     public WhiteboxCatalog() {
         SelectWhiteboxRuleSet.registerInto(entries, evaluators);
+        InsertDataWhiteboxRuleSet.registerInto(entries, evaluators);
         FunctionWhiteboxRuleSet.registerInto(entries, evaluators);
         StoredProcedureWhiteboxRuleSet.registerInto(entries, evaluators);
     }

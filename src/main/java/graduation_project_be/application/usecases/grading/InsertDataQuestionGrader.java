@@ -297,13 +297,13 @@ public class InsertDataQuestionGrader {
                     }
 
                     if (cc.path("is_graded").asBoolean(true)) {
-                        columnsToGrade.add(columnName);
+                        addUniqueColumn(columnsToGrade, columnName);
                         columnPenalties.put(columnName, Math.max(0d, cc.path("points").asDouble(0d)));
                         columnMatchTypes.put(columnName, cc.path("match_type").asText("EXACT"));
                     }
 
                     if (cc.path("is_primary_key").asBoolean(false)) {
-                        primaryKeys.add(columnName);
+                        addUniqueColumn(primaryKeys, columnName);
                     }
                 }
             }
@@ -314,7 +314,7 @@ public class InsertDataQuestionGrader {
                     for (int p = 0; p < pksNode.size(); p++) {
                         String pk = pksNode.get(p).asText("").trim();
                         if (!pk.isBlank()) {
-                            primaryKeys.add(pk);
+                            addUniqueColumn(primaryKeys, pk);
                         }
                     }
                 }
@@ -326,14 +326,17 @@ public class InsertDataQuestionGrader {
                     for (int c = 0; c < columnsToGradeNode.size(); c++) {
                         String col = columnsToGradeNode.get(c).asText("").trim();
                         if (!col.isBlank()) {
-                            columnsToGrade.add(col);
+                            addUniqueColumn(columnsToGrade, col);
                         }
                     }
                 }
             }
 
             if (columnsToGrade.isEmpty() && expectedRows.size() > 0) {
-                expectedRows.get(0).fieldNames().forEachRemaining(columnsToGrade::add);
+                Iterator<String> fieldNames = expectedRows.get(0).fieldNames();
+                while (fieldNames.hasNext()) {
+                    addUniqueColumn(columnsToGrade, fieldNames.next());
+                }
             }
 
             if (columnsToGrade.isEmpty()) {
@@ -384,6 +387,8 @@ public class InsertDataQuestionGrader {
             int notEqualCells = 0;
             int nullCells = 0;
             int outOfOrderRows = 0;
+            Map<String, Integer> wrongCellsByColumn = new LinkedHashMap<>();
+            Map<String, String> wrongCellSamplesByColumn = new LinkedHashMap<>();
             InsertRuleDecision missingDecisionForTrace = null;
             InsertRuleDecision cellNotEqualDecisionForTrace = null;
             InsertRuleDecision cellNullDecisionForTrace = null;
@@ -393,52 +398,18 @@ public class InsertDataQuestionGrader {
             for (int r = 0; r < expectedRows.size(); r++) {
                 JsonNode expectedRow = expectedRows.get(r);
                 Map<String, Object> actualRow = null;
-                int actualRowIdx = -1;
-
-                for (int idx = 0; idx < actualRows.size(); idx++) {
-                    if (usedActualRows[idx]) {
-                        continue;
-                    }
-
-                    Map<String, Object> candidate = actualRows.get(idx);
-                    boolean rowMatched;
-
-                    if (!primaryKeys.isEmpty()) {
-                        rowMatched = true;
-                        for (String pk : primaryKeys) {
-                            if (!support.valuesEqualByMatchTypeWithModifiers(
-                                    support.getRowValueIgnoreCase(candidate, pk),
-                                    getExpectedValueAsText(expectedRow, pk),
-                                    "EXACT",
-                                    rowMatchModifiers,
-                                    trimSpaces,
-                                    caseInsensitive)) {
-                                rowMatched = false;
-                                break;
-                            }
-                        }
-                    } else {
-                        rowMatched = false;
-                        for (String col : columnsToGrade) {
-                            String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
-                            if (support.valuesEqualByMatchTypeWithModifiers(
-                                    support.getRowValueIgnoreCase(candidate, col),
-                                    getExpectedValueAsText(expectedRow, col),
-                                    matchType,
-                                    rowMatchModifiers,
-                                    trimSpaces,
-                                    caseInsensitive)) {
-                                rowMatched = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (rowMatched) {
-                        actualRow = candidate;
-                        actualRowIdx = idx;
-                        break;
-                    }
+                int actualRowIdx = findBestActualRowIndex(
+                        expectedRow,
+                        actualRows,
+                        usedActualRows,
+                        primaryKeys,
+                        columnsToGrade,
+                        columnMatchTypes,
+                        rowMatchModifiers,
+                        trimSpaces,
+                        caseInsensitive);
+                if (actualRowIdx >= 0) {
+                    actualRow = actualRows.get(actualRowIdx);
                 }
 
                 if (actualRow == null) {
@@ -506,6 +477,9 @@ public class InsertDataQuestionGrader {
 
                     allPassed = false;
                     wrongCells++;
+                    wrongCellsByColumn.merge(col, 1, Integer::sum);
+                    wrongCellSamplesByColumn.putIfAbsent(col,
+                            formatWrongCellSample(actualRawValue, expectedRawValue, trimSpaces, caseInsensitive));
                     if (nullViolation) {
                         nullCells++;
                         cellNullDecisionForTrace = cellDecision;
@@ -650,6 +624,13 @@ public class InsertDataQuestionGrader {
                         extraRows,
                         outOfOrderRows,
                         tableDeduction));
+                String wrongColumnBreakdown = formatWrongColumnBreakdown(
+                        tableName,
+                        wrongCellsByColumn,
+                        wrongCellSamplesByColumn);
+                if (!wrongColumnBreakdown.isBlank()) {
+                    errorBuilder.append(wrongColumnBreakdown).append(" ");
+                }
             }
 
             earnedTotal = earnedTotal.add(BigDecimal.valueOf(Math.max(0d, earnedTable)));
@@ -697,6 +678,159 @@ public class InsertDataQuestionGrader {
     }
 
     private record InsertRuleDecision(String action, double penaltyPoints, boolean ignore, boolean failAll) {
+    }
+
+    private int findBestActualRowIndex(
+            JsonNode expectedRow,
+            List<Map<String, Object>> actualRows,
+            boolean[] usedActualRows,
+            List<String> primaryKeys,
+            List<String> columnsToGrade,
+            Map<String, String> columnMatchTypes,
+            JsonNode rowMatchModifiers,
+            boolean trimSpaces,
+            boolean caseInsensitive) {
+        int bestIdx = -1;
+        int bestMatchedCells = -1;
+        int bestComparableCells = -1;
+
+        for (int idx = 0; idx < actualRows.size(); idx++) {
+            if (usedActualRows[idx]) {
+                continue;
+            }
+
+            Map<String, Object> candidate = actualRows.get(idx);
+            if (!primaryKeys.isEmpty() && !primaryKeyMatches(
+                    expectedRow, candidate, primaryKeys, rowMatchModifiers, trimSpaces, caseInsensitive)) {
+                continue;
+            }
+
+            int comparableCells = 0;
+            int matchedCells = 0;
+            for (String col : columnsToGrade) {
+                comparableCells++;
+                String matchType = columnMatchTypes.getOrDefault(col, "EXACT");
+                if (support.valuesEqualByMatchTypeWithModifiers(
+                        support.getRowValueIgnoreCase(candidate, col),
+                        getExpectedValueAsText(expectedRow, col),
+                        matchType,
+                        rowMatchModifiers,
+                        trimSpaces,
+                        caseInsensitive)) {
+                    matchedCells++;
+                }
+            }
+
+            if (primaryKeys.isEmpty() && matchedCells <= 0) {
+                continue;
+            }
+
+            if (matchedCells > bestMatchedCells
+                    || (matchedCells == bestMatchedCells && comparableCells > bestComparableCells)) {
+                bestIdx = idx;
+                bestMatchedCells = matchedCells;
+                bestComparableCells = comparableCells;
+                if (comparableCells > 0 && matchedCells == comparableCells) {
+                    break;
+                }
+            }
+        }
+
+        return bestIdx;
+    }
+
+    private boolean primaryKeyMatches(
+            JsonNode expectedRow,
+            Map<String, Object> candidate,
+            List<String> primaryKeys,
+            JsonNode rowMatchModifiers,
+            boolean trimSpaces,
+            boolean caseInsensitive) {
+        for (String pk : primaryKeys) {
+            if (!support.valuesEqualByMatchTypeWithModifiers(
+                    support.getRowValueIgnoreCase(candidate, pk),
+                    getExpectedValueAsText(expectedRow, pk),
+                    "EXACT",
+                    rowMatchModifiers,
+                    trimSpaces,
+                    caseInsensitive)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void addUniqueColumn(List<String> columns, String columnName) {
+        if (columns == null || columnName == null || columnName.isBlank()) {
+            return;
+        }
+
+        for (String existing : columns) {
+            if (existing != null && existing.equalsIgnoreCase(columnName)) {
+                return;
+            }
+        }
+
+        columns.add(columnName);
+    }
+
+    private String formatWrongColumnBreakdown(
+            String tableName,
+            Map<String, Integer> wrongCellsByColumn,
+            Map<String, String> wrongCellSamplesByColumn) {
+        if (wrongCellsByColumn == null || wrongCellsByColumn.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder builder = new StringBuilder("Cột sai của bảng ")
+                .append(tableName)
+                .append(": ");
+        int shown = 0;
+        for (Map.Entry<String, Integer> entry : wrongCellsByColumn.entrySet()) {
+            if (shown > 0) {
+                builder.append("; ");
+            }
+            if (shown >= 6) {
+                builder.append("...");
+                break;
+            }
+
+            String column = entry.getKey();
+            builder.append(column)
+                    .append(" x")
+                    .append(entry.getValue());
+            String sample = wrongCellSamplesByColumn.get(column);
+            if (sample != null && !sample.isBlank()) {
+                builder.append(" (").append(sample).append(")");
+            }
+            shown++;
+        }
+
+        return builder.append(".").toString();
+    }
+
+    private String formatWrongCellSample(
+            Object actualRawValue,
+            String expectedRawValue,
+            boolean trimSpaces,
+            boolean caseInsensitive) {
+        return "expected=" + formatCellValue(expectedRawValue, trimSpaces, caseInsensitive)
+                + ", actual=" + formatCellValue(actualRawValue, trimSpaces, caseInsensitive);
+    }
+
+    private String formatCellValue(Object rawValue, boolean trimSpaces, boolean caseInsensitive) {
+        String normalized = support.normalizeValueStr(rawValue, trimSpaces, caseInsensitive);
+        if (normalized == null) {
+            return "NULL";
+        }
+        return "'" + abbreviateCellValue(normalized) + "'";
+    }
+
+    private String abbreviateCellValue(String value) {
+        if (value == null || value.length() <= 48) {
+            return value;
+        }
+        return value.substring(0, 45) + "...";
     }
 
     private void addInsertRuleTrace(
@@ -774,13 +908,13 @@ public class InsertDataQuestionGrader {
             case "FAIL_ITEM":
                 return new InsertRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
             case "DEDUCT_PERCENTAGE": {
-                double penalty = penaltyValue >= 0d
+                double penalty = penaltyValue > 0d
                         ? Math.max(0d, tablePoints * penaltyValue / 100d)
                         : safeDefaultPenalty;
                 return new InsertRuleDecision(normalizedAction, penalty, false, false);
             }
             case "DEDUCT_POINTS": {
-                double penalty = penaltyValue >= 0d
+                double penalty = penaltyValue > 0d
                         ? Math.max(0d, penaltyValue)
                         : safeDefaultPenalty;
                 return new InsertRuleDecision(normalizedAction, penalty, false, false);

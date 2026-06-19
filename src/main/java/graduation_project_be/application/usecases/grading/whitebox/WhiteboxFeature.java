@@ -54,7 +54,20 @@ public enum WhiteboxFeature {
     INSERT_SELECT("INSERT ... SELECT"),
     UPDATE_DELETE("UPDATE/DELETE"),
     MERGE("MERGE"),
-    STATEMENT_COUNT("Số câu lệnh");
+    STATEMENT_COUNT("Số câu lệnh"),
+    // CREATE_TABLE question type features
+    PRIMARY_KEY("PRIMARY KEY"),
+    CONSTRAINT_NAME("Tên ràng buộc"),
+    FOREIGN_KEY("FOREIGN KEY"),
+    NOT_NULL("NOT NULL"),
+    DEFAULT_VALUE("DEFAULT"),
+    CHECK_CONSTRAINT("CHECK"),
+    UNIQUE_CONSTRAINT("UNIQUE"),
+    IDENTITY("IDENTITY"),
+    DEPRECATED_DATA_TYPE("Kiểu dữ liệu deprecated"),
+    NOCHECK("WITH NOCHECK"),
+    DROP_TABLE("DROP TABLE"),
+    SELECT_INTO("SELECT INTO");
 
     private final String label;
 

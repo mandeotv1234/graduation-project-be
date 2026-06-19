@@ -691,15 +691,24 @@ public class RubricTestingUsecase {
                 List<BuildCreateTablesResponse.CreateColumnConfig> columns = new ArrayList<>();
                 List<String> primaryKeyColumns = new ArrayList<>();
                 Map<String, CreateForeignKeyGroup> foreignKeyGroups = new LinkedHashMap<>();
+                boolean hasStructuredForeignKeys = tableMetadata.getForeignKeys() != null
+                        && !tableMetadata.getForeignKeys().isEmpty();
+                boolean hasStructuredConstraints = tableMetadata.getConstraints() != null
+                        && !tableMetadata.getConstraints().isEmpty();
 
                 for (TableMetadata.ColumnMetadata column : tableMetadata.getColumns()) {
                     columns.add(new BuildCreateTablesResponse.CreateColumnConfig(
                             column.getColumnName(),
                             column.getRawDataType(),
-                            column.isNullable()));
+                            column.isNullable(),
+                            column.isAutoIncrement()));
 
-                    if (column.isPrimaryKey()) {
+                    if (!hasStructuredConstraints && column.isPrimaryKey()) {
                         primaryKeyColumns.add(column.getColumnName());
+                    }
+
+                    if (hasStructuredConstraints || hasStructuredForeignKeys) {
+                        continue;
                     }
 
                     String referencesTable = column.getReferencesTable();
@@ -720,20 +729,63 @@ public class RubricTestingUsecase {
                 }
 
                 List<BuildCreateTablesResponse.CreateConstraintConfig> constraints = new ArrayList<>();
-                if (!primaryKeyColumns.isEmpty()) {
-                    constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
-                            "PRIMARY_KEY",
-                            List.copyOf(primaryKeyColumns),
-                            null,
-                            null));
-                }
-
-                for (CreateForeignKeyGroup group : foreignKeyGroups.values()) {
-                    constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
-                            "FOREIGN_KEY",
-                            List.copyOf(group.columns()),
-                            group.referencesTable(),
-                            group.referencesColumns().isEmpty() ? null : List.copyOf(group.referencesColumns())));
+                if (hasStructuredConstraints) {
+                    for (TableMetadata.ConstraintMetadata constraint : tableMetadata.getConstraints()) {
+                        constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                                constraint.getConstraintName(),
+                                constraint.getType(),
+                                List.copyOf(constraint.getColumns()),
+                                constraint.getReferencesTable(),
+                                constraint.getReferencesColumns().isEmpty()
+                                        ? null
+                                        : List.copyOf(constraint.getReferencesColumns()),
+                                constraint.getExpression(),
+                                constraint.getDefaultValue()));
+                    }
+                } else if (hasStructuredForeignKeys) {
+                    if (!primaryKeyColumns.isEmpty()) {
+                        constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                                null,
+                                "PRIMARY_KEY",
+                                List.copyOf(primaryKeyColumns),
+                                null,
+                                null,
+                                null,
+                                null));
+                    }
+                    for (TableMetadata.ForeignKeyMetadata foreignKey : tableMetadata.getForeignKeys()) {
+                        constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                                foreignKey.getConstraintName(),
+                                "FOREIGN_KEY",
+                                List.copyOf(foreignKey.getColumns()),
+                                foreignKey.getReferencesTable(),
+                                foreignKey.getReferencesColumns().isEmpty()
+                                        ? null
+                                        : List.copyOf(foreignKey.getReferencesColumns()),
+                                null,
+                                null));
+                    }
+                } else {
+                    if (!primaryKeyColumns.isEmpty()) {
+                        constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                                null,
+                                "PRIMARY_KEY",
+                                List.copyOf(primaryKeyColumns),
+                                null,
+                                null,
+                                null,
+                                null));
+                    }
+                    for (CreateForeignKeyGroup group : foreignKeyGroups.values()) {
+                        constraints.add(new BuildCreateTablesResponse.CreateConstraintConfig(
+                                null,
+                                "FOREIGN_KEY",
+                                List.copyOf(group.columns()),
+                                group.referencesTable(),
+                                group.referencesColumns().isEmpty() ? null : List.copyOf(group.referencesColumns()),
+                                null,
+                                null));
+                    }
                 }
 
                 tables.add(new BuildCreateTablesResponse.CreateTableConfig(
@@ -1149,17 +1201,22 @@ public class RubricTestingUsecase {
             try {
                 examSchemaService.executeSql(studentSchema, studentQuery);
             } catch (Exception e) {
-                return RubricTestGradeResponse.of(
+                RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
                         0,
                         totalPoints,
                         false,
                         List.of(
                                 Map.of("type", "error", "message",
                                         "Lỗi cú pháp SQL: " + e.getMessage(), "points", 0)));
+                return applyCreateTableWhiteboxPreview(
+                        studentQuery,
+                        gradingPayloadNode(gradingRubric),
+                        totalPoints,
+                        blackbox);
             }
 
             return executeRubricGradingV2(
-                    studentSchema, teacherSchema, gradingRubric, totalPoints);
+                    studentSchema, teacherSchema, gradingRubric, totalPoints, studentQuery);
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử: " + e.getMessage(), e);
@@ -2839,7 +2896,8 @@ public class RubricTestingUsecase {
             String studentSchema,
             String teacherSchema,
             String gradingRubricJson,
-            double totalPoints) {
+            double totalPoints,
+            String studentQuery) {
         JsonNode rubric;
         try {
             rubric = objectMapper.readTree(gradingRubricJson);
@@ -2858,12 +2916,71 @@ public class RubricTestingUsecase {
                 actualTables,
                 BigDecimal.valueOf(totalPoints));
 
-        return RubricTestGradeResponse.of(
+        RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
                 result.earnedPoints().doubleValue(),
                 totalPoints,
                 result.allPassed(),
                 result.details(),
                 result.totalDeductions().doubleValue());
+        return applyCreateTableWhiteboxPreview(
+                studentQuery, rubric.path("grading_payload"), totalPoints, blackbox);
+    }
+
+    private RubricTestGradeResponse applyCreateTableWhiteboxPreview(
+            String studentQuery,
+            JsonNode gradingPayload,
+            double totalPoints,
+            RubricTestGradeResponse blackbox) {
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                QuestionType.CREATE_TABLE.name(),
+                studentQuery,
+                gradingPayload,
+                BigDecimal.valueOf(totalPoints),
+                false);
+        if (whitebox.isEmpty()) {
+            return blackbox;
+        }
+
+        List<Map<String, Object>> details = new ArrayList<>(blackbox.details());
+        for (WhiteboxViolation violation : whitebox.violations()) {
+            String type = switch (violation.status()) {
+                case FAIL -> "error";
+                case WARN, UNVERIFIED -> "warning";
+                case PASS -> "success";
+            };
+            String evidence = violation.actual() == null || violation.actual().isBlank()
+                    ? ""
+                    : ": " + violation.actual();
+            details.add(Map.of(
+                    "type", type,
+                    "message", "[Whitebox] " + violation.label() + evidence,
+                    "points", violation.deductedPoints().negate().doubleValue()));
+        }
+
+        double deduction = whitebox.cappedDeduction().doubleValue();
+        double finalScore = Math.max(0, blackbox.earnedPoints() - deduction);
+        double blackboxDeductions = blackbox.totalDeductions() == null
+                ? 0
+                : blackbox.totalDeductions();
+        return RubricTestGradeResponse.withWhitebox(
+                blackbox.earnedPoints(),
+                deduction,
+                finalScore,
+                totalPoints,
+                blackbox.allPassed() && deduction == 0,
+                details,
+                blackboxDeductions + deduction);
+    }
+
+    private JsonNode gradingPayloadNode(String gradingRubric) {
+        if (gradingRubric == null || gradingRubric.isBlank()) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
+        try {
+            return objectMapper.readTree(gradingRubric).path("grading_payload");
+        } catch (Exception e) {
+            return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        }
     }
 
     private boolean readBoolean(JsonNode node, boolean defaultValue) {

@@ -17,6 +17,7 @@ public class WhiteboxCatalog {
     public WhiteboxCatalog() {
         SelectWhiteboxRuleSet.registerInto(entries, evaluators);
         InsertDataWhiteboxRuleSet.registerInto(entries, evaluators);
+        CreateTableWhiteboxRuleSet.registerInto(entries, evaluators);
         FunctionWhiteboxRuleSet.registerInto(entries, evaluators);
         StoredProcedureWhiteboxRuleSet.registerInto(entries, evaluators);
     }

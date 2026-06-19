@@ -17,45 +17,45 @@ class WhiteboxCatalogUsecaseTest {
     private final WhiteboxCatalogUsecase usecase = new WhiteboxCatalogUsecase(new WhiteboxCatalog());
 
     @Test
-    void execute_selectQuery_returns29Entries() {
+    void execute_selectQuery_returns33Entries() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("SELECT_QUERY");
 
-        assertEquals(29, entries.size(), "SELECT_QUERY should have 29 rules");
+        assertEquals(33, entries.size(), "SELECT_QUERY should have 33 rules");
     }
 
     @Test
     void execute_nullQuestionType_defaultsToSelectQuery() {
         List<WhiteboxCatalogEntry> entries = usecase.execute(null);
 
-        assertEquals(29, entries.size(), "Null question type should default to SELECT_QUERY");
+        assertEquals(33, entries.size(), "Null question type should default to SELECT_QUERY");
     }
 
     @Test
     void execute_blankQuestionType_defaultsToSelectQuery() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("  ");
 
-        assertEquals(29, entries.size(), "Blank question type should default to SELECT_QUERY");
+        assertEquals(33, entries.size(), "Blank question type should default to SELECT_QUERY");
     }
 
     @Test
     void execute_lowercaseQuestionType_normalized() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("select_query");
 
-        assertEquals(29, entries.size(), "Lowercase question type should be normalized to uppercase");
+        assertEquals(33, entries.size(), "Lowercase question type should be normalized to uppercase");
     }
 
     @Test
     void execute_mixedCaseQuestionType_normalized() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("Select_Query");
 
-        assertEquals(29, entries.size(), "Mixed case question type should be normalized to uppercase");
+        assertEquals(33, entries.size(), "Mixed case question type should be normalized to uppercase");
     }
 
     @Test
-    void execute_unknownQuestionType_returnsEmpty() {
+    void execute_createTable_returns13Entries() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("CREATE_TABLE");
 
-        assertTrue(entries.isEmpty(), "Unknown question type should return empty list");
+        assertEquals(13, entries.size(), "CREATE_TABLE should have 13 rules");
     }
 
     @Test
@@ -66,10 +66,10 @@ class WhiteboxCatalogUsecaseTest {
     }
 
     @Test
-    void execute_storedProcedureQuestionType_returnsEmpty() {
+    void execute_storedProcedureQuestionType_returns12Entries() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("STORED_PROCEDURE");
 
-        assertTrue(entries.isEmpty(), "STORED_PROCEDURE question type is not supported in v1");
+        assertEquals(12, entries.size(), "STORED_PROCEDURE should have 12 rules");
     }
 
     @Test

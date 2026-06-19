@@ -10,14 +10,16 @@ public record RubricTestGradeResponse(
         List<Map<String, Object>> details,
         Double totalDeductions,
         Double blackboxScore,
-        Double whiteboxDeduction) {
+        Double whiteboxDeduction,
+        Double finalScore) {
 
     public static RubricTestGradeResponse of(
             double earnedPoints,
             double totalPoints,
             boolean allPassed,
             List<Map<String, Object>> details) {
-        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details, null, null, null);
+        return new RubricTestGradeResponse(
+                earnedPoints, totalPoints, allPassed, details, null, null, null, null);
     }
 
     public static RubricTestGradeResponse of(
@@ -26,8 +28,8 @@ public record RubricTestGradeResponse(
             boolean allPassed,
             List<Map<String, Object>> details,
             Double totalDeductions) {
-        return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details,
-                totalDeductions, null, null);
+        return new RubricTestGradeResponse(
+                earnedPoints, totalPoints, allPassed, details, totalDeductions, null, null, null);
     }
 
     public static RubricTestGradeResponse of(
@@ -39,6 +41,25 @@ public record RubricTestGradeResponse(
             Double blackboxScore,
             Double whiteboxDeduction) {
         return new RubricTestGradeResponse(earnedPoints, totalPoints, allPassed, details,
-                totalDeductions, blackboxScore, whiteboxDeduction);
+                totalDeductions, blackboxScore, whiteboxDeduction, null);
+    }
+
+    public static RubricTestGradeResponse withWhitebox(
+            double blackboxScore,
+            double whiteboxDeduction,
+            double finalScore,
+            double totalPoints,
+            boolean allPassed,
+            List<Map<String, Object>> details,
+            Double totalDeductions) {
+        return new RubricTestGradeResponse(
+                finalScore,
+                totalPoints,
+                allPassed,
+                details,
+                totalDeductions,
+                blackboxScore,
+                whiteboxDeduction,
+                finalScore);
     }
 }

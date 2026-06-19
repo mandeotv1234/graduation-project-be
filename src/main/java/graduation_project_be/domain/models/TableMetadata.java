@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -13,7 +14,12 @@ import java.util.List;
 @AllArgsConstructor
 public class TableMetadata {
     private String tableName;
-    private List<ColumnMetadata> columns;
+    @Builder.Default
+    private List<ColumnMetadata> columns = new ArrayList<>();
+    @Builder.Default
+    private List<ForeignKeyMetadata> foreignKeys = new ArrayList<>();
+    @Builder.Default
+    private List<ConstraintMetadata> constraints = new ArrayList<>();
 
     @Data
     @Builder
@@ -30,5 +36,34 @@ public class TableMetadata {
         private String referencesTable;
         private String referencesColumn;
         private boolean isNullable;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ForeignKeyMetadata {
+        private String constraintName;
+        @Builder.Default
+        private List<String> columns = new ArrayList<>();
+        private String referencesTable;
+        @Builder.Default
+        private List<String> referencesColumns = new ArrayList<>();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ConstraintMetadata {
+        private String constraintName;
+        private String type;
+        @Builder.Default
+        private List<String> columns = new ArrayList<>();
+        private String referencesTable;
+        @Builder.Default
+        private List<String> referencesColumns = new ArrayList<>();
+        private String expression;
+        private String defaultValue;
     }
 }

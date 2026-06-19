@@ -31,4 +31,10 @@ public record QueryStructureFacts(
         return new QueryStructureFacts(
                 false, 0, 0, false, false, false, false, false, false, false, false, Set.of(), 0, false, false);
     }
+
+    /** Facts placeholder for non-SELECT question types evaluated by text/DDL scanners. */
+    public static QueryStructureFacts textScanOnly() {
+        return new QueryStructureFacts(
+                true, 0, 0, false, false, false, false, false, false, false, false, Set.of(), 0, false, false);
+    }
 }

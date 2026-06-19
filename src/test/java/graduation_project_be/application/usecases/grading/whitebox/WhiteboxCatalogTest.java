@@ -11,20 +11,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The catalog must expose only evaluator-backed SELECT rules (no placeholders), and non-SELECT
- * question types must expose nothing in v1.
+ * The catalog must expose only evaluator-backed rules (no placeholders).
  */
 class WhiteboxCatalogTest {
 
     private static final Set<String> PARSER_REQUIRED = Set.of(
             "FORBIDDEN_SUBQUERY", "MAX_SUBQUERY_DEPTH", "FORBIDDEN_CORRELATED_SUBQUERY",
-            "FORBIDDEN_OLD_JOIN_SYNTAX");
+            "FORBIDDEN_OLD_JOIN_SYNTAX", "FORBIDDEN_SUBQUERY_IN_SELECT",
+            "FORBIDDEN_SUBQUERY_IN_FROM", "FORBIDDEN_SUBQUERY_IN_WHERE",
+            "FORBIDDEN_SUBQUERY_IN_HAVING");
 
     private final WhiteboxCatalog catalog = new WhiteboxCatalog();
 
     @Test
-    void exposes29SelectRules() {
-        assertEquals(29, catalog.entriesFor("SELECT_QUERY").size());
+    void exposes33SelectRules() {
+        assertEquals(33, catalog.entriesFor("SELECT_QUERY").size());
     }
 
     @Test
@@ -94,9 +95,8 @@ class WhiteboxCatalogTest {
 
     @Test
     void nonSelectQuestionTypesExposeNothingInV1() {
-        assertTrue(catalog.entriesFor("CREATE_TABLE").isEmpty());
+        assertEquals(13, catalog.entriesFor("CREATE_TABLE").size());
         assertTrue(catalog.entriesFor("INSERT_DATA").isEmpty());
-        assertTrue(catalog.entriesFor("STORED_PROCEDURE").isEmpty());
     }
 
     @Test

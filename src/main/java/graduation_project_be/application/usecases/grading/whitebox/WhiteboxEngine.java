@@ -54,7 +54,7 @@ public class WhiteboxEngine {
 
         QueryStructureFacts facts = QUESTION_TYPE_SELECT.equals(normalizedType)
                 ? selectAnalyzer.analyze(studentSql)
-                : QueryStructureFacts.parseFailed();
+                : QueryStructureFacts.textScanOnly();
         SelectWhiteboxContext context = new SelectWhiteboxContext(
                 SqlTextPreprocessor.clean(studentSql), studentSql, facts);
 

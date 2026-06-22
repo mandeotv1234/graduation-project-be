@@ -32,20 +32,10 @@ Create JSON rubric with the following structure:
     "case_sensitive_names": false,
     "positive_only_scoring": false
   },
-  "triggers": [
-    {
-      "expected_name": "<trigger name from answer>",
-      "expected_table_name": "<table the trigger applies to>",
-      "is_insert": <true/false>,
-      "is_update": <true/false>,
-      "is_delete": <true/false>,
-      "is_after": <true/false>
-    }
-  ],
   "test_cases": [
     {
       "case_id": "TC_01",
-      "case_name": "<brief description in English>",
+      "case_name": "<brief description in Vietnamese>",
       "verification_type": "SIDE_EFFECT",
       "match_type": "EXACT",
       "score_weight": 0.5,
@@ -131,7 +121,7 @@ Test Case 1 - Check if trigger REJECTS when violated (BatDau < previous trip's K
 ```json
 {
   "case_id": "TC_01",
-  "case_name": "Trigger rejects invalid time",
+  "case_name": "Trigger từ chối thời gian không hợp lệ",
   "verification_type": "EXECUTION_STATUS",
   "match_type": "EXACT",
   "score_weight": 0.3,
@@ -146,7 +136,7 @@ Test Case 1b - Check if trigger REJECTS when MaTuyen doesn't exist (test trigger
 ```json
 {
   "case_id": "TC_01b",
-  "case_name": "Trigger rejects when route code doesn't exist",
+  "case_name": "Trigger từ chối khi mã tuyến không tồn tại",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT",
   "score_weight": 0.2,
@@ -167,7 +157,7 @@ Test Case 2 - Check if trigger ACCEPTS when valid:
 ```json
 {
   "case_id": "TC_02", 
-  "case_name": "Trigger accepts valid time",
+  "case_name": "Trigger chấp nhận thời gian hợp lệ",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT",
   "score_weight": 0.3,
@@ -185,7 +175,7 @@ Test Case 1:
 ```json
 {
   "case_id": "TC_01",
-  "case_name": "Trigger records audit log when inserting order",
+  "case_name": "Trigger ghi log khi thêm đơn hàng",
   "verification_type": "SIDE_EFFECT",
   "match_type": "EXACT", 
   "score_weight": 0.5,
@@ -211,8 +201,10 @@ Test Case 1:
 - WRONG example:  "INSERT INTO dbo.Orders VALUES (...)" ← engine will find wrong place
 
 === CRITICAL ===
-- do NOT generate metadata points (existence_points, table_points, event_points,
-  timing_points) — engine calculates based on triggers metadata + score_weight.
+- do NOT generate any trigger metadata block (no "triggers" array, no expected_name,
+  expected_table_name, is_insert/is_update/is_delete/is_after, and no existence_points/
+  table_points/event_points/timing_points). Trigger metadata is no longer graded — the
+  score comes only from test_cases (score_weight) and white-box rules.
 - Setup_script must start with DROP TABLE IF EXISTS [{SCHEMA}].<name> if need to
   create helper tables (audit log, ...). Tables already in DDL spec don't need this.
 - Database: Microsoft SQL Server (MSSQL / T-SQL).

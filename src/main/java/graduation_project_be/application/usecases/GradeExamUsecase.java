@@ -543,18 +543,16 @@ public class GradeExamUsecase {
                             }
                             // Apply method white-box on top of black-box score for supported script types.
                             if ((question.getQuestionType() == QuestionType.FUNCTION
-                                    || question.getQuestionType() == QuestionType.INSERT_DATA)
+                                    || question.getQuestionType() == QuestionType.INSERT_DATA
+                                    || question.getQuestionType() == QuestionType.TRIGGER)
                                     && submission != null) {
                                 BigDecimal currentScore = submission.getScoreEarned() != null
                                         ? submission.getScoreEarned() : BigDecimal.ZERO;
                                 GradeDecision whiteboxDecision = isCorrect
                                         ? GradeDecision.pass(currentScore)
                                         : GradeDecision.partial(currentScore, errorMessage);
-                                whiteboxDecision = question.getQuestionType() == QuestionType.FUNCTION
-                                        ? applyRoutineWhitebox(QuestionType.FUNCTION, question, studentQuery,
-                                                whiteboxDecision)
-                                        : applyWhitebox(QuestionType.INSERT_DATA, question, studentQuery,
-                                                whiteboxDecision);
+                                whiteboxDecision = applyWhitebox(
+                                        question.getQuestionType(), question, studentQuery, whiteboxDecision);
                                 isCorrect = whiteboxDecision.isCorrect();
                                 errorMessage = whiteboxDecision.errorMessage();
                                 submission.setScoreEarned(whiteboxDecision.scoreEarned());

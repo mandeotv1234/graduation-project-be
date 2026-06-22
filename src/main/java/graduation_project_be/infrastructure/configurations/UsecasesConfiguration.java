@@ -432,11 +432,10 @@ public class UsecasesConfiguration {
 
     @Bean
     TriggerQuestionGrader triggerQuestionGrader(
-            ExamSchemaService examSchemaService,
             TestCaseRepository testCaseRepository,
             GradingSupport gradingSupport,
             RoutineQuestionGrader routineQuestionGrader) {
-        return new TriggerQuestionGrader(examSchemaService, testCaseRepository, gradingSupport, routineQuestionGrader);
+        return new TriggerQuestionGrader(testCaseRepository, gradingSupport, routineQuestionGrader);
     }
 
     @Bean

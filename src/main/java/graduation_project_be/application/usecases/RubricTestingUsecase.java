@@ -37,7 +37,6 @@ import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TableMetadata;
-import graduation_project_be.domain.models.TriggerMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -1485,7 +1484,17 @@ public class RubricTestingUsecase {
 
             examSchemaService.resetSchema(teacherSchema, false);
             loadDdlIfPresent(teacherSchema, ddlScript);
-            executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+            try {
+                executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL trong đáp án mẫu: " + e.getMessage(), "points", 0)));
+            }
 
             examSchemaService.resetSchema(studentSchema, false);
             loadDdlIfPresent(studentSchema, ddlScript);
@@ -3867,147 +3876,16 @@ public class RubricTestingUsecase {
         try {
             JsonNode rubric = objectMapper.readTree(gradingRubricJson);
             JsonNode gradingPayload = rubric.path("grading_payload");
-            JsonNode triggersConfig = gradingPayload.path("triggers");
             JsonNode testCases = gradingPayload.path("test_cases");
             JsonNode gradingSettings = gradingPayload.path("grading_settings");
 
             boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
-            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
 
-            List<TriggerMetadata> expectedTriggers = examSchemaService
-                    .extractTriggerMetadata(teacherSchema);
-            List<TriggerMetadata> actualTriggers = examSchemaService
-                    .extractTriggerMetadata(studentSchema);
-
-            // Start with full points, then deduct for errors
+            // Trigger metadata scoring (existence / table / event / timing) removed.
+            // Grading is now driven purely by test cases and white-box rules.
+            // Start with full points, then deduct for failed test cases / whitebox.
             double earnedPoints = totalPoints;
             boolean allPassed = true;
-
-            if (expectedTriggers.isEmpty()) {
-                details.add(Map.of(
-                        "type", "error",
-                        "message", "Không tìm thấy trigger trong đáp án chuẩn",
-                        "points", 0));
-                return RubricTestGradeResponse.of(0, totalPoints, false, details);
-            }
-
-            // Build trigger config map for easy lookup
-            Map<String, JsonNode> triggerConfigMap = new LinkedHashMap<>();
-            if (triggersConfig.isArray()) {
-                for (JsonNode tc : triggersConfig) {
-                    String expectedName = tc.path("expected_name").asText("");
-                    if (!expectedName.isBlank()) {
-                        triggerConfigMap.put(expectedName.toLowerCase(), tc);
-                    }
-                }
-            }
-
-            // Check each trigger metadata
-            for (TriggerMetadata expected : expectedTriggers) {
-                String triggerNameKey = caseSensitiveNames
-                        ? expected.getTriggerName()
-                        : expected.getTriggerName().toLowerCase();
-
-                JsonNode triggerConfig = triggerConfigMap.get(triggerNameKey);
-
-                // Use rubric config if available, otherwise use default weights
-                double existencePoints = triggerConfig != null
-                        ? triggerConfig.path("existence_points").asDouble(0.3)
-                        : 0.3;
-                double tablePoints = triggerConfig != null
-                        ? triggerConfig.path("table_points").asDouble(0.2)
-                        : 0.2;
-                double eventPoints = triggerConfig != null
-                        ? triggerConfig.path("event_points").asDouble(0.3)
-                        : 0.3;
-                double timingPoints = triggerConfig != null
-                        ? triggerConfig.path("timing_points").asDouble(0.2)
-                        : 0.2;
-
-                TriggerMetadata actual = actualTriggers.stream()
-                        .filter(t -> caseSensitiveNames
-                                ? t.getTriggerName().equals(expected.getTriggerName())
-                                : t.getTriggerName().equalsIgnoreCase(expected.getTriggerName()))
-                        .findFirst()
-                        .orElse(null);
-
-                // Check existence
-                if (actual == null) {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Thiếu Trigger %s", expected.getTriggerName()),
-                            "points", -existencePoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= existencePoints;
-                    }
-                    allPassed = false;
-                    continue;
-                }
-
-                details.add(Map.of(
-                        "type", "success",
-                        "message", String.format("Trigger %s: tồn tại", expected.getTriggerName()),
-                        "points", 0));
-
-                // Check table
-                if (expected.getTableName().equalsIgnoreCase(actual.getTableName())) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message", String.format("Trigger %s: đúng bảng %s",
-                                    expected.getTriggerName(), expected.getTableName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message", String.format("Trigger %s: gắn sai bảng (kỳ vọng: %s, thực tế: %s)",
-                                    expected.getTriggerName(), expected.getTableName(), actual.getTableName()),
-                            "points", -tablePoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= tablePoints;
-                    }
-                    allPassed = false;
-                }
-
-                // Check events
-                if (expected.isInsert() == actual.isInsert()
-                        && expected.isUpdate() == actual.isUpdate()
-                        && expected.isDelete() == actual.isDelete()) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message", String.format("Trigger %s: đúng sự kiện", expected.getTriggerName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Trigger %s: sai sự kiện (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
-                            "points", -eventPoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= eventPoints;
-                    }
-                    allPassed = false;
-                }
-
-                // Check timing
-                if (expected.isAfter() == actual.isAfter()) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message",
-                            String.format("Trigger %s: đúng thời điểm chạy", expected.getTriggerName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Trigger %s: sai thời điểm chạy (AFTER/INSTEAD OF)", expected.getTriggerName()),
-                            "points", -timingPoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= timingPoints;
-                    }
-                    allPassed = false;
-                }
-            }
 
             // Execute test cases if defined
             if (testCases.isArray() && testCases.size() > 0) {
@@ -4252,8 +4130,32 @@ public class RubricTestingUsecase {
                 }
             }
 
-            // Ensure final score is not negative
             double finalScore = Math.max(0, Math.min(earnedPoints, totalPoints));
+
+            // Apply trigger white-box rules on top of test-case score
+            // (mirrors executeRoutineRubricGrading — this is the "Quy tắc cách viết câu lệnh" step).
+            GradeDecision bbDecision = allPassed
+                    ? GradeDecision.pass(BigDecimal.valueOf(finalScore))
+                    : GradeDecision.partial(BigDecimal.valueOf(finalScore), null);
+            GradeDecision wbDecision = applyRoutineWhiteboxPreview(
+                    "TRIGGER", studentQuery, gradingPayload, totalPoints, bbDecision);
+            if (wbDecision.scoreEarned() != null
+                    && wbDecision.scoreEarned().doubleValue() < finalScore) {
+                double whiteboxDeduction = finalScore - wbDecision.scoreEarned().doubleValue();
+                finalScore = wbDecision.scoreEarned().doubleValue();
+                allPassed = wbDecision.isCorrect();
+                String wbMsg = wbDecision.errorMessage() != null
+                        ? wbDecision.errorMessage()
+                        : "Bị trừ " + String.format("%.2f", whiteboxDeduction)
+                                + " điểm do vi phạm quy tắc whitebox.";
+                details.add(Map.of(
+                        "type", "warning",
+                        "message", "[Whitebox] " + wbMsg,
+                        "points", -Math.round(whiteboxDeduction * 100.0) / 100.0));
+            }
+
+            // Ensure final score is not negative
+            finalScore = Math.max(0, Math.min(finalScore, totalPoints));
 
             return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
 

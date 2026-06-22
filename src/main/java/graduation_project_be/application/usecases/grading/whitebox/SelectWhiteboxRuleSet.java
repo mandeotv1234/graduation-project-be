@@ -25,7 +25,7 @@ final class SelectWhiteboxRuleSet {
     // SELECT rules are surfaced in their catalogs too. Parser-dependent rules (parserRequired=true)
     // gracefully degrade to UNVERIFIED (pass, no deduction) when the routine body cannot be parsed.
     private static final List<String> APPLICABLE_TYPES =
-            List.of(QUESTION_TYPE, "FUNCTION", "STORED_PROCEDURE", "TRIGGER");
+            List.of(QUESTION_TYPE, "FUNCTION", "STORED_PROCEDURE");
     private static final WhiteboxPenaltyUnit PCT = WhiteboxPenaltyUnit.PERCENTAGE_OF_QUESTION;
 
     private SelectWhiteboxRuleSet() {

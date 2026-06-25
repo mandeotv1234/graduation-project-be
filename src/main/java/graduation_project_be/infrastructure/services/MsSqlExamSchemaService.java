@@ -793,8 +793,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("Lá»—i thá»±c thi SQL trÃªn schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Lá»—i thá»±c thi SQL: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
     }
 
@@ -827,7 +827,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     "Truy váº¥n cháº¡y quÃ¡ thá»i gian tá»‘i Ä‘a " + QUERY_TIMEOUT_SECONDS + " giÃ¢y.");
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new RuntimeException("Lá»—i thá»±c thi SQL: " + cause.getMessage(), cause);
+            throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
         }
 
         // Walk through ALL results using correct JDBC pattern
@@ -1020,8 +1020,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("Lá»—i thá»±c thi batch SQL trÃªn schema [{}]: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Lá»—i thá»±c thi SQL: " + e.getMessage(), e);
+            log.error("Lỗi thực thi batch SQL trên schema [{}]: {}", schemaName, e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL: " + e.getMessage(), e);
         }
     }
 
@@ -1182,8 +1182,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             });
         } catch (Exception e) {
-            log.error("Lá»—i thá»±c thi SQL admin: {}", e.getMessage());
-            throw new RuntimeException("Lá»—i thá»±c thi SQL admin: " + e.getMessage(), e);
+            log.error("Lỗi thực thi SQL admin: {}", e.getMessage());
+            throw new RuntimeException("Lỗi thực thi SQL admin: " + e.getMessage(), e);
         }
     }
 

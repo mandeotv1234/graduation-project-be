@@ -371,8 +371,10 @@ public final class CreateWeightedEditScorer {
         Map<String, RuleDecision> weights = new LinkedHashMap<>();
         weights.put("TABLE|IS_MISSING", RuleDecision.percentage(BigDecimal.valueOf(100), "default"));
         weights.put("TABLE|IS_EXTRA", RuleDecision.percentage(BigDecimal.valueOf(10), "default"));
+        weights.put("TABLE|NOT_EQUAL", RuleDecision.percentage(BigDecimal.valueOf(10), "default"));
         weights.put("COLUMN|IS_MISSING", RuleDecision.percentage(BigDecimal.valueOf(15), "default"));
         weights.put("COLUMN|IS_EXTRA", RuleDecision.percentage(BigDecimal.valueOf(15), "default"));
+        weights.put("COLUMN|NOT_EQUAL", RuleDecision.percentage(BigDecimal.valueOf(10), "default"));
         weights.put("DATA_TYPE|FAMILY_MISMATCH", RuleDecision.percentage(BigDecimal.valueOf(15), "default"));
         weights.put("DATA_TYPE|SIZE_MISMATCH", RuleDecision.percentage(BigDecimal.valueOf(5), "default"));
         weights.put("NULLABILITY|NOT_EQUAL", RuleDecision.percentage(BigDecimal.valueOf(5), "default"));

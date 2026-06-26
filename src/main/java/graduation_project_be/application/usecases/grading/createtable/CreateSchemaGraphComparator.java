@@ -11,6 +11,14 @@ public final class CreateSchemaGraphComparator {
     private CreateSchemaGraphComparator() {
     }
 
+    private static int countColumnOverlap(CreateSchemaGraph.TableNode exp, CreateSchemaGraph.TableNode act, boolean caseSensitive) {
+        int count = 0;
+        for (String col : exp.columns().keySet()) {
+            if (act.columns().containsKey(col)) count++;
+        }
+        return count;
+    }
+
     public static List<CreateSchemaEdit> compare(
             CreateSchemaGraph expected,
             CreateSchemaGraph actual,
@@ -19,46 +27,84 @@ public final class CreateSchemaGraphComparator {
         Map<String, CreateSchemaGraph.TableNode> expectedTables = expected.tables();
         Map<String, CreateSchemaGraph.TableNode> actualTables = actual.tables();
 
-        for (Map.Entry<String, CreateSchemaGraph.TableNode> expectedEntry : expectedTables.entrySet()) {
-            CreateSchemaGraph.TableNode expectedTable = expectedEntry.getValue();
-            CreateSchemaGraph.TableNode actualTable = actualTables.get(expectedEntry.getKey());
-            if (actualTable == null) {
-                edits.add(edit(
-                        "TABLE", "IS_MISSING",
-                        expectedTable.name(),
-                        List.of(),
-                        null,
-                        null,
-                        List.of(),
-                        expectedTable.name(),
-                        null,
-                        "Thiếu bảng " + expectedTable.name()));
-                continue;
-            }
+        List<CreateSchemaGraph.TableNode> unmappedExpected = new ArrayList<>();
+        List<CreateSchemaGraph.TableNode> unmappedActual = new ArrayList<>();
+        java.util.Map<String, CreateSchemaGraph.TableNode> mappedTables = new java.util.LinkedHashMap<>();
 
-            compareColumns(edits, expectedTable, actualTable, caseSensitive);
-            comparePrimaryOrUnique(edits, expectedTable, actualTable, "PRIMARY_KEY",
-                    "PRIMARY_KEY", "IS_MISSING", "PRIMARY_KEY", "IS_EXTRA", caseSensitive);
-            compareForeignKeys(edits, expectedTable, actualTable, caseSensitive);
-            comparePrimaryOrUnique(edits, expectedTable, actualTable, "UNIQUE",
-                    "UNIQUE", "IS_MISSING", "UNIQUE", "IS_EXTRA", caseSensitive);
-            compareChecks(edits, expectedTable, actualTable, caseSensitive);
-            compareDefaults(edits, expectedTable, actualTable, caseSensitive);
+        for (Map.Entry<String, CreateSchemaGraph.TableNode> expectedEntry : expectedTables.entrySet()) {
+            String key = expectedEntry.getKey();
+            CreateSchemaGraph.TableNode actualTable = actualTables.get(key);
+            if (actualTable != null) {
+                mappedTables.put(key, actualTable);
+            } else {
+                unmappedExpected.add(expectedEntry.getValue());
+            }
         }
 
         for (Map.Entry<String, CreateSchemaGraph.TableNode> actualEntry : actualTables.entrySet()) {
             if (!expectedTables.containsKey(actualEntry.getKey())) {
-                CreateSchemaGraph.TableNode actualTable = actualEntry.getValue();
-                edits.add(edit(
-                        "TABLE", "IS_EXTRA",
-                        actualTable.name(),
-                        List.of(),
-                        null,
-                        null,
-                        List.of(),
-                        null,
-                        actualTable.name(),
-                        "Dư bảng " + actualTable.name()));
+                unmappedActual.add(actualEntry.getValue());
+            }
+        }
+
+        if (unmappedExpected.size() == 1 && unmappedActual.size() == 1) {
+            CreateSchemaGraph.TableNode exp = unmappedExpected.get(0);
+            CreateSchemaGraph.TableNode act = unmappedActual.get(0);
+            mappedTables.put(CreateSchemaNames.normalizeIdentifier(exp.name(), caseSensitive), act);
+            edits.add(edit("TABLE", "NOT_EQUAL", exp.name(), List.of(), null, null, List.of(), exp.name(), act.name(), "Sai tên bảng " + exp.name() + " thành " + act.name()));
+            unmappedExpected.clear();
+            unmappedActual.clear();
+        } else {
+            List<CreateSchemaGraph.TableNode> newlyMappedExp = new ArrayList<>();
+            List<CreateSchemaGraph.TableNode> newlyMappedAct = new ArrayList<>();
+            for (CreateSchemaGraph.TableNode exp : unmappedExpected) {
+                CreateSchemaGraph.TableNode bestMatch = null;
+                int maxOverlap = 0;
+                for (CreateSchemaGraph.TableNode act : unmappedActual) {
+                    if (newlyMappedAct.contains(act)) continue;
+                    int overlap = countColumnOverlap(exp, act, caseSensitive);
+                    if (overlap > maxOverlap) {
+                        maxOverlap = overlap;
+                        bestMatch = act;
+                    }
+                }
+                if (bestMatch != null && maxOverlap > 0) {
+                    newlyMappedExp.add(exp);
+                    newlyMappedAct.add(bestMatch);
+                    mappedTables.put(CreateSchemaNames.normalizeIdentifier(exp.name(), caseSensitive), bestMatch);
+                    edits.add(edit("TABLE", "NOT_EQUAL", exp.name(), List.of(), null, null, List.of(), exp.name(), bestMatch.name(), "Sai tên bảng " + exp.name() + " thành " + bestMatch.name()));
+                }
+            }
+            unmappedExpected.removeAll(newlyMappedExp);
+            unmappedActual.removeAll(newlyMappedAct);
+        }
+
+        for (CreateSchemaGraph.TableNode exp : unmappedExpected) {
+            edits.add(edit("TABLE", "IS_MISSING", exp.name(), List.of(), null, null, List.of(), exp.name(), null, "Thiếu bảng " + exp.name()));
+        }
+
+        for (CreateSchemaGraph.TableNode act : unmappedActual) {
+            edits.add(edit("TABLE", "IS_EXTRA", act.name(), List.of(), null, null, List.of(), null, act.name(), "Dư bảng " + act.name()));
+        }
+
+        for (Map.Entry<String, CreateSchemaGraph.TableNode> entry : mappedTables.entrySet()) {
+            CreateSchemaGraph.TableNode expectedTable = null;
+            for(CreateSchemaGraph.TableNode t : expectedTables.values()) {
+                if(CreateSchemaNames.normalizeIdentifier(t.name(), caseSensitive).equals(entry.getKey())) {
+                    expectedTable = t; break;
+                }
+            }
+            CreateSchemaGraph.TableNode actualTable = entry.getValue();
+            
+            if (expectedTable != null && actualTable != null) {
+                compareColumns(edits, expectedTable, actualTable, caseSensitive);
+                comparePrimaryOrUnique(edits, expectedTable, actualTable, "PRIMARY_KEY",
+                        "PRIMARY_KEY", "IS_MISSING", "PRIMARY_KEY", "IS_EXTRA", caseSensitive);
+                compareForeignKeys(edits, expectedTable, actualTable, caseSensitive);
+                comparePrimaryOrUnique(edits, expectedTable, actualTable, "UNIQUE",
+                        "UNIQUE", "IS_MISSING", "UNIQUE", "IS_EXTRA", caseSensitive);
+                compareChecks(edits, expectedTable, actualTable, caseSensitive);
+                compareDefaults(edits, expectedTable, actualTable, caseSensitive);
             }
         }
 
@@ -70,22 +116,76 @@ public final class CreateSchemaGraphComparator {
             CreateSchemaGraph.TableNode expectedTable,
             CreateSchemaGraph.TableNode actualTable,
             boolean caseSensitive) {
+        
+        List<CreateSchemaGraph.ColumnNode> unmappedExpected = new ArrayList<>();
+        List<CreateSchemaGraph.ColumnNode> unmappedActual = new ArrayList<>();
+        java.util.Map<String, CreateSchemaGraph.ColumnNode> mappedColumns = new java.util.LinkedHashMap<>();
+
         for (Map.Entry<String, CreateSchemaGraph.ColumnNode> expectedColumnEntry : expectedTable.columns().entrySet()) {
-            CreateSchemaGraph.ColumnNode expectedColumn = expectedColumnEntry.getValue();
-            CreateSchemaGraph.ColumnNode actualColumn = actualTable.columns().get(expectedColumnEntry.getKey());
-            if (actualColumn == null) {
-                edits.add(edit(
-                        "COLUMN", "IS_MISSING",
-                        expectedTable.name(),
-                        List.of(expectedColumn.name()),
-                        null,
-                        null,
-                        List.of(),
-                        expectedColumn.name(),
-                        null,
-                        "Bảng " + expectedTable.name() + ": thiếu cột " + expectedColumn.name()));
-                continue;
+            String key = expectedColumnEntry.getKey();
+            CreateSchemaGraph.ColumnNode actualColumn = actualTable.columns().get(key);
+            if (actualColumn != null) {
+                mappedColumns.put(key, actualColumn);
+            } else {
+                unmappedExpected.add(expectedColumnEntry.getValue());
             }
+        }
+
+        for (Map.Entry<String, CreateSchemaGraph.ColumnNode> actualColumnEntry : actualTable.columns().entrySet()) {
+            if (!expectedTable.columns().containsKey(actualColumnEntry.getKey())) {
+                unmappedActual.add(actualColumnEntry.getValue());
+            }
+        }
+
+        if (unmappedExpected.size() == 1 && unmappedActual.size() == 1) {
+            CreateSchemaGraph.ColumnNode exp = unmappedExpected.get(0);
+            CreateSchemaGraph.ColumnNode act = unmappedActual.get(0);
+            mappedColumns.put(CreateSchemaNames.normalizeIdentifier(exp.name(), caseSensitive), act);
+            edits.add(edit("COLUMN", "NOT_EQUAL", expectedTable.name(), List.of(exp.name()), null, null, List.of(), exp.name(), act.name(), "Bảng " + expectedTable.name() + ": sai tên cột " + exp.name() + " thành " + act.name()));
+            unmappedExpected.clear();
+            unmappedActual.clear();
+        } else {
+            List<CreateSchemaGraph.ColumnNode> newlyMappedExp = new ArrayList<>();
+            List<CreateSchemaGraph.ColumnNode> newlyMappedAct = new ArrayList<>();
+            for (CreateSchemaGraph.ColumnNode exp : unmappedExpected) {
+                CreateSchemaGraph.ColumnNode bestMatch = null;
+                for (CreateSchemaGraph.ColumnNode act : unmappedActual) {
+                    if (newlyMappedAct.contains(act)) continue;
+                    String expFamily = CreateSchemaNames.extractTypeFamily(exp.normalizedType());
+                    String actFamily = CreateSchemaNames.extractTypeFamily(act.normalizedType());
+                    if (expFamily.equals(actFamily) && !expFamily.isBlank()) {
+                        bestMatch = act;
+                        break;
+                    }
+                }
+                if (bestMatch != null) {
+                    newlyMappedExp.add(exp);
+                    newlyMappedAct.add(bestMatch);
+                    mappedColumns.put(CreateSchemaNames.normalizeIdentifier(exp.name(), caseSensitive), bestMatch);
+                    edits.add(edit("COLUMN", "NOT_EQUAL", expectedTable.name(), List.of(exp.name()), null, null, List.of(), exp.name(), bestMatch.name(), "Bảng " + expectedTable.name() + ": sai tên cột " + exp.name() + " thành " + bestMatch.name()));
+                }
+            }
+            unmappedExpected.removeAll(newlyMappedExp);
+            unmappedActual.removeAll(newlyMappedAct);
+        }
+
+        for (CreateSchemaGraph.ColumnNode exp : unmappedExpected) {
+            edits.add(edit("COLUMN", "IS_MISSING", expectedTable.name(), List.of(exp.name()), null, null, List.of(), exp.name(), null, "Bảng " + expectedTable.name() + ": thiếu cột " + exp.name()));
+        }
+
+        for (CreateSchemaGraph.ColumnNode act : unmappedActual) {
+            edits.add(edit("COLUMN", "IS_EXTRA", actualTable.name(), List.of(act.name()), null, null, List.of(), null, act.name(), "Bảng " + actualTable.name() + ": dư cột " + act.name()));
+        }
+
+        for (Map.Entry<String, CreateSchemaGraph.ColumnNode> entry : mappedColumns.entrySet()) {
+            CreateSchemaGraph.ColumnNode expectedColumn = null;
+            for(CreateSchemaGraph.ColumnNode c : expectedTable.columns().values()) {
+                if(CreateSchemaNames.normalizeIdentifier(c.name(), caseSensitive).equals(entry.getKey())) {
+                    expectedColumn = c; break;
+                }
+            }
+            CreateSchemaGraph.ColumnNode actualColumn = entry.getValue();
+            if (expectedColumn == null) continue;
 
             if (!expectedColumn.normalizedType().isBlank()) {
                 String expectedFamily = CreateSchemaNames.extractTypeFamily(expectedColumn.normalizedType());
@@ -119,11 +219,12 @@ public final class CreateSchemaGraphComparator {
             }
 
             if (expectedColumn.nullable() != null && !expectedColumn.nullable().equals(actualColumn.nullable())) {
+                final String expectedColNameNorm = entry.getKey();
                 boolean isExpectedPkColumn = expectedTable.constraints().stream()
                         .filter(c -> "PRIMARY_KEY".equalsIgnoreCase(c.type()))
                         .flatMap(c -> c.columns().stream())
                         .anyMatch(col -> CreateSchemaNames.normalizeIdentifier(col, caseSensitive)
-                                .equals(expectedColumnEntry.getKey()));
+                                .equals(expectedColNameNorm));
 
                 boolean isCascadingNullability = isExpectedPkColumn 
                         && Boolean.FALSE.equals(expectedColumn.nullable()) 
@@ -154,22 +255,6 @@ public final class CreateSchemaGraphComparator {
                         expectedColumn.identity() ? "IDENTITY" : "NO IDENTITY",
                         actualColumn.identity() ? "IDENTITY" : "NO IDENTITY",
                         String.format("Bảng %s: cột %s sai IDENTITY", expectedTable.name(), expectedColumn.name())));
-            }
-        }
-
-        for (Map.Entry<String, CreateSchemaGraph.ColumnNode> actualColumnEntry : actualTable.columns().entrySet()) {
-            if (!expectedTable.columns().containsKey(actualColumnEntry.getKey())) {
-                CreateSchemaGraph.ColumnNode actualColumn = actualColumnEntry.getValue();
-                edits.add(edit(
-                        "COLUMN", "IS_EXTRA",
-                        actualTable.name(),
-                        List.of(actualColumn.name()),
-                        null,
-                        null,
-                        List.of(),
-                        null,
-                        actualColumn.name(),
-                        "Bảng " + actualTable.name() + ": dư cột " + actualColumn.name()));
             }
         }
     }

@@ -12,6 +12,14 @@ public final class SqlTextPreprocessor {
     }
 
     public static String clean(String sql) {
+        return cleanPreservingIdentifiers(sql)
+                .replaceAll("\\[[^\\]]*\\]", "[id]");
+    }
+
+    /**
+     * Strips comments and string literals while retaining identifiers for parameterized DDL rules.
+     */
+    public static String cleanPreservingIdentifiers(String sql) {
         if (sql == null) {
             return "";
         }
@@ -19,7 +27,6 @@ public final class SqlTextPreprocessor {
         s = s.replaceAll("/\\*[\\s\\S]*?\\*/", " "); // block comment -> space
         s = s.replaceAll("--[^\\n]*", " ");           // line comment -> space
         s = s.replaceAll("[Nn]?'(?:[^']|'')*'", "''"); // string / N'...' literal -> ''
-        s = s.replaceAll("\\[[^\\]]*\\]", "[id]");     // [bracket identifier] -> neutral placeholder
         return s;
     }
 }

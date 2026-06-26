@@ -74,6 +74,19 @@ public class GenerateSchemaFromDdlUsecase {
                 columnNode.put("unique", column.isUnique());
                 columnNode.put("autoIncrement", column.isAutoIncrement());
             }
+
+            ArrayNode foreignKeysNode = tableNode.putArray("foreignKeys");
+            if (table.getForeignKeys() != null) {
+                for (TableMetadata.ForeignKeyMetadata foreignKey : table.getForeignKeys()) {
+                    ObjectNode foreignKeyNode = foreignKeysNode.addObject();
+                    foreignKeyNode.put("name", foreignKey.getConstraintName());
+                    ArrayNode localColumnsNode = foreignKeyNode.putArray("sourceColumns");
+                    foreignKey.getColumns().forEach(localColumnsNode::add);
+                    foreignKeyNode.put("targetTable", foreignKey.getReferencesTable());
+                    ArrayNode referencedColumnsNode = foreignKeyNode.putArray("targetColumns");
+                    foreignKey.getReferencesColumns().forEach(referencedColumnsNode::add);
+                }
+            }
         }
 
         return root;

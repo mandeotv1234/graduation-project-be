@@ -116,6 +116,30 @@ public class GradeExamUsecase {
         return applyWhitebox(questionType, question, studentQuery, blackbox);
     }
 
+    /** Applies CREATE_TABLE method rules after the existing metadata/rubric black-box grader. */
+    private GradeDecision applyCreateTableWhitebox(
+            ExamQuestion question, String studentQuery, GradeDecision blackbox) {
+        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                QuestionType.CREATE_TABLE.name(), studentQuery, whiteboxPayload(question), points, true);
+        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
+            return blackbox;
+        }
+        BigDecimal blackboxScore = blackbox.scoreEarned() == null
+                ? BigDecimal.ZERO
+                : blackbox.scoreEarned();
+        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction())
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+        String message = blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank()
+                ? blackbox.errorMessage()
+                : "Bị trừ " + whitebox.cappedDeduction().toPlainString()
+                        + " điểm do vi phạm quy tắc whitebox CREATE TABLE.";
+        return finalScore.compareTo(points) >= 0
+                ? GradeDecision.pass(finalScore)
+                : GradeDecision.partial(finalScore, message);
+    }
+
     /** The {@code grading_payload} node of a question's rubric, or a missing node if unavailable. */
     private JsonNode whiteboxPayload(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
@@ -505,6 +529,18 @@ public class GradeExamUsecase {
                                 }
                             } else if (!isCorrect && errorMessage == null) {
                                 errorMessage = "Kết quả không khớp với đáp án mẫu.";
+                            }
+                            if (question.getQuestionType() == QuestionType.CREATE_TABLE && submission != null) {
+                                BigDecimal createScore = submission.getScoreEarned() != null
+                                        ? submission.getScoreEarned()
+                                        : BigDecimal.ZERO;
+                                GradeDecision createDecision = isCorrect
+                                        ? GradeDecision.pass(createScore)
+                                        : GradeDecision.partial(createScore, errorMessage);
+                                createDecision = applyCreateTableWhitebox(question, studentQuery, createDecision);
+                                isCorrect = createDecision.isCorrect();
+                                errorMessage = createDecision.errorMessage();
+                                submission.setScoreEarned(createDecision.scoreEarned());
                             }
                             // Apply method white-box on top of black-box score for supported script types.
                             if ((question.getQuestionType() == QuestionType.FUNCTION

@@ -39,25 +39,36 @@ public record BuildCreateTablesResponseDto(
     public record CreateColumnConfigDto(
             String name,
             @JsonProperty("expected_type") String expectedType,
-            @JsonProperty("is_nullable") boolean isNullable) {
+            @JsonProperty("is_nullable") boolean isNullable,
+            @JsonProperty("is_auto_increment") boolean isAutoIncrement) {
 
         static CreateColumnConfigDto fromResponse(BuildCreateTablesResponse.CreateColumnConfig response) {
-            return new CreateColumnConfigDto(response.name(), response.expectedType(), response.isNullable());
+            return new CreateColumnConfigDto(
+                    response.name(),
+                    response.expectedType(),
+                    response.isNullable(),
+                    response.isAutoIncrement());
         }
     }
 
     public record CreateConstraintConfigDto(
+            String name,
             String type,
             List<String> columns,
             @JsonProperty("references_table") String referencesTable,
-            @JsonProperty("references_columns") List<String> referencesColumns) {
+            @JsonProperty("references_columns") List<String> referencesColumns,
+            String expression,
+            @JsonProperty("default_value") String defaultValue) {
 
         static CreateConstraintConfigDto fromResponse(BuildCreateTablesResponse.CreateConstraintConfig response) {
             return new CreateConstraintConfigDto(
+                    response.name(),
                     response.type(),
                     response.columns(),
                     response.referencesTable(),
-                    response.referencesColumns());
+                    response.referencesColumns(),
+                    response.expression(),
+                    response.defaultValue());
         }
     }
 }

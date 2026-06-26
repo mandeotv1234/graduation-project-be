@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.stream.Collectors;
 import graduation_project_be.application.usecases.GradingTraceCollector;
 import graduation_project_be.application.usecases.CreateTableRubricEvaluator;
 
@@ -62,6 +63,15 @@ public class CreateTableQuestionGrader {
                 allPassed = false;
                 errorBuilder.append(String.format("Thiếu bảng %s. ", expectedTable.getTableName()));
                 continue;
+            }
+
+            boolean tableForeignKeysMatch = foreignKeySignatures(expectedTable)
+                    .equals(foreignKeySignatures(actualTable));
+            if (!tableForeignKeysMatch) {
+                allPassed = false;
+                errorBuilder.append(String.format(
+                        "Table %s: foreign key constraints do not match. ",
+                        expectedTable.getTableName()));
             }
 
             int expectedColCount = expectedTable.getColumns().size();
@@ -127,6 +137,9 @@ public class CreateTableQuestionGrader {
                             expectedCol.getColumnName()));
                 }
             }
+            if (!tableForeignKeysMatch) {
+                tableScore = Math.max(0.0, tableScore - 0.1);
+            }
             BigDecimal tblEarned = perTablePoints.multiply(BigDecimal.valueOf(tableScore));
             earnedTotal = earnedTotal.add(tblEarned);
         }
@@ -157,6 +170,38 @@ public class CreateTableQuestionGrader {
         }
 
         return allPassed;
+    }
+
+    private Set<String> foreignKeySignatures(TableMetadata table) {
+        Set<String> signatures = new HashSet<>();
+        if (table.getForeignKeys() != null && !table.getForeignKeys().isEmpty()) {
+            for (TableMetadata.ForeignKeyMetadata foreignKey : table.getForeignKeys()) {
+                String localColumns = foreignKey.getColumns().stream()
+                        .map(this::normalizeIdentifier)
+                        .collect(Collectors.joining(","));
+                String referencedColumns = foreignKey.getReferencesColumns().stream()
+                        .map(this::normalizeIdentifier)
+                        .collect(Collectors.joining(","));
+                signatures.add(localColumns + "->"
+                        + normalizeIdentifier(foreignKey.getReferencesTable())
+                        + "(" + referencedColumns + ")");
+            }
+            return signatures;
+        }
+
+        for (ColumnMetadata column : table.getColumns()) {
+            if (!column.isForeignKey()) {
+                continue;
+            }
+            signatures.add(normalizeIdentifier(column.getColumnName()) + "->"
+                    + normalizeIdentifier(column.getReferencesTable())
+                    + "(" + normalizeIdentifier(column.getReferencesColumn()) + ")");
+        }
+        return signatures;
+    }
+
+    private String normalizeIdentifier(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean gradeCreateTableByRubricV2(String schemaName, ExamQuestion question, ExamSubmission submission) {

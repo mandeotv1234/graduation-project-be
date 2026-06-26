@@ -81,10 +81,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     userName);
             jdbcTemplate.execute(grantCreate);
 
-            log.info("Đã đảm bảo schema [{}] và user [{}] tồn tại với đầy đủ quyền", schemaName, userName);
+            log.info("ÄÃ£ Ä‘áº£m báº£o schema [{}] vÃ  user [{}] tá»“n táº¡i vá»›i Ä‘áº§y Ä‘á»§ quyá»n", schemaName, userName);
         } catch (Exception e) {
-            log.error("Không thể tạo schema/user cho {}", schemaName, e);
-            throw new RuntimeException("Không thể chuẩn bị schema bài thi: " + e.getMessage(), e);
+            log.error("KhÃ´ng thá»ƒ táº¡o schema/user cho {}", schemaName, e);
+            throw new RuntimeException("KhÃ´ng thá»ƒ chuáº©n bá»‹ schema bÃ i thi: " + e.getMessage(), e);
         }
     }
 
@@ -184,10 +184,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Đã reset schema [{}] — toàn bộ object đã bị xóa", schemaName);
+            log.info("ÄÃ£ reset schema [{}] â€” toÃ n bá»™ object Ä‘Ã£ bá»‹ xÃ³a", schemaName);
         } catch (Exception e) {
-            log.error("Không thể reset schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Không thể reset schema: " + e.getMessage(), e);
+            log.error("KhÃ´ng thá»ƒ reset schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("KhÃ´ng thá»ƒ reset schema: " + e.getMessage(), e);
         }
     }
 
@@ -214,10 +214,10 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
 
-            log.info("Đã xóa schema [{}] và user [{}]", schemaName, userName);
+            log.info("ÄÃ£ xÃ³a schema [{}] vÃ  user [{}]", schemaName, userName);
         } catch (Exception e) {
-            log.error("Không thể xóa schema {}: {}", schemaName, e.getMessage());
-            throw new RuntimeException("Không thể xóa schema: " + e.getMessage(), e);
+            log.error("KhÃ´ng thá»ƒ xÃ³a schema {}: {}", schemaName, e.getMessage());
+            throw new RuntimeException("KhÃ´ng thá»ƒ xÃ³a schema: " + e.getMessage(), e);
         }
     }
 
@@ -231,12 +231,12 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         for (String schemaName : schemas) {
             try {
                 dropSchema(schemaName);
-                log.info("Đã xóa schema [{}] cho exam {}", schemaName, examId);
+                log.info("ÄÃ£ xÃ³a schema [{}] cho exam {}", schemaName, examId);
             } catch (Exception e) {
-                log.warn("Không thể xóa schema [{}]: {}", schemaName, e.getMessage());
+                log.warn("KhÃ´ng thá»ƒ xÃ³a schema [{}]: {}", schemaName, e.getMessage());
             }
         }
-        log.info("Đã xóa {} schema cho exam {}", schemas.size(), examId);
+        log.info("ÄÃ£ xÃ³a {} schema cho exam {}", schemas.size(), examId);
     }
 
     @Override
@@ -259,7 +259,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 }
                             }
                         }
-                        log.info("Đã nạp DDL vào schema: {}", schemaName);
+                        log.info("ÄÃ£ náº¡p DDL vÃ o schema: {}", schemaName);
                     }
 
                     if (defaultDataScript != null && !defaultDataScript.isBlank()) {
@@ -270,7 +270,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                 }
                             }
                         }
-                        log.info("Đã nạp dữ liệu mặc định vào schema: {}", schemaName);
+                        log.info("ÄÃ£ náº¡p dá»¯ liá»‡u máº·c Ä‘á»‹nh vÃ o schema: {}", schemaName);
                     }
                 } finally {
                     try (Statement stmt = conn.createStatement()) {
@@ -280,72 +280,62 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 return null;
             });
         } catch (Exception e) {
-            log.error("Không thể nạp template vào schema: {}", schemaName, e);
-            throw new RuntimeException("Không thể nạp template vào schema: " + e.getMessage(), e);
+            log.error("KhÃ´ng thá»ƒ náº¡p template vÃ o schema: {}", schemaName, e);
+            throw new RuntimeException("KhÃ´ng thá»ƒ náº¡p template vÃ o schema: " + e.getMessage(), e);
         }
     }
 
     @Override
     public List<graduation_project_be.domain.models.TableMetadata> extractMetadata(String schemaName) {
-        String sql = "SELECT t.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, " +
-                "c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, " +
-                "CASE WHEN kcu_pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey, " +
-                "CASE WHEN kcu_uq.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsUnique, " +
-                "CASE WHEN sc.is_identity = 1 THEN 1 ELSE 0 END AS IsIdentity, " +
-                "fk.REFERENCED_TABLE_NAME AS ReferencedTable, " +
-                "fk.REFERENCED_COLUMN_NAME AS ReferencedColumn " +
-                "FROM INFORMATION_SCHEMA.TABLES t " +
-                "JOIN INFORMATION_SCHEMA.COLUMNS c ON t.TABLE_NAME = c.TABLE_NAME AND t.TABLE_SCHEMA = c.TABLE_SCHEMA "
-                +
-                // Primary key
-                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_pk " +
-                "    ON tc_pk.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_pk.TABLE_NAME = t.TABLE_NAME AND tc_pk.CONSTRAINT_TYPE = 'PRIMARY KEY' "
-                +
-                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_pk " +
-                "    ON kcu_pk.CONSTRAINT_SCHEMA = tc_pk.CONSTRAINT_SCHEMA " +
-                "    AND kcu_pk.CONSTRAINT_NAME = tc_pk.CONSTRAINT_NAME " +
-                "    AND kcu_pk.TABLE_SCHEMA = t.TABLE_SCHEMA " +
-                "    AND kcu_pk.TABLE_NAME = t.TABLE_NAME " +
-                "    AND kcu_pk.COLUMN_NAME = c.COLUMN_NAME " +
-                // Unique constraint
-                "LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc_uq " +
-                "    ON tc_uq.TABLE_SCHEMA = t.TABLE_SCHEMA AND tc_uq.TABLE_NAME = t.TABLE_NAME AND tc_uq.CONSTRAINT_TYPE = 'UNIQUE' "
-                +
-                "LEFT JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_uq " +
-                "    ON kcu_uq.CONSTRAINT_SCHEMA = tc_uq.CONSTRAINT_SCHEMA " +
-                "    AND kcu_uq.CONSTRAINT_NAME = tc_uq.CONSTRAINT_NAME " +
-                "    AND kcu_uq.TABLE_SCHEMA = t.TABLE_SCHEMA " +
-                "    AND kcu_uq.TABLE_NAME = t.TABLE_NAME " +
-                "    AND kcu_uq.COLUMN_NAME = c.COLUMN_NAME " +
-                // SQL Server identity
-                "LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA " +
-                "LEFT JOIN sys.columns sc ON sc.object_id = st.object_id AND sc.name = c.COLUMN_NAME " +
-                // Foreign key (resolve referenced table/column)
-                "LEFT JOIN ( " +
-                "    SELECT kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME, " +
-                "           kcu_ref.TABLE_NAME AS REFERENCED_TABLE_NAME, " +
-                "           kcu_ref.COLUMN_NAME AS REFERENCED_COLUMN_NAME " +
-                "    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
-                "        ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA " +
-                "        AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "        AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA " +
-                "        AND kcu.TABLE_NAME = tc.TABLE_NAME " +
-                "    JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc " +
-                "        ON rc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA " +
-                "        AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME " +
-                "    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu_ref " +
-                "        ON kcu_ref.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA " +
-                "        AND kcu_ref.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME " +
-                "        AND kcu_ref.ORDINAL_POSITION = kcu.ORDINAL_POSITION "
-                +
-                "    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' " +
-                ") fk ON fk.TABLE_SCHEMA = t.TABLE_SCHEMA AND fk.TABLE_NAME = t.TABLE_NAME AND fk.COLUMN_NAME = c.COLUMN_NAME "
-                +
-                "WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE' " +
-                "ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION";
+        String columnSql = """
+                SELECT
+                    t.TABLE_NAME,
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.CHARACTER_MAXIMUM_LENGTH,
+                    c.IS_NULLABLE,
+                    CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                        JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                            ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+                            AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                        WHERE tc.TABLE_SCHEMA = t.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = t.TABLE_NAME
+                            AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                            AND kcu.COLUMN_NAME = c.COLUMN_NAME
+                    ) THEN 1 ELSE 0 END AS IsPrimaryKey,
+                    CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                        JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                            ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA
+                            AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                        WHERE tc.TABLE_SCHEMA = t.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = t.TABLE_NAME
+                            AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+                            AND kcu.COLUMN_NAME = c.COLUMN_NAME
+                    ) THEN 1 ELSE 0 END AS IsUnique,
+                    CASE WHEN sc.is_identity = 1 THEN 1 ELSE 0 END AS IsIdentity
+                FROM INFORMATION_SCHEMA.TABLES t
+                JOIN INFORMATION_SCHEMA.COLUMNS c
+                    ON t.TABLE_NAME = c.TABLE_NAME
+                    AND t.TABLE_SCHEMA = c.TABLE_SCHEMA
+                LEFT JOIN sys.tables st
+                    ON st.name = t.TABLE_NAME
+                    AND SCHEMA_NAME(st.schema_id) = t.TABLE_SCHEMA
+                LEFT JOIN sys.columns sc
+                    ON sc.object_id = st.object_id
+                    AND sc.name = c.COLUMN_NAME
+                WHERE t.TABLE_SCHEMA = ?
+                    AND t.TABLE_TYPE = 'BASE TABLE'
+                ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION
+                """;
 
-        return jdbcTemplate.query(sql, ps -> ps.setString(1, schemaName), (rs) -> {
+        List<graduation_project_be.domain.models.TableMetadata> tables = jdbcTemplate.query(
+                columnSql,
+                ps -> ps.setString(1, schemaName),
+                (rs) -> {
             Map<String, graduation_project_be.domain.models.TableMetadata> tableMap = new LinkedHashMap<>();
 
             while (rs.next()) {
@@ -357,9 +347,6 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 boolean isPrimaryKey = rs.getBoolean("IsPrimaryKey");
                 boolean isUnique = rs.getBoolean("IsUnique");
                 boolean isIdentity = rs.getBoolean("IsIdentity");
-                String referencedTable = rs.getString("ReferencedTable");
-                String referencedColumn = rs.getString("ReferencedColumn");
-                boolean isForeignKey = referencedTable != null && !referencedTable.isBlank();
 
                 // Format data type for UI readability
                 String formattedDataType = formatDataType(dataType, maxLength);
@@ -369,6 +356,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         k -> graduation_project_be.domain.models.TableMetadata.builder()
                                 .tableName(tableName)
                                 .columns(new ArrayList<>())
+                                .foreignKeys(new ArrayList<>())
+                                .constraints(new ArrayList<>())
                                 .build());
 
                 graduation_project_be.domain.models.TableMetadata.ColumnMetadata column = graduation_project_be.domain.models.TableMetadata.ColumnMetadata
@@ -381,19 +370,18 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         // We finalize PK-derived uniqueness in a second pass after reading all columns.
                         .isUnique(isUnique)
                         .isAutoIncrement(isIdentity)
-                        .isForeignKey(isForeignKey)
-                        .referencesTable(referencedTable)
-                        .referencesColumn(referencedColumn)
+                        .isForeignKey(false)
                         .isNullable(isNullable)
                         .build();
 
                 table.getColumns().add(column);
             }
 
-            List<graduation_project_be.domain.models.TableMetadata> tables = new ArrayList<>(tableMap.values());
+            List<graduation_project_be.domain.models.TableMetadata> extractedTables =
+                    new ArrayList<>(tableMap.values());
 
             // Apply PK-derived uniqueness only for single-column primary keys.
-            for (graduation_project_be.domain.models.TableMetadata table : tables) {
+            for (graduation_project_be.domain.models.TableMetadata table : extractedTables) {
                 long pkColumnCount = table.getColumns().stream()
                         .filter(graduation_project_be.domain.models.TableMetadata.ColumnMetadata::isPrimaryKey)
                         .count();
@@ -407,8 +395,276 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                 }
             }
 
-            return tables;
+            return extractedTables;
         });
+
+        Map<String, graduation_project_be.domain.models.TableMetadata> tablesByName = new LinkedHashMap<>();
+        for (graduation_project_be.domain.models.TableMetadata table : tables) {
+            tablesByName.put(table.getTableName().toLowerCase(Locale.ROOT), table);
+        }
+
+        String keyConstraintSql = """
+                SELECT
+                    kc.name AS CONSTRAINT_NAME,
+                    parent_table.name AS TABLE_NAME,
+                    CASE WHEN kc.type = 'PK' THEN 'PRIMARY_KEY' ELSE 'UNIQUE' END AS CONSTRAINT_TYPE,
+                    parent_column.name AS COLUMN_NAME,
+                    ic.key_ordinal AS ORDINAL_POSITION
+                FROM sys.key_constraints kc
+                JOIN sys.tables parent_table
+                    ON parent_table.object_id = kc.parent_object_id
+                JOIN sys.schemas parent_schema
+                    ON parent_schema.schema_id = parent_table.schema_id
+                JOIN sys.index_columns ic
+                    ON ic.object_id = kc.parent_object_id
+                    AND ic.index_id = kc.unique_index_id
+                    AND ic.key_ordinal > 0
+                JOIN sys.columns parent_column
+                    ON parent_column.object_id = parent_table.object_id
+                    AND parent_column.column_id = ic.column_id
+                WHERE parent_schema.name = ?
+                    AND kc.type IN ('PK', 'UQ')
+                ORDER BY parent_table.name, kc.name, ic.key_ordinal
+                """;
+
+        jdbcTemplate.query(keyConstraintSql, ps -> ps.setString(1, schemaName), rs -> {
+            Map<String, graduation_project_be.domain.models.TableMetadata.ConstraintMetadata> constraintsByName =
+                    new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String tableName = rs.getString("TABLE_NAME");
+                graduation_project_be.domain.models.TableMetadata table =
+                        tablesByName.get(tableName.toLowerCase(Locale.ROOT));
+                if (table == null) {
+                    continue;
+                }
+
+                String constraintName = rs.getString("CONSTRAINT_NAME");
+                String constraintKey = tableName.toLowerCase(Locale.ROOT) + "\u0000"
+                        + constraintName.toLowerCase(Locale.ROOT);
+                graduation_project_be.domain.models.TableMetadata.ConstraintMetadata constraint =
+                        constraintsByName.computeIfAbsent(constraintKey, ignored -> {
+                            graduation_project_be.domain.models.TableMetadata.ConstraintMetadata created =
+                                    graduation_project_be.domain.models.TableMetadata.ConstraintMetadata.builder()
+                                            .constraintName(constraintName)
+                                            .type(rsGetString(rs, "CONSTRAINT_TYPE"))
+                                            .columns(new ArrayList<>())
+                                            .referencesColumns(new ArrayList<>())
+                                            .build();
+                            table.getConstraints().add(created);
+                            return created;
+                        });
+                constraint.getColumns().add(rs.getString("COLUMN_NAME"));
+            }
+
+            return null;
+        });
+
+        String foreignKeySql = """
+                SELECT
+                    fk.name AS CONSTRAINT_NAME,
+                    parent_table.name AS TABLE_NAME,
+                    parent_column.name AS COLUMN_NAME,
+                    referenced_table.name AS REFERENCED_TABLE_NAME,
+                    referenced_column.name AS REFERENCED_COLUMN_NAME,
+                    fkc.constraint_column_id AS ORDINAL_POSITION
+                FROM sys.foreign_keys fk
+                JOIN sys.foreign_key_columns fkc
+                    ON fkc.constraint_object_id = fk.object_id
+                JOIN sys.tables parent_table
+                    ON parent_table.object_id = fk.parent_object_id
+                JOIN sys.schemas parent_schema
+                    ON parent_schema.schema_id = parent_table.schema_id
+                JOIN sys.columns parent_column
+                    ON parent_column.object_id = parent_table.object_id
+                    AND parent_column.column_id = fkc.parent_column_id
+                JOIN sys.tables referenced_table
+                    ON referenced_table.object_id = fk.referenced_object_id
+                JOIN sys.columns referenced_column
+                    ON referenced_column.object_id = referenced_table.object_id
+                    AND referenced_column.column_id = fkc.referenced_column_id
+                WHERE parent_schema.name = ?
+                ORDER BY parent_table.name, fk.name, fkc.constraint_column_id
+                """;
+
+        jdbcTemplate.query(foreignKeySql, ps -> ps.setString(1, schemaName), rs -> {
+            Map<String, graduation_project_be.domain.models.TableMetadata.ForeignKeyMetadata> foreignKeysByConstraint =
+                    new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String tableName = rs.getString("TABLE_NAME");
+                graduation_project_be.domain.models.TableMetadata table =
+                        tablesByName.get(tableName.toLowerCase(Locale.ROOT));
+                if (table == null) {
+                    continue;
+                }
+
+                String constraintName = rs.getString("CONSTRAINT_NAME");
+                String referencedTable = rs.getString("REFERENCED_TABLE_NAME");
+                String constraintKey = tableName.toLowerCase(Locale.ROOT) + "\u0000"
+                        + constraintName.toLowerCase(Locale.ROOT);
+                graduation_project_be.domain.models.TableMetadata.ForeignKeyMetadata foreignKey =
+                        foreignKeysByConstraint.computeIfAbsent(constraintKey, ignored -> {
+                            graduation_project_be.domain.models.TableMetadata.ForeignKeyMetadata created =
+                                    graduation_project_be.domain.models.TableMetadata.ForeignKeyMetadata.builder()
+                                            .constraintName(constraintName)
+                                            .columns(new ArrayList<>())
+                                            .referencesTable(referencedTable)
+                                            .referencesColumns(new ArrayList<>())
+                                            .build();
+                            table.getForeignKeys().add(created);
+                            return created;
+                        });
+
+                graduation_project_be.domain.models.TableMetadata.ConstraintMetadata fkConstraint =
+                        table.getConstraints().stream()
+                                .filter(c -> constraintName.equalsIgnoreCase(c.getConstraintName()))
+                                .findFirst()
+                                .orElseGet(() -> {
+                                    graduation_project_be.domain.models.TableMetadata.ConstraintMetadata created =
+                                            graduation_project_be.domain.models.TableMetadata.ConstraintMetadata.builder()
+                                                    .constraintName(constraintName)
+                                                    .type("FOREIGN_KEY")
+                                                    .columns(new ArrayList<>())
+                                                    .referencesTable(referencedTable)
+                                                    .referencesColumns(new ArrayList<>())
+                                                    .build();
+                                    table.getConstraints().add(created);
+                                    return created;
+                                });
+
+                String columnName = rs.getString("COLUMN_NAME");
+                String referencedColumn = rs.getString("REFERENCED_COLUMN_NAME");
+                foreignKey.getColumns().add(columnName);
+                foreignKey.getReferencesColumns().add(referencedColumn);
+                fkConstraint.getColumns().add(columnName);
+                fkConstraint.getReferencesColumns().add(referencedColumn);
+
+                table.getColumns().stream()
+                        .filter(column -> column.getColumnName().equalsIgnoreCase(columnName))
+                        .findFirst()
+                        .ifPresent(column -> {
+                            column.setForeignKey(true);
+                            // Preserve the old single-reference fields for existing API consumers.
+                            if (column.getReferencesTable() == null || column.getReferencesTable().isBlank()) {
+                                column.setReferencesTable(foreignKey.getReferencesTable());
+                                column.setReferencesColumn(referencedColumn);
+                            }
+                        });
+            }
+
+            return null;
+        });
+
+        String checkConstraintSql = """
+                SELECT
+                    cc.name AS CONSTRAINT_NAME,
+                    parent_table.name AS TABLE_NAME,
+                    cc.definition AS CHECK_DEFINITION,
+                    parent_column.name AS COLUMN_NAME
+                FROM sys.check_constraints cc
+                JOIN sys.tables parent_table
+                    ON parent_table.object_id = cc.parent_object_id
+                JOIN sys.schemas parent_schema
+                    ON parent_schema.schema_id = parent_table.schema_id
+                LEFT JOIN sys.sql_expression_dependencies dep
+                    ON dep.referencing_id = cc.object_id
+                    AND dep.referenced_minor_id > 0
+                LEFT JOIN sys.columns parent_column
+                    ON parent_column.object_id = cc.parent_object_id
+                    AND parent_column.column_id = dep.referenced_minor_id
+                WHERE parent_schema.name = ?
+                ORDER BY parent_table.name, cc.name, parent_column.column_id
+                """;
+
+        jdbcTemplate.query(checkConstraintSql, ps -> ps.setString(1, schemaName), rs -> {
+            Map<String, graduation_project_be.domain.models.TableMetadata.ConstraintMetadata> constraintsByName =
+                    new LinkedHashMap<>();
+
+            while (rs.next()) {
+                String tableName = rs.getString("TABLE_NAME");
+                graduation_project_be.domain.models.TableMetadata table =
+                        tablesByName.get(tableName.toLowerCase(Locale.ROOT));
+                if (table == null) {
+                    continue;
+                }
+
+                String constraintName = rs.getString("CONSTRAINT_NAME");
+                String constraintKey = tableName.toLowerCase(Locale.ROOT) + "\u0000"
+                        + constraintName.toLowerCase(Locale.ROOT);
+                graduation_project_be.domain.models.TableMetadata.ConstraintMetadata constraint =
+                        constraintsByName.computeIfAbsent(constraintKey, ignored -> {
+                            graduation_project_be.domain.models.TableMetadata.ConstraintMetadata created =
+                                    graduation_project_be.domain.models.TableMetadata.ConstraintMetadata.builder()
+                                            .constraintName(constraintName)
+                                            .type("CHECK")
+                                            .columns(new ArrayList<>())
+                                            .referencesColumns(new ArrayList<>())
+                                            .expression(rsGetString(rs, "CHECK_DEFINITION"))
+                                            .build();
+                            table.getConstraints().add(created);
+                            return created;
+                        });
+
+                String columnName = rs.getString("COLUMN_NAME");
+                if (columnName != null && !columnName.isBlank()
+                        && constraint.getColumns().stream().noneMatch(columnName::equalsIgnoreCase)) {
+                    constraint.getColumns().add(columnName);
+                }
+            }
+
+            return null;
+        });
+
+        String defaultConstraintSql = """
+                SELECT
+                    dc.name AS CONSTRAINT_NAME,
+                    parent_table.name AS TABLE_NAME,
+                    parent_column.name AS COLUMN_NAME,
+                    dc.definition AS DEFAULT_DEFINITION
+                FROM sys.default_constraints dc
+                JOIN sys.tables parent_table
+                    ON parent_table.object_id = dc.parent_object_id
+                JOIN sys.schemas parent_schema
+                    ON parent_schema.schema_id = parent_table.schema_id
+                JOIN sys.columns parent_column
+                    ON parent_column.object_id = parent_table.object_id
+                    AND parent_column.column_id = dc.parent_column_id
+                WHERE parent_schema.name = ?
+                ORDER BY parent_table.name, parent_column.column_id
+                """;
+
+        jdbcTemplate.query(defaultConstraintSql, ps -> ps.setString(1, schemaName), rs -> {
+            while (rs.next()) {
+                String tableName = rs.getString("TABLE_NAME");
+                graduation_project_be.domain.models.TableMetadata table =
+                        tablesByName.get(tableName.toLowerCase(Locale.ROOT));
+                if (table == null) {
+                    continue;
+                }
+
+                table.getConstraints().add(
+                        graduation_project_be.domain.models.TableMetadata.ConstraintMetadata.builder()
+                                .constraintName(rs.getString("CONSTRAINT_NAME"))
+                                .type("DEFAULT")
+                                .columns(new ArrayList<>(List.of(rs.getString("COLUMN_NAME"))))
+                                .referencesColumns(new ArrayList<>())
+                                .defaultValue(rs.getString("DEFAULT_DEFINITION"))
+                                .build());
+            }
+
+            return null;
+        });
+
+        return tables;
+    }
+
+    private static String rsGetString(ResultSet rs, String columnName) {
+        try {
+            return rs.getString(columnName);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String formatDataType(String dataType, int maxLength) {
@@ -471,7 +727,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         // createExamSchemaForStudent was never called)
         ensureSchemaAndUser(schemaName);
 
-        // Sanitize SQL — block privilege escalation keywords
+        // Sanitize SQL â€” block privilege escalation keywords
         List<String> executableBatches = splitExecutableBatches(sql);
         for (String batch : executableBatches) {
             validateStudentSql(batch);
@@ -518,7 +774,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Các lệnh đã chạy thành công.";
+                            statusMessage = "CÃ¡c lá»‡nh Ä‘Ã£ cháº¡y thÃ nh cÃ´ng.";
                         }
                     }
 
@@ -568,7 +824,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             } catch (Exception ignore) {
             }
             throw new RuntimeException(
-                    "Truy vấn chạy quá thời gian tối đa " + QUERY_TIMEOUT_SECONDS + " giây.");
+                    "Truy váº¥n cháº¡y quÃ¡ thá»i gian tá»‘i Ä‘a " + QUERY_TIMEOUT_SECONDS + " giÃ¢y.");
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             throw new RuntimeException("Lỗi thực thi SQL: " + cause.getMessage(), cause);
@@ -582,8 +838,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     stmt.cancel();
                 } catch (Exception ignore) {
                 }
-                throw new RuntimeException("Xử lý truy vấn vượt quá thời gian tối đa "
-                        + QUERY_TIMEOUT_SECONDS + " giây.");
+                throw new RuntimeException("Xá»­ lÃ½ truy váº¥n vÆ°á»£t quÃ¡ thá»i gian tá»‘i Ä‘a "
+                        + QUERY_TIMEOUT_SECONDS + " giÃ¢y.");
             }
 
             if (isResultSet) {
@@ -602,8 +858,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                                     stmt.cancel();
                                 } catch (Exception ignore) {
                                 }
-                                throw new RuntimeException("Lấy result set vượt quá thời gian tối đa "
-                                        + QUERY_TIMEOUT_SECONDS + " giây.");
+                                throw new RuntimeException("Láº¥y result set vÆ°á»£t quÃ¡ thá»i gian tá»‘i Ä‘a "
+                                        + QUERY_TIMEOUT_SECONDS + " giÃ¢y.");
                             }
 
                             Map<String, Object> row = new LinkedHashMap<>();
@@ -688,7 +944,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
      *
      * <p>Differs from {@link #executeSql} in two ways:
      * <ul>
-     *   <li>Does NOT call {@code validateStudentSql} — grading batches contain
+     *   <li>Does NOT call {@code validateStudentSql} â€” grading batches contain
      *       {@code BEGIN TRY / BEGIN TRAN / DECLARE / THROW} which the keyword
      *       blocklist would reject (e.g. THROW is not in the allowed-starters
      *       list). The batch is built by trusted server-side code, not student
@@ -744,7 +1000,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Batch đã chạy thành công.";
+                            statusMessage = "Batch Ä‘Ã£ cháº¡y thÃ nh cÃ´ng.";
                         }
                     }
 
@@ -759,7 +1015,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     try (Statement stmt = conn.createStatement()) {
                         stmt.execute("REVERT");
                     } catch (Exception e) {
-                        log.warn("REVERT thất bại cho schema [{}]: {}", schemaName, e.getMessage());
+                        log.warn("REVERT tháº¥t báº¡i cho schema [{}]: {}", schemaName, e.getMessage());
                     }
                 }
             });
@@ -792,7 +1048,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             }
             stmt.clearWarnings();
         } catch (Exception e) {
-            log.warn("Không thể thu thập thông báo PRINT từ câu lệnh: {}", e.getMessage());
+            log.warn("KhÃ´ng thá»ƒ thu tháº­p thÃ´ng bÃ¡o PRINT tá»« cÃ¢u lá»‡nh: {}", e.getMessage());
         }
         return messages;
     }
@@ -823,8 +1079,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         boolean isValidStart = allowedStarters.stream().anyMatch(firstToken::equals);
         if (!isValidStart) {
             throw new IllegalArgumentException(
-                    "Lỗi cú pháp: Lệnh SQL không hợp lệ. Vui lòng kiểm tra lại từ khoá đầu tiên (có thể bạn gõ sai chính tả như '"
-                            + firstToken + "', hệ thống không tìm thấy lệnh này).");
+                    "Lá»—i cÃº phÃ¡p: Lá»‡nh SQL khÃ´ng há»£p lá»‡. Vui lÃ²ng kiá»ƒm tra láº¡i tá»« khoÃ¡ Ä‘áº§u tiÃªn (cÃ³ thá»ƒ báº¡n gÃµ sai chÃ­nh táº£ nhÆ° '"
+                            + firstToken + "', há»‡ thá»‘ng khÃ´ng tÃ¬m tháº¥y lá»‡nh nÃ y).");
         }
 
         String[] blockedPatterns = {
@@ -913,7 +1169,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                         if (hasUpdateCount && totalUpdateCount >= 0) {
                             statusMessage = "(" + totalUpdateCount + " row(s) affected)";
                         } else {
-                            statusMessage = "Câu lệnh admin đã chạy thành công.";
+                            statusMessage = "CÃ¢u lá»‡nh admin Ä‘Ã£ cháº¡y thÃ nh cÃ´ng.";
                         }
                     }
 

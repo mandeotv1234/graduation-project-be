@@ -1,6 +1,11 @@
 package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import graduation_project_be.application.usecases.grading.createtable.CreateSchemaEdit;
+import graduation_project_be.application.usecases.grading.createtable.CreateSchemaGraph;
+import graduation_project_be.application.usecases.grading.createtable.CreateSchemaGraphBuilder;
+import graduation_project_be.application.usecases.grading.createtable.CreateSchemaGraphComparator;
+import graduation_project_be.application.usecases.grading.createtable.CreateWeightedEditScorer;
 import graduation_project_be.domain.models.TableMetadata;
 
 import java.math.BigDecimal;
@@ -30,304 +35,22 @@ public final class CreateTableRubricEvaluator {
         JsonNode gradingRules = resolveCreateGradingRules(rubric, payload);
 
         boolean caseSensitive = settings.path("case_sensitive_names").asBoolean(false);
-        boolean positiveOnlyScoring = settings.path("positive_only_scoring").asBoolean(false);
-        boolean failAllMode = "FAIL_ALL".equalsIgnoreCase(
-                settings.path("syntax_error_action").asText("PARTIAL"));
-        boolean deductionMode = isDeductionMode(settings, tables, gradingRules);
-        boolean skipChildChecksWhenTableMissing = deductionMode
-                && settings.path("skip_child_checks_when_table_missing").asBoolean(true);
-
-        BigDecimal earnedTotal = deductionMode ? totalPoints : BigDecimal.ZERO;
-        BigDecimal totalDeductions = BigDecimal.ZERO;
-        List<Map<String, Object>> details = new ArrayList<>();
-        StringBuilder errorBuilder = new StringBuilder();
-        boolean allPassed = true;
-        boolean ruleFailAllTriggered = false;
-
-        boolean hasGradingRules = gradingRules != null && gradingRules.isArray() && !gradingRules.isEmpty();
-
-        // When grading_rules exist, skip legacy penalty-based scoring
-        // and only use rule-based evaluation below
-        for (JsonNode rubricTable : tables) {
-            if (hasGradingRules) {
-                continue;
-            }
-            String expectedName = rubricTable.path("expected_name").asText("");
-            String missingAction = rubricTable.path("missing_penalty_action").asText("SKIP_TABLE");
-            TableMetadata actualTable = findTable(actualTables, expectedName, caseSensitive);
-            BigDecimal tableScoreCap = deductionMode
-                    ? BigDecimal.valueOf(getTableDeductionCap(rubricTable))
-                    : BigDecimal.ZERO;
-            BigDecimal tableDeductionCap = deductionMode
-                    ? BigDecimal.valueOf(getTableDeductionCap(rubricTable))
-                    : BigDecimal.ZERO;
-            BigDecimal tableDeductions = BigDecimal.ZERO;
-            List<Map<String, Object>> tableDetails = new ArrayList<>();
-
-            if (actualTable == null) {
-                allPassed = false;
-                if (deductionMode) {
-                    double requestedPenalty = resolveMissingTablePenalty(
-                            rubricTable,
-                            missingAction,
-                            skipChildChecksWhenTableMissing);
-                    DeductionApplication deduction = applyTableDeduction(
-                            tableDeductions,
-                            tableDeductionCap,
-                            requestedPenalty);
-                    tableDeductions = deduction.updatedTotal();
-                    double appliedPenalty = deduction.appliedPenalty();
-
-                    String message = isFullTableLoss(missingAction, skipChildChecksWhenTableMissing)
-                            ? String.format("Thieu bang %s, mat toan bo diem phan bang (-%s d).",
-                            expectedName, formatPenalty(requestedPenalty))
-                            : String.format("Thieu bang %s (-%s d).",
-                            expectedName, formatPenalty(requestedPenalty));
-
-                    appendIssue(errorBuilder, message);
-                    tableDetails.add(Map.of(
-                            "type", "error",
-                            "message", buildCappedMessage("Thieu bang " + expectedName, requestedPenalty, appliedPenalty),
-                            "points", -requestedPenalty));
-                    totalDeductions = totalDeductions.add(tableDeductions);
-                    details.add(buildTableSummary(expectedName, tableScoreCap, tableDeductions));
-                    details.addAll(tableDetails);
-                } else {
-                    double lost = getMissingTablePenalty(rubricTable);
-                    for (JsonNode rubricColumn : rubricTable.path("columns")) {
-                        lost += getMissingColumnPenalty(rubricColumn);
-                    }
-                    for (JsonNode rubricConstraint : rubricTable.path("constraints")) {
-                        lost += getMissingConstraintPenalty(rubricConstraint);
-                    }
-
-                    appendIssue(errorBuilder, String.format("Thieu bang %s.", expectedName));
-                    details.add(Map.of(
-                            "type", "error",
-                            "message", "Thieu bang " + expectedName,
-                            "points", positiveOnlyScoring ? 0 : -lost));
-                }
-                continue;
-            }
-
-            if (!deductionMode) {
-                double existencePoints = getMissingTablePenalty(rubricTable);
-                earnedTotal = earnedTotal.add(BigDecimal.valueOf(existencePoints));
-                tableDetails.add(Map.of(
-                        "type", "success",
-                        "message", String.format("Bang %s ton tai", expectedName),
-                        "points", existencePoints));
-            }
-
-            for (JsonNode rubricColumn : rubricTable.path("columns")) {
-                String colName = rubricColumn.path("name").asText("");
-                String expectedType = rubricColumn.path("expected_type").asText("");
-                double colPoints = getMissingColumnPenalty(rubricColumn);
-                double typePenalty = getTypeMismatchPenalty(rubricColumn);
-
-                TableMetadata.ColumnMetadata actualColumn = findColumn(actualTable, colName, caseSensitive);
-                if (actualColumn == null) {
-                    allPassed = false;
-                    if (deductionMode) {
-                        double requestedPenalty = getMissingColumnPenalty(rubricColumn);
-                        DeductionApplication deduction = applyTableDeduction(
-                                tableDeductions,
-                                tableDeductionCap,
-                                requestedPenalty);
-                        tableDeductions = deduction.updatedTotal();
-                        double appliedPenalty = deduction.appliedPenalty();
-                        String message = String.format("Bang %s: thieu cot %s (-%s d).",
-                                expectedName, colName, formatPenalty(requestedPenalty));
-                        appendIssue(errorBuilder, message);
-                        tableDetails.add(Map.of(
-                                "type", "error",
-                                "message", buildCappedMessage(
-                                        String.format("Bang %s: thieu cot %s", expectedName, colName),
-                                        requestedPenalty,
-                                        appliedPenalty),
-                                "points", -requestedPenalty));
-                    } else {
-                        String message = positiveOnlyScoring
-                                ? String.format("Bang %s: thieu cot %s (khong cong diem muc nay).", expectedName, colName)
-                                : String.format("Bang %s: thieu cot %s (-%s d).",
-                                expectedName, colName, formatPenalty(colPoints));
-                        appendIssue(errorBuilder, message);
-                        tableDetails.add(Map.of(
-                                "type", "error",
-                                "message", String.format("Bang %s: thieu cot %s", expectedName, colName),
-                                "points", positiveOnlyScoring ? 0 : -colPoints));
-                    }
-                    continue;
-                }
-
-                boolean typeMatch = matchesSqlType(actualColumn.getRawDataType(), expectedType);
-                if (typeMatch) {
-                    if (!deductionMode) {
-                        earnedTotal = earnedTotal.add(BigDecimal.valueOf(colPoints));
-                        tableDetails.add(Map.of(
-                                "type", "success",
-                                "message", String.format("Bang %s: cot %s (%s) OK", expectedName, colName, expectedType),
-                                "points", colPoints));
-                    }
-                    continue;
-                }
-
-                allPassed = false;
-                if (deductionMode) {
-                    double requestedPenalty = typePenalty;
-                    DeductionApplication deduction = applyTableDeduction(
-                            tableDeductions,
-                            tableDeductionCap,
-                            requestedPenalty);
-                    tableDeductions = deduction.updatedTotal();
-                    double appliedPenalty = deduction.appliedPenalty();
-                    String message = String.format(
-                            "Bang %s: cot %s sai kieu (ky vong: %s, thuc te: %s, -%s d).",
-                            expectedName, colName, expectedType, actualColumn.getDataType(), formatPenalty(requestedPenalty));
-                    appendIssue(errorBuilder, message);
-                    tableDetails.add(Map.of(
-                            "type", "warning",
-                            "message", buildCappedMessage(
-                                    String.format(
-                                    "Bang %s: cot %s sai kieu (ky vong: %s, thuc te: %s)",
-                                    expectedName, colName, expectedType, actualColumn.getDataType()),
-                                    requestedPenalty,
-                                    appliedPenalty),
-                            "points", -requestedPenalty));
-                } else {
-                    double awarded = positiveOnlyScoring ? 0 : Math.max(0, colPoints - typePenalty);
-                    earnedTotal = earnedTotal.add(BigDecimal.valueOf(awarded));
-                    String message = positiveOnlyScoring
-                            ? String.format(
-                            "Bang %s: cot %s sai kieu (ky vong: %s, thuc te: %s, khong cong diem muc nay).",
-                            expectedName, colName, expectedType, actualColumn.getDataType())
-                            : String.format(
-                            "Bang %s: cot %s sai kieu (ky vong: %s, thuc te: %s, -%s d).",
-                            expectedName, colName, expectedType, actualColumn.getDataType(), formatPenalty(typePenalty));
-                    appendIssue(errorBuilder, message);
-                    tableDetails.add(Map.of(
-                            "type", "warning",
-                            "message", String.format(
-                                    "Bang %s: cot %s sai kieu (ky vong: %s, thuc te: %s)",
-                                    expectedName, colName, expectedType, actualColumn.getDataType()),
-                            "points", positiveOnlyScoring ? 0 : -typePenalty));
-                }
-            }
-
-            for (JsonNode rubricConstraint : rubricTable.path("constraints")) {
-                String constraintType = rubricConstraint.path("type").asText("");
-                double constraintPoints = getMissingConstraintPenalty(rubricConstraint);
-                double constraintPenalty = getMissingConstraintPenalty(rubricConstraint);
-                boolean constraintFound = doesConstraintMatch(actualTable, rubricConstraint, caseSensitive);
-                String constraintLabel = buildConstraintLabel(constraintType, rubricConstraint.path("columns"));
-
-                if (constraintFound) {
-                    if (!deductionMode) {
-                        earnedTotal = earnedTotal.add(BigDecimal.valueOf(constraintPoints));
-                        tableDetails.add(Map.of(
-                                "type", "success",
-                                "message", String.format("Bang %s: rang buoc %s OK", expectedName, constraintLabel),
-                                "points", constraintPoints));
-                    }
-                    continue;
-                }
-
-                allPassed = false;
-                if (deductionMode) {
-                    double requestedPenalty = constraintPenalty;
-                    DeductionApplication deduction = applyTableDeduction(
-                            tableDeductions,
-                            tableDeductionCap,
-                            requestedPenalty);
-                    tableDeductions = deduction.updatedTotal();
-                    double appliedPenalty = deduction.appliedPenalty();
-                    String message = String.format("Bang %s: thieu rang buoc %s (-%s d).",
-                            expectedName, constraintLabel, formatPenalty(requestedPenalty));
-                    appendIssue(errorBuilder, message);
-                    tableDetails.add(Map.of(
-                            "type", "error",
-                            "message", buildCappedMessage(
-                                    String.format("Bang %s: thieu rang buoc %s", expectedName, constraintLabel),
-                                    requestedPenalty,
-                                    appliedPenalty),
-                            "points", -requestedPenalty));
-                } else {
-                    double awarded = positiveOnlyScoring ? 0 : Math.max(0, constraintPoints - constraintPenalty);
-                    earnedTotal = earnedTotal.add(BigDecimal.valueOf(awarded));
-                    String message = positiveOnlyScoring
-                            ? String.format("Bang %s: thieu rang buoc %s (khong cong diem muc nay).",
-                            expectedName, constraintLabel)
-                            : String.format("Bang %s: thieu rang buoc %s (-%s d).",
-                            expectedName, constraintLabel, formatPenalty(constraintPenalty));
-                    appendIssue(errorBuilder, message);
-                    tableDetails.add(Map.of(
-                            "type", "error",
-                            "message", String.format("Bang %s: thieu rang buoc %s", expectedName, constraintLabel),
-                            "points", positiveOnlyScoring ? 0 : -constraintPenalty));
-                }
-            }
-
-            if (deductionMode) {
-                totalDeductions = totalDeductions.add(tableDeductions);
-                details.add(buildTableSummary(expectedName, tableScoreCap, tableDeductions));
-                details.addAll(tableDetails);
-            } else {
-                details.addAll(tableDetails);
-            }
-        }
-
-        if (deductionMode) {
-            earnedTotal = totalPoints.subtract(totalDeductions);
-        }
-
-        CreateRuleAdjustment ruleAdjustment = applyCreateRuleAdjustments(
-                gradingRules,
+        CreateSchemaGraph expectedGraph = CreateSchemaGraphBuilder.fromRubric(tables, caseSensitive);
+        CreateSchemaGraph actualGraph = CreateSchemaGraphBuilder.fromMetadata(actualTables, caseSensitive);
+        List<CreateSchemaEdit> edits = CreateSchemaGraphComparator.compare(expectedGraph, actualGraph, caseSensitive);
+        CreateWeightedEditScorer.CreateScoringResult result = CreateWeightedEditScorer.score(
+                edits,
                 tables,
-                actualTables,
-                caseSensitive,
-                totalPoints);
-        if (ruleAdjustment.hasViolations()) {
-            allPassed = false;
-        }
-        if (ruleAdjustment.failAllTriggered()) {
-            ruleFailAllTriggered = true;
-        }
-        if (ruleAdjustment.totalPenalty().compareTo(BigDecimal.ZERO) > 0) {
-            earnedTotal = earnedTotal.subtract(ruleAdjustment.totalPenalty());
-            totalDeductions = totalDeductions.add(ruleAdjustment.totalPenalty());
-        }
-        if (ruleAdjustment.errorMessage() != null && !ruleAdjustment.errorMessage().isBlank()) {
-            appendIssue(errorBuilder, ruleAdjustment.errorMessage());
-        }
-        if (!ruleAdjustment.details().isEmpty()) {
-            details.addAll(ruleAdjustment.details());
-        }
-
-        earnedTotal = earnedTotal.setScale(2, RoundingMode.HALF_UP);
-        totalDeductions = totalDeductions.setScale(2, RoundingMode.HALF_UP);
-        if ((failAllMode && !allPassed) || ruleFailAllTriggered) {
-            earnedTotal = BigDecimal.ZERO;
-            String failMessage = "Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo.";
-            appendIssue(errorBuilder, failMessage);
-            details.add(Map.of(
-                    "type", "warning",
-                    "message", "Rubric dang de FAIL_ALL: co loi nen cau nay bi 0 diem toan bo",
-                    "points", 0));
-        }
-
-        if (earnedTotal.compareTo(totalPoints) > 0) {
-            earnedTotal = totalPoints;
-        }
-        if (earnedTotal.compareTo(BigDecimal.ZERO) < 0) {
-            earnedTotal = BigDecimal.ZERO;
-        }
+                gradingRules,
+                totalPoints,
+                caseSensitive);
 
         return new CreateTableRubricGradeResult(
-                earnedTotal,
-                totalDeductions,
-                allPassed,
-                errorBuilder.length() == 0 ? null : errorBuilder.toString().trim(),
-                List.copyOf(details));
+                result.earnedPoints(),
+                result.totalDeductions(),
+                result.allPassed(),
+                result.errorMessage(),
+                result.details());
     }
 
     static boolean isDeductionMode(JsonNode settings, JsonNode tables, JsonNode gradingRules) {
@@ -580,7 +303,7 @@ public final class CreateTableRubricEvaluator {
                 }
 
                 Set<String> expectedPrimaryKeys = new HashSet<>();
-                Set<String> expectedForeignKeys = new HashSet<>();
+                List<JsonNode> expectedForeignKeyConstraints = new ArrayList<>();
 
                 for (JsonNode rubricConstraint : rubricTable.path("constraints")) {
                     String constraintType = rubricConstraint.path("type").asText("");
@@ -607,40 +330,16 @@ public final class CreateTableRubricEvaluator {
                         continue;
                     }
 
-                    String referencesTable = rubricConstraint.path("references_table").asText("");
-                    JsonNode referencesColumns = rubricConstraint.path("references_columns");
-
-                    for (int i = 0; i < columnsNode.size(); i++) {
-                        String fkColumn = columnsNode.get(i).asText("");
-                        if (fkColumn.isBlank()) {
-                            continue;
-                        }
-
-                        String fkColumnKey = normalizeCreateIdentifier(fkColumn, caseSensitive);
-                        expectedForeignKeys.add(fkColumnKey);
-
-                        TableMetadata.ColumnMetadata actualColumn = actualColumnsByName.get(fkColumnKey);
-                        if (actualColumn == null || !actualColumn.isForeignKey()) {
-                            incrementViolationCount(violations, "FOREIGN_KEY", "IS_MISSING", 1, expectedName);
-                            continue;
-                        }
-
-                        String expectedRefColumn = "";
-                        if (referencesColumns.isArray() && referencesColumns.size() > i) {
-                            expectedRefColumn = referencesColumns.get(i).asText("");
-                        }
-
-                        boolean tableMatched = matchesOptional(
-                                actualColumn.getReferencesTable(),
-                                referencesTable,
-                                caseSensitive);
-                        boolean columnMatched = matchesOptional(
-                                actualColumn.getReferencesColumn(),
-                                expectedRefColumn,
-                                caseSensitive);
-                        if (!tableMatched || !columnMatched) {
-                            incrementViolationCount(violations, "FOREIGN_KEY", "REFERENCE_ERROR", 1, expectedName);
-                        }
+                    expectedForeignKeyConstraints.add(rubricConstraint);
+                    List<TableMetadata.ForeignKeyMetadata> actualForeignKeys = getActualForeignKeys(actualTable);
+                    boolean localColumnsMatched = actualForeignKeys.stream()
+                            .anyMatch(foreignKey -> foreignKeyLocalColumnsMatch(
+                                    foreignKey, columnsNode, caseSensitive));
+                    if (!localColumnsMatched) {
+                        incrementViolationCount(violations, "FOREIGN_KEY", "IS_MISSING", 1, expectedName);
+                    } else if (actualForeignKeys.stream().noneMatch(foreignKey ->
+                            foreignKeyMatches(foreignKey, rubricConstraint, caseSensitive))) {
+                        incrementViolationCount(violations, "FOREIGN_KEY", "REFERENCE_ERROR", 1, expectedName);
                     }
                 }
 
@@ -652,7 +351,6 @@ public final class CreateTableRubricEvaluator {
                 }
 
                 int extraPrimaryKeys = 0;
-                int extraForeignKeys = 0;
                 for (Map.Entry<String, TableMetadata.ColumnMetadata> actualColumnEntry : actualColumnsByName.entrySet()) {
                     String actualColumnKey = actualColumnEntry.getKey();
                     TableMetadata.ColumnMetadata actualColumn = actualColumnEntry.getValue();
@@ -660,7 +358,13 @@ public final class CreateTableRubricEvaluator {
                     if (actualColumn.isPrimaryKey() && !expectedPrimaryKeys.contains(actualColumnKey)) {
                         extraPrimaryKeys++;
                     }
-                    if (actualColumn.isForeignKey() && !expectedForeignKeys.contains(actualColumnKey)) {
+                }
+
+                int extraForeignKeys = 0;
+                for (TableMetadata.ForeignKeyMetadata actualForeignKey : getActualForeignKeys(actualTable)) {
+                    boolean expected = expectedForeignKeyConstraints.stream()
+                            .anyMatch(constraint -> foreignKeyMatches(actualForeignKey, constraint, caseSensitive));
+                    if (!expected) {
                         extraForeignKeys++;
                     }
                 }
@@ -1257,28 +961,84 @@ public final class CreateTableRubricEvaluator {
         }
 
         if ("FOREIGN_KEY".equals(constraintType)) {
-            String referencesTable = rubricConstraint.path("references_table").asText("");
-            JsonNode referencesColumns = rubricConstraint.path("references_columns");
-            boolean validateReferencedColumns = referencesColumns.isArray()
-                    && referencesColumns.size() == columns.size()
-                    && referencesColumns.size() > 0;
+            return getActualForeignKeys(actualTable).stream()
+                    .anyMatch(foreignKey -> foreignKeyMatches(foreignKey, rubricConstraint, caseSensitive));
+        }
 
-            for (int i = 0; i < columns.size(); i++) {
-                String fkColumn = columns.get(i).asText("");
-                String referencedColumn = validateReferencedColumns ? referencesColumns.get(i).asText("") : "";
+        return true;
+    }
 
-                boolean matched = actualTable.getColumns().stream()
-                        .anyMatch(column -> matches(column.getColumnName(), fkColumn, caseSensitive)
-                                && column.isForeignKey()
-                                && matchesOptional(column.getReferencesTable(), referencesTable, caseSensitive)
-                                && matchesOptional(column.getReferencesColumn(), referencedColumn, caseSensitive));
-                if (!matched) {
-                    return false;
-                }
+    private static List<TableMetadata.ForeignKeyMetadata> getActualForeignKeys(TableMetadata table) {
+        if (table.getForeignKeys() != null && !table.getForeignKeys().isEmpty()) {
+            return table.getForeignKeys();
+        }
+
+        List<TableMetadata.ForeignKeyMetadata> legacyForeignKeys = new ArrayList<>();
+        if (table.getColumns() == null) {
+            return legacyForeignKeys;
+        }
+
+        for (TableMetadata.ColumnMetadata column : table.getColumns()) {
+            if (!column.isForeignKey()) {
+                continue;
             }
+            legacyForeignKeys.add(TableMetadata.ForeignKeyMetadata.builder()
+                    .columns(List.of(column.getColumnName()))
+                    .referencesTable(column.getReferencesTable())
+                    .referencesColumns(column.getReferencesColumn() == null
+                            ? List.of()
+                            : List.of(column.getReferencesColumn()))
+                    .build());
+        }
+        return legacyForeignKeys;
+    }
+
+    private static boolean foreignKeyMatches(
+            TableMetadata.ForeignKeyMetadata actualForeignKey,
+            JsonNode rubricConstraint,
+            boolean caseSensitive) {
+        JsonNode expectedColumns = rubricConstraint.path("columns");
+        if (!foreignKeyLocalColumnsMatch(actualForeignKey, expectedColumns, caseSensitive)) {
+            return false;
+        }
+
+        String expectedReferencesTable = rubricConstraint.path("references_table").asText("");
+        if (!matchesOptional(actualForeignKey.getReferencesTable(), expectedReferencesTable, caseSensitive)) {
+            return false;
+        }
+
+        JsonNode expectedReferencesColumns = rubricConstraint.path("references_columns");
+        if (!expectedReferencesColumns.isArray() || expectedReferencesColumns.isEmpty()) {
             return true;
         }
 
+        return identifierListsMatch(
+                actualForeignKey.getReferencesColumns(),
+                expectedReferencesColumns,
+                caseSensitive);
+    }
+
+    private static boolean foreignKeyLocalColumnsMatch(
+            TableMetadata.ForeignKeyMetadata actualForeignKey,
+            JsonNode expectedColumns,
+            boolean caseSensitive) {
+        return identifierListsMatch(actualForeignKey.getColumns(), expectedColumns, caseSensitive);
+    }
+
+    private static boolean identifierListsMatch(
+            List<String> actualValues,
+            JsonNode expectedValues,
+            boolean caseSensitive) {
+        if (actualValues == null || expectedValues == null || !expectedValues.isArray()
+                || actualValues.size() != expectedValues.size()) {
+            return false;
+        }
+
+        for (int i = 0; i < actualValues.size(); i++) {
+            if (!matches(actualValues.get(i), expectedValues.get(i).asText(""), caseSensitive)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -1372,13 +1132,13 @@ public final class CreateTableRubricEvaluator {
         BigDecimal earned = tableBudget.subtract(tableDeductions).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         return Map.of(
                 "type", "info",
-                "message", String.format("Bang %s: %s diem", tableName, earned.stripTrailingZeros().toPlainString()),
+                "message", String.format("Bảng %s: %s điểm", tableName, earned.stripTrailingZeros().toPlainString()),
                 "points", earned.doubleValue());
     }
 
     private static String buildCappedMessage(String baseMessage, double requestedPenalty, double appliedPenalty) {
         if (requestedPenalty > 0 && appliedPenalty < requestedPenalty) {
-            return baseMessage + " (bang da ve 0 diem)";
+            return baseMessage + " (bảng đã về 0 điểm)";
         }
         return baseMessage;
     }

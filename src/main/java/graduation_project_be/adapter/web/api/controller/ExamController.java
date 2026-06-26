@@ -719,6 +719,23 @@ public class ExamController {
                                 ResponseDto.of(rubricJson, "OK", "Tạo rubric thành công!"));
         }
 
+        @PostMapping("/refine-rubric-testcases")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> refineRubricTestCases(
+                        @RequestBody @Valid RefineRubricTestCasesRequestDto requestDto) {
+                RefineRubricTestCasesResponse response = rubricTestingUsecase.refineRubricTestCases(
+                                requestDto.toRequest(objectMapper));
+
+                if (response == null) {
+                        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                                        .body(ResponseDto.of(null, "AI_UNAVAILABLE",
+                                                        "AI service is currently unavailable"));
+                }
+
+                return ResponseEntity.ok(
+                                ResponseDto.of(response, "OK", "Cập nhật rubric thành công!"));
+        }
+
         // ===== TEST GRADING =====
 
         @PostMapping("/{examId}/test-grade-insert")

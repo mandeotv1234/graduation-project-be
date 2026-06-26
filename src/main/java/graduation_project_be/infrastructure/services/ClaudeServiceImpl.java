@@ -397,6 +397,45 @@ public class ClaudeServiceImpl implements AIService {
         }
     }
 
+    @Override
+    public String refineGradingRubricTestCases(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String questionType,
+            String priorQuestionContext,
+            String schemaContext,
+            String currentRubricJson,
+            String teacherInstruction,
+            String targetMode,
+            String targetTestCaseId) {
+        try {
+            String prompt = RubricRefinementAiSupport.buildPrompt(
+                    correctQuery,
+                    questionContent,
+                    totalPoints,
+                    questionType,
+                    priorQuestionContext,
+                    schemaContext,
+                    currentRubricJson,
+                    teacherInstruction,
+                    targetMode,
+                    targetTestCaseId);
+            String refinedJson = callClaudeForJson(prompt);
+            if (refinedJson == null) {
+                return null;
+            }
+            return RubricRefinementAiSupport.normalizeProviderResponse(
+                    refinedJson,
+                    questionType,
+                    totalPoints,
+                    objectMapper);
+        } catch (Exception e) {
+            log.error("Không thể chỉnh rubric bằng Claude: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
     private String callClaudeForJson(String prompt) throws Exception {
         String text = claudeVmClient.askForJson(prompt, 600);
         log.info("Phản hồi Claude VM: textLength={}\n--- BẮT ĐẦU RAW TEXT ---\n{}\n--- KẾT THÚC RAW TEXT ---",

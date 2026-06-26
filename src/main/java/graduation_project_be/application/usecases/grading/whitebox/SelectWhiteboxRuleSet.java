@@ -21,6 +21,11 @@ import static graduation_project_be.application.usecases.grading.whitebox.Select
 final class SelectWhiteboxRuleSet {
 
     static final String QUESTION_TYPE = "SELECT_QUERY";
+    // FUNCTION / STORED_PROCEDURE / TRIGGER bodies may contain SELECT statements, so all
+    // SELECT rules are surfaced in their catalogs too. Parser-dependent rules (parserRequired=true)
+    // gracefully degrade to UNVERIFIED (pass, no deduction) when the routine body cannot be parsed.
+    private static final List<String> APPLICABLE_TYPES =
+            List.of(QUESTION_TYPE, "FUNCTION", "STORED_PROCEDURE", "TRIGGER");
     private static final WhiteboxPenaltyUnit PCT = WhiteboxPenaltyUnit.PERCENTAGE_OF_QUESTION;
 
     private SelectWhiteboxRuleSet() {
@@ -326,7 +331,7 @@ final class SelectWhiteboxRuleSet {
         entries.put(ruleId, new WhiteboxCatalogEntry(
                 ruleId, type, group, label, description, WhiteboxSeverity.WARNING_ONLY,
                 BigDecimal.valueOf(defaultPenaltyPct), PCT, parserRequired,
-                List.of(QUESTION_TYPE), params,
+                APPLICABLE_TYPES, params,
                 feature.name(), feature.label(), featureKind, policy, policy.label(), conflictsWith));
         evaluators.put(ruleId, evaluator);
     }

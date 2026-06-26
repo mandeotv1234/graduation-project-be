@@ -66,6 +66,35 @@ public class FallbackAIServiceImpl implements AIService {
     }
 
     @Override
+    public String refineGradingRubricTestCases(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String questionType,
+            String priorQuestionContext,
+            String schemaContext,
+            String currentRubricJson,
+            String teacherInstruction,
+            String targetMode,
+            String targetTestCaseId) {
+        return callWithFallback(
+                "refineGradingRubricTestCases",
+                provider -> provider.refineGradingRubricTestCases(
+                        correctQuery,
+                        questionContent,
+                        totalPoints,
+                        questionType,
+                        priorQuestionContext,
+                        schemaContext,
+                        currentRubricJson,
+                        teacherInstruction,
+                        targetMode,
+                        targetTestCaseId),
+                this::isValidJson,
+                null);
+    }
+
+    @Override
     public JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson) {
         return callWithFallback(
                 "generateSpecificationSchema",

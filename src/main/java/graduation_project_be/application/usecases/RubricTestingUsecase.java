@@ -16,6 +16,7 @@ import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngin
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxViolation;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
+import graduation_project_be.application.usecases.request.RefineRubricTestCasesRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
@@ -26,6 +27,7 @@ import graduation_project_be.application.usecases.response.BuildCreateTablesResp
 import graduation_project_be.application.usecases.response.BuildInsertTablesResponse;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.application.usecases.response.ExecuteSelectTestCaseResponse;
+import graduation_project_be.application.usecases.response.RefineRubricTestCasesResponse;
 import graduation_project_be.application.usecases.response.RubricTestGradeResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
@@ -89,34 +91,7 @@ public class RubricTestingUsecase {
         log.info(
                 "[generateGradingRubric] schemaContext length={} containsFOREIGN_KEY={} containsREFERENCES={}\n--- BEGIN schemaContext ---\n{}\n--- END schemaContext ---",
                 sc != null ? sc.length() : 0, hasForeignKey, hasReferences, sc);
-        String priorQuestionContext = "";
-        try {
-            List<GenerateGradingRubricRequest.ContextQuery> contextQueries = request.contextQueries();
-            if (contextQueries != null && !contextQueries.isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < contextQueries.size(); i++) {
-                    GenerateGradingRubricRequest.ContextQuery item = contextQueries.get(i);
-                    String itemQuery = item.correctQuery();
-                    if (itemQuery == null || itemQuery.isBlank()) {
-                        continue;
-                    }
-                    String itemType = item.questionType() == null ? "" : item.questionType();
-                    String itemContent = item.content() == null ? "" : item.content();
-                    sb.append("[QUESTION ").append(i + 1).append("] type=")
-                            .append(itemType.isBlank() ? "UNKNOWN" : itemType)
-                            .append("\n")
-                            .append("content=")
-                            .append(itemContent)
-                            .append("\n")
-                            .append("correctQuery=\n")
-                            .append(itemQuery)
-                            .append("\n\n");
-                }
-                priorQuestionContext = sb.toString();
-            }
-        } catch (Exception ignored) {
-            priorQuestionContext = "";
-        }
+        String priorQuestionContext = buildPriorQuestionContext(request.contextQueries());
 
         String rubricJson = aiService.generateGradingRubric(
                 request.correctQuery(),
@@ -127,6 +102,96 @@ public class RubricTestingUsecase {
                 request.schemaContext());
 
         return rubricJson;
+    }
+
+    public RefineRubricTestCasesResponse refineRubricTestCases(RefineRubricTestCasesRequest request) {
+        if (request.teacherInstruction() == null || request.teacherInstruction().isBlank()) {
+            throw new BadRequestException("Teacher instruction is required");
+        }
+        if (request.currentRubricJson() == null || request.currentRubricJson().isBlank()) {
+            throw new BadRequestException("Current rubric is required");
+        }
+
+        String refinedJson = aiService.refineGradingRubricTestCases(
+                request.correctQuery(),
+                request.questionContent(),
+                request.totalPoints(),
+                request.questionType(),
+                buildPriorQuestionContext(request.contextQueries()),
+                request.schemaContext(),
+                request.currentRubricJson(),
+                request.teacherInstruction(),
+                request.targetMode(),
+                request.targetTestCaseId());
+
+        if (refinedJson == null || refinedJson.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(refinedJson);
+            JsonNode rubric = root.has("rubric") ? root.get("rubric") : root;
+            return new RefineRubricTestCasesResponse(
+                    rubric,
+                    readStringArray(root, "changeSummary", "change_summary"),
+                    readStringArray(root, "warnings"));
+        } catch (Exception e) {
+            log.error("Không thể phân tích rubric AI đã chỉnh: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private String buildPriorQuestionContext(List<GenerateGradingRubricRequest.ContextQuery> contextQueries) {
+        try {
+            if (contextQueries == null || contextQueries.isEmpty()) {
+                return "";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < contextQueries.size(); i++) {
+                GenerateGradingRubricRequest.ContextQuery item = contextQueries.get(i);
+                String itemQuery = item.correctQuery();
+                if (itemQuery == null || itemQuery.isBlank()) {
+                    continue;
+                }
+                String itemType = item.questionType() == null ? "" : item.questionType();
+                String itemContent = item.content() == null ? "" : item.content();
+                sb.append("[QUESTION ").append(i + 1).append("] type=")
+                        .append(itemType.isBlank() ? "UNKNOWN" : itemType)
+                        .append("\n")
+                        .append("content=")
+                        .append(itemContent)
+                        .append("\n")
+                        .append("correctQuery=\n")
+                        .append(itemQuery)
+                        .append("\n\n");
+            }
+            return sb.toString();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private List<String> readStringArray(JsonNode root, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode values = root.get(fieldName);
+            if (values == null || !values.isArray()) {
+                continue;
+            }
+
+            List<String> result = new ArrayList<>();
+            values.forEach(value -> {
+                if (value != null && !value.isNull()) {
+                    String text = value.asText("");
+                    if (!text.isBlank()) {
+                        result.add(text);
+                    }
+                }
+            });
+            return result;
+        }
+
+        return List.of();
     }
 
     public RubricTestGradeResponse testGradeInsert(TestGradeInsertRequest request) {

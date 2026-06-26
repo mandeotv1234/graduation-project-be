@@ -19,6 +19,20 @@ public interface AIService {
             String priorQuestionContext,
             String schemaContext);
 
+    default String refineGradingRubricTestCases(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String questionType,
+            String priorQuestionContext,
+            String schemaContext,
+            String currentRubricJson,
+            String teacherInstruction,
+            String targetMode,
+            String targetTestCaseId) {
+        return null;
+    }
+
     JsonNode generateSpecificationSchema(String specificationDescription, JsonNode currentSchemaJson);
 
     /**

@@ -402,6 +402,45 @@ public class CodexServiceImpl implements AIService {
         }
     }
 
+    @Override
+    public String refineGradingRubricTestCases(
+            String correctQuery,
+            String questionContent,
+            double totalPoints,
+            String questionType,
+            String priorQuestionContext,
+            String schemaContext,
+            String currentRubricJson,
+            String teacherInstruction,
+            String targetMode,
+            String targetTestCaseId) {
+        try {
+            String prompt = RubricRefinementAiSupport.buildPrompt(
+                    correctQuery,
+                    questionContent,
+                    totalPoints,
+                    questionType,
+                    priorQuestionContext,
+                    schemaContext,
+                    currentRubricJson,
+                    teacherInstruction,
+                    targetMode,
+                    targetTestCaseId);
+            String refinedJson = callCodexForJson(prompt);
+            if (refinedJson == null) {
+                return null;
+            }
+            return RubricRefinementAiSupport.normalizeProviderResponse(
+                    refinedJson,
+                    questionType,
+                    totalPoints,
+                    objectMapper);
+        } catch (Exception e) {
+            log.error("Không thể chỉnh rubric bằng Codex: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
     private String callCodexForJson(String prompt) throws Exception {
         String text = codexVmClient.askForJson(prompt, CODEX_TIMEOUT_SECONDS);
         log.info("Phản hồi Codex VM: textLength={}\n--- BẮT ĐẦU RAW TEXT ---\n{}\n--- KẾT THÚC RAW TEXT ---",

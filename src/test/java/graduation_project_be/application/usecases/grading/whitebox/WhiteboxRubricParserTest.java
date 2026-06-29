@@ -187,7 +187,7 @@ class WhiteboxRubricParserTest {
     @Test
     void parseRules_penaltyValueDecimal() throws Exception {
         String json = """
-                [{"rule_id": "rule1", "penalty_value": 3.75}]
+                [{"rule_id": "rule1", "severity": "DEDUCTION", "penalty_value": 3.75}]
                 """;
         List<WhiteboxRule> rules = WhiteboxRubricParser.parseRules(mapper.readTree(json));
         assertEquals(0, new BigDecimal("3.75").compareTo(rules.get(0).penaltyValue()));
@@ -196,10 +196,25 @@ class WhiteboxRubricParserTest {
     @Test
     void parseRules_penaltyValueString() throws Exception {
         String json = """
-                [{"rule_id": "rule1", "penalty_value": "2.5"}]
+                [{"rule_id": "rule1", "severity": "DEDUCTION", "penalty_value": "2.5"}]
                 """;
         List<WhiteboxRule> rules = WhiteboxRubricParser.parseRules(mapper.readTree(json));
         assertEquals(0, new BigDecimal("2.5").compareTo(rules.get(0).penaltyValue()));
+    }
+
+    @Test
+    void parseRules_warningOnlyForcesZeroPenalty() throws Exception {
+        String json = """
+                [{
+                  "rule_id": "rule1",
+                  "severity": "WARNING_ONLY",
+                  "penalty_value": 25,
+                  "penalty_unit": "PERCENTAGE_OF_QUESTION"
+                }]
+                """;
+        List<WhiteboxRule> rules = WhiteboxRubricParser.parseRules(mapper.readTree(json));
+        assertEquals(0, BigDecimal.ZERO.compareTo(rules.get(0).penaltyValue()));
+        assertEquals(WhiteboxPenaltyUnit.ABSOLUTE, rules.get(0).penaltyUnit());
     }
 
     @Test

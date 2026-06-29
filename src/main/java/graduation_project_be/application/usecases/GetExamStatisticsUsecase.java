@@ -56,6 +56,10 @@ public class GetExamStatisticsUsecase {
 
         // ===== KPIs =====
         int totalSubmissions = results.size();
+        int totalSubmittedStudents = (int) results.stream()
+                .map(ExamResult::getStudentId)
+                .distinct()
+                .count();
 
         double averageScore = 0.0;
         double maxScore = 0.0;
@@ -176,6 +180,7 @@ public class GetExamStatisticsUsecase {
 
         return new GetExamStatisticsResponse(
                 totalSubmissions,
+                totalSubmittedStudents,
                 round2(averageScore),
                 round2(maxScore),
                 round2(minScore),

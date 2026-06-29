@@ -72,7 +72,8 @@ public class GradingSupport {
         if (sql == null || sql.isBlank()) {
             return sql;
         }
-        return sql.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
+        String normalized = sql.replace("{SCHEMA}", schemaName);
+        return normalized.replaceAll("(?i)\\bdbo\\s*\\.", "[" + schemaName + "].");
     }
 
     public List<String> splitBatchBeforeCreateRoutine(String batch) {

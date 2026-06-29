@@ -495,6 +495,29 @@ public class UsecasesConfiguration {
     }
 
     @Bean
+    MoodleSqlImportUsecase moodleSqlImportUsecase(
+            ExamRepository examRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamSubmissionRepository examSubmissionRepository,
+            ExamResultRepository examResultRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ClassRepository classRepository,
+            UserRepository userRepository,
+            CurrentUserService currentUserService,
+            GradingQueueService gradingQueueService) {
+        return new MoodleSqlImportUsecase(
+                examRepository,
+                examQuestionRepository,
+                examSubmissionRepository,
+                examResultRepository,
+                classEnrollmentRepository,
+                classRepository,
+                userRepository,
+                currentUserService,
+                gradingQueueService);
+    }
+
+    @Bean
     GetExamStatisticsUsecase getExamStatisticsUsecase(
             ExamRepository examRepository,
             ExamResultRepository examResultRepository,

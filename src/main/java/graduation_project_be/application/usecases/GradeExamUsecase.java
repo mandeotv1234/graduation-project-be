@@ -29,7 +29,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -739,7 +738,7 @@ public class GradeExamUsecase {
             GradingTrace trace = new GradingTrace(
                     GradingTrace.CURRENT_SCHEMA_VERSION,
                     GradingTrace.CURRENT_RUN_VERSION,
-                    LocalDateTime.now(),
+                    TimeUtils.now(),
                     attemptNumber,
                     rubricHash,
                     items

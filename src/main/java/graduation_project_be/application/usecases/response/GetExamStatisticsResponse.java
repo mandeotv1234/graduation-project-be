@@ -5,6 +5,7 @@ import java.util.List;
 public record GetExamStatisticsResponse(
         // ===== KPI Cards =====
         int totalSubmissions,
+        int totalSubmittedStudents,
         double averageScore,
         double maxScore,
         double minScore,

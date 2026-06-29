@@ -6,6 +6,7 @@ import java.util.List;
 
 public record GetExamStatisticsResponseDto(
         int totalSubmissions,
+        int totalSubmittedStudents,
         double averageScore,
         double maxScore,
         double minScore,
@@ -67,6 +68,7 @@ public record GetExamStatisticsResponseDto(
 
         return new GetExamStatisticsResponseDto(
                 r.totalSubmissions(),
+                r.totalSubmittedStudents(),
                 r.averageScore(),
                 r.maxScore(),
                 r.minScore(),

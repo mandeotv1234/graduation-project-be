@@ -377,80 +377,21 @@ public class SelectQuestionGrader {
                 ? new ArrayList<>()
                 : new ArrayList<>(actualRows.get(0).keySet());
 
-        List<String> effectiveExpectedColumns = expectedColumns == null ? new ArrayList<>()
-                : expectedColumns.stream()
-                        .filter(col -> col != null && !col.isBlank())
-                        .collect(Collectors.toCollection(ArrayList::new));
-
-        if (effectiveExpectedColumns.isEmpty() || actualColumns.isEmpty()) {
+        List<SelectResultDiff.SelectResultEdit> edits =
+                SelectResultDiff.collectColumnEdits(expectedColumns, actualColumns);
+        if (edits.isEmpty()) {
             return BigDecimal.ZERO;
         }
 
-        int nameMismatchAtSamePosition = 0;
-        int minCols = Math.min(effectiveExpectedColumns.size(), actualColumns.size());
-        for (int i = 0; i < minCols; i++) {
-            if (!effectiveExpectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                nameMismatchAtSamePosition++;
+        SelectResultScorer.ScoringResult result =
+                SelectResultScorer.score(edits, selectRules, maxTotalPoints, support);
+        for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+            addSelectEditTrace(null, "Cấu trúc cột SELECT", applied, maxTotalPoints, "SELECT structural rubric");
+            if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
+                appendSelectIssue(issues, "[Cấu trúc cột] " + describeAppliedEdit(applied));
             }
         }
-        int trulyMissingColumns = Math.max(0, effectiveExpectedColumns.size() - actualColumns.size());
-        int trulyExtraColumns = Math.max(0, actualColumns.size() - effectiveExpectedColumns.size());
-        int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
-        int extraColumns = trulyExtraColumns;
-
-        int columnOrderViolations = 0;
-        if (nameMismatchAtSamePosition == 0
-                && trulyMissingColumns == 0
-                && trulyExtraColumns == 0
-                && !sameColumnOrderIgnoreCase(effectiveExpectedColumns, actualColumns)) {
-            columnOrderViolations = 1;
-        }
-
-        if (nameMismatchAtSamePosition == 0 && missingColumns == 0 && extraColumns == 0
-                && columnOrderViolations == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        List<SelectRuleApplication> applications = List.of(
-                applySelectRule(selectRules, "COLUMN", "NOT_EQUAL", nameMismatchAtSamePosition,
-                        maxTotalPoints, 0.0, "sai tên cột ở " + nameMismatchAtSamePosition + " vị trí"),
-                applySelectRule(selectRules, "COLUMN", "IS_MISSING", trulyMissingColumns,
-                        maxTotalPoints, 0.0, "thiếu " + trulyMissingColumns + " cột"),
-                applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
-                        maxTotalPoints, 0.0, "dư " + extraColumns + " cột"),
-                applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                        maxTotalPoints, 0.0, "sai thứ tự cột"));
-
-        BigDecimal totalDeduction = BigDecimal.ZERO;
-        boolean failAll = false;
-        for (SelectRuleApplication application : applications) {
-            if (!application.violationPresent()) {
-                continue;
-            }
-            addSelectRuleTrace(
-                    null,
-                    "Cấu trúc cột SELECT",
-                    application,
-                    maxTotalPoints,
-                    "SELECT structural rubric");
-            if (application.failAllTriggered()) {
-                failAll = true;
-            }
-            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                totalDeduction = totalDeduction.add(application.deduction());
-            }
-            if (application.message() != null && !application.message().isBlank()) {
-                appendSelectIssue(issues, "[Cấu trúc cột] " + application.message());
-            }
-        }
-
-        if (failAll) {
-            return maxTotalPoints.setScale(2, RoundingMode.HALF_UP);
-        }
-        if (totalDeduction.compareTo(maxTotalPoints) > 0) {
-            totalDeduction = maxTotalPoints;
-        }
-        return totalDeduction.setScale(2, RoundingMode.HALF_UP);
+        return result.totalDeduction().setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateSelectCaseDeductionForTestCase(
@@ -478,28 +419,33 @@ public class SelectQuestionGrader {
             effectiveExpectedColumns = new ArrayList<>(actualColumns);
         }
 
-        List<String> comparisonColumns = !effectiveExpectedColumns.isEmpty()
-                ? new ArrayList<>(effectiveExpectedColumns)
-                : new ArrayList<>(actualColumns);
-        if (comparisonColumns.isEmpty() && !safeExpectedRows.isEmpty()) {
-            comparisonColumns.addAll(safeExpectedRows.get(0).keySet());
-        }
+        JsonNode cellNotEqualRule = support.findInsertRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
+        JsonNode cellNullRule = support.findInsertRule(selectRules, "CELL_VALUE", "IS_NULL");
+        JsonNode cellCompareModifiers = support.firstNonEmptyModifiers(
+                support.extractInsertRuleModifiers(cellNotEqualRule),
+                support.extractInsertRuleModifiers(cellNullRule));
 
-        List<Map<String, Object>> remappedActualRows = remapActualRowsByPosition(
-                safeActualRows,
+        // SORT_ASC on the ROW_ORDER rule means "accept any row order" -> grade order-insensitive
+        // (best-match pairing, no ROW_ORDER penalty).
+        JsonNode rowOrderRule = support.findInsertRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
+        boolean orderSensitive = strictOrdering
+                && !(rowOrderRule != null && support.hasInsertModifier(rowOrderRule, "SORT_ASC"));
+
+        List<SelectResultDiff.SelectResultEdit> edits = SelectResultDiff.collectRowAndCellEdits(
+                effectiveExpectedColumns,
                 actualColumns,
-                effectiveExpectedColumns);
-
-        if (compareSelectResultStrict(remappedActualRows, safeExpectedRows, strictOrdering, comparisonColumns)) {
+                safeExpectedRows,
+                safeActualRows,
+                orderSensitive,
+                cellCompareModifiers,
+                support);
+        if (edits.isEmpty()) {
             return BigDecimal.ZERO;
         }
 
         int expectedRowsCount = safeExpectedRows.size();
         int actualRowsCount = safeActualRows.size();
-        int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
-        int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
-
-        if (missingRows > 0 || extraRows > 0) {
+        if (expectedRowsCount != actualRowsCount) {
             appendSelectIssue(issues, "[" + caseId + "][CARDINAL_MISMATCH] Trả " + actualRowsCount
                     + " dòng, đáp án " + expectedRowsCount + " dòng.");
         } else if (expectedRowsCount > 0) {
@@ -507,84 +453,17 @@ public class SelectQuestionGrader {
                     + ") nhưng giá trị sai.");
         }
 
-        JsonNode rowOrderRule = support.findInsertRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
-        int rowOrderViolations = 0;
-        if (strictOrdering && rowOrderRule != null && !support.hasInsertModifier(rowOrderRule, "SORT_ASC")) {
-            rowOrderViolations = countSelectRowOrderViolations(remappedActualRows, safeExpectedRows, comparisonColumns);
-            if (rowOrderViolations == 0) {
-                rowOrderViolations = 1;
-            }
-        }
-
-        JsonNode cellNotEqualRule = support.findInsertRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
-        JsonNode cellNullRule = support.findInsertRule(selectRules, "CELL_VALUE", "IS_NULL");
-        JsonNode cellCompareModifiers = support.firstNonEmptyModifiers(
-                support.extractInsertRuleModifiers(cellNotEqualRule),
-                support.extractInsertRuleModifiers(cellNullRule));
-
-        List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                remappedActualRows,
-                safeExpectedRows,
-                comparisonColumns,
-                strictOrdering,
-                cellCompareModifiers);
-        int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
-        int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
-
-        List<SelectRuleApplication> applications = List.of(
-                applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
-                        caseMaxPenalty, 0.0, "thiếu " + missingRows + " dòng"),
-                applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
-                        caseMaxPenalty, 0.0, "dư " + extraRows + " dòng"),
-                applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
-                        caseMaxPenalty, 0.0, "sai " + wrongCells + " ô dữ liệu"),
-                applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
-                        caseMaxPenalty, 0.0, "null " + nullViolations + " cells"),
-                applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
-                        caseMaxPenalty, 0.0, "sai thứ tự dòng"));
-
-        BigDecimal totalCaseDeduction = BigDecimal.ZERO;
-        int matchedRuleCount = 0;
-        boolean failAllTriggered = false;
+        SelectResultScorer.ScoringResult result =
+                SelectResultScorer.score(edits, selectRules, caseMaxPenalty, support);
         StringBuilder caseIssues = new StringBuilder();
-        for (SelectRuleApplication application : applications) {
-            if (!application.violationPresent()) {
-                continue;
-            }
-            addSelectRuleTrace(
-                    caseId,
-                    caseName,
-                    application,
-                    caseMaxPenalty,
-                    "SELECT test case rubric");
-            if (application.ruleMatched()) {
-                matchedRuleCount++;
-            }
-            if (application.failAllTriggered()) {
-                failAllTriggered = true;
-            }
-            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                totalCaseDeduction = totalCaseDeduction.add(application.deduction());
-            }
-            if (application.message() != null && !application.message().isBlank()) {
-                appendSelectIssue(caseIssues, application.message());
+        for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+            addSelectEditTrace(caseId, caseName, applied, caseMaxPenalty, "SELECT test case rubric");
+            if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
+                appendSelectIssue(caseIssues, describeAppliedEdit(applied));
             }
         }
 
-        if (failAllTriggered) {
-            totalCaseDeduction = caseMaxPenalty;
-        } else if (matchedRuleCount == 0) {
-            appendSelectIssue(issues,
-                    "[" + caseId + "] " + caseName
-                            + ": phát hiện sai khác nhưng không có rule SELECT tương ứng; không trừ điểm.");
-            return BigDecimal.ZERO;
-        }
-
-        if (totalCaseDeduction.compareTo(caseMaxPenalty) > 0) {
-            totalCaseDeduction = caseMaxPenalty;
-        }
-
-        BigDecimal rounded = totalCaseDeduction.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal rounded = result.totalDeduction().setScale(2, RoundingMode.HALF_UP);
         if (rounded.compareTo(BigDecimal.ZERO) > 0) {
             String detail = caseIssues.length() > 0 ? caseIssues.toString().trim() : "kết quả không khớp";
             appendSelectIssue(issues,
@@ -592,32 +471,6 @@ public class SelectQuestionGrader {
                             + " -> trừ " + rounded.toPlainString() + " điểm.");
         }
         return rounded;
-    }
-
-    private boolean compareSelectResultStrict(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            boolean strictOrdering,
-            List<String> comparisonColumns) {
-        if (actualRows == null || expectedRows == null || actualRows.size() != expectedRows.size()) {
-            return false;
-        }
-
-        List<String> actualSignatures = new ArrayList<>();
-        for (Map<String, Object> actualRow : actualRows) {
-            actualSignatures.add(buildSelectRowSignature(actualRow, comparisonColumns));
-        }
-
-        List<String> expectedSignatures = new ArrayList<>();
-        for (Map<String, Object> expectedRow : expectedRows) {
-            expectedSignatures.add(buildSelectRowSignature(expectedRow, comparisonColumns));
-        }
-
-        if (!strictOrdering) {
-            Collections.sort(actualSignatures);
-            Collections.sort(expectedSignatures);
-        }
-        return actualSignatures.equals(expectedSignatures);
     }
 
     private boolean containsForbiddenSchemaDdl(String sql) {
@@ -1089,43 +942,6 @@ public class SelectQuestionGrader {
         try {
             List<String> expectedColumns = extractSelectColumns(expected);
             List<String> actualColumns = extractSelectColumns(actual);
-            List<String> comparisonColumns = !expectedColumns.isEmpty() ? expectedColumns : actualColumns;
-
-            List<Map<String, Object>> remappedActual = remapActualRowsByPosition(
-                    actual, actualColumns, expectedColumns);
-
-            int expectedRowsCount = expected == null ? 0 : expected.size();
-            int actualRowsCount = actual == null ? 0 : actual.size();
-            int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
-            int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
-
-            int nameMismatchAtSamePosition = 0;
-            int minCols = Math.min(expectedColumns.size(), actualColumns.size());
-            for (int i = 0; i < minCols; i++) {
-                if (!expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                    nameMismatchAtSamePosition++;
-                }
-            }
-            int trulyMissingColumns = Math.max(0, expectedColumns.size() - actualColumns.size());
-            int trulyExtraColumns = Math.max(0, actualColumns.size() - expectedColumns.size());
-            int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
-            int extraColumns = trulyExtraColumns;
-
-            int columnOrderViolations = 0;
-            if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
-                    && !expectedColumns.isEmpty() && !actualColumns.isEmpty()
-                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) {
-                columnOrderViolations = 1;
-            }
-
-            JsonNode rowOrderRule = support.findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
-            int rowOrderViolations = 0;
-            if (requireStrictOrder && rowOrderRule != null && !support.hasInsertModifier(rowOrderRule, "SORT_ASC")) {
-                rowOrderViolations = countSelectRowOrderViolations(remappedActual, expected, comparisonColumns);
-                if (rowOrderViolations == 0) {
-                    rowOrderViolations = 1;
-                }
-            }
 
             JsonNode cellNotEqualRule = support.findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
             JsonNode cellNullRule = support.findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
@@ -1133,83 +949,33 @@ public class SelectQuestionGrader {
                     support.extractInsertRuleModifiers(cellNotEqualRule),
                     support.extractInsertRuleModifiers(cellNullRule));
 
-            List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                    remappedActual, expected, comparisonColumns, requireStrictOrder, cellCompareModifiers);
-            int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
-            int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+            // SORT_ASC on the ROW_ORDER rule means "accept any row order" -> grade order-insensitive.
+            JsonNode rowOrderRule = support.findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+            boolean orderSensitive = requireStrictOrder
+                    && !(rowOrderRule != null && support.hasInsertModifier(rowOrderRule, "SORT_ASC"));
 
-            double datasetPoints = datasetMaxPoints.doubleValue();
-            int expectedColumnsCount = Math.max(1, comparisonColumns.size());
-            int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
-            double rowPenaltyDefault = datasetPoints / expectedRowsForPenalty;
-            double columnPenaltyDefault = datasetPoints / expectedColumnsCount;
-            double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
+            List<SelectResultDiff.SelectResultEdit> edits = SelectResultDiff.collect(
+                    expectedColumns, actualColumns, expected, actual, orderSensitive, cellCompareModifiers, support);
+            SelectResultScorer.ScoringResult result =
+                    SelectResultScorer.score(edits, gradingRules, datasetMaxPoints, support);
 
-            List<SelectRuleApplication> applications = List.of(
-                    applySelectRule(gradingRules, "ROW", "IS_MISSING", missingRows,
-                            datasetMaxPoints, rowPenaltyDefault, "thiếu " + missingRows + " dòng"),
-                    applySelectRule(gradingRules, "ROW", "IS_EXTRA", extraRows,
-                            datasetMaxPoints, rowPenaltyDefault, "dư " + extraRows + " dòng"),
-                    applySelectRule(gradingRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
-                            datasetMaxPoints, cellPenaltyDefault, "sai " + wrongCells + " o du lieu"),
-                    applySelectRule(gradingRules, "CELL_VALUE", "IS_NULL", nullViolations,
-                            datasetMaxPoints, cellPenaltyDefault, "co " + nullViolations + " o gia tri rong"),
-                    applySelectRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
-                            datasetMaxPoints, rowPenaltyDefault, "sai thứ tự " + rowOrderViolations + " dòng"),
-                    applySelectRule(gradingRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                            datasetMaxPoints, columnPenaltyDefault, "sai thu tu cot ket qua"),
-                    applySelectRule(gradingRules, "COLUMN", "IS_MISSING", missingColumns,
-                            datasetMaxPoints, columnPenaltyDefault, "thiếu " + missingColumns + " cột"),
-                    applySelectRule(gradingRules, "COLUMN", "IS_EXTRA", extraColumns,
-                            datasetMaxPoints, columnPenaltyDefault, "du " + extraColumns + " cot"));
-
-            double earned = datasetPoints;
-            int matchedRuleCount = 0;
-            boolean failAllTriggered = false;
             StringBuilder issueBuilder = new StringBuilder();
-
-            for (SelectRuleApplication application : applications) {
-                if (!application.violationPresent())
-                    continue;
-                addSelectRuleTrace(
-                        null,
-                        "Kết quả SELECT",
-                        application,
-                        datasetMaxPoints,
-                        "SELECT result rubric");
-                if (application.ruleMatched())
-                    matchedRuleCount++;
-                if (application.failAllTriggered())
-                    failAllTriggered = true;
-                if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                    earned -= application.deduction().doubleValue();
-                }
-                if (application.message() != null && !application.message().isBlank()) {
-                    appendSelectIssue(issueBuilder, application.message());
+            for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+                addSelectEditTrace(null, "Kết quả SELECT", applied, datasetMaxPoints, "SELECT result rubric");
+                if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
+                    appendSelectIssue(issueBuilder, describeAppliedEdit(applied));
                 }
             }
 
-            if (failAllTriggered) {
-                earned = 0d;
-            } else if (matchedRuleCount == 0) {
-                // Violations exist but no rules matched -> don't deduct points
-                appendSelectIssue(issueBuilder,
-                        "Phát hiện sai lệch nhưng không có quy tắc chấm phù hợp -> không trừ điểm.");
-            }
-
-            if (earned < 0d)
-                earned = 0d;
-            if (earned > datasetPoints)
-                earned = datasetPoints;
-
-            BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal earnedPoints = datasetMaxPoints.subtract(result.totalDeduction())
+                    .max(BigDecimal.ZERO).min(datasetMaxPoints).setScale(8, RoundingMode.HALF_UP);
             BigDecimal delta = datasetMaxPoints.subtract(earnedPoints).abs();
-            boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
+            boolean allChecksPassed = !result.failAllTriggered() && delta.compareTo(new BigDecimal("0.0001")) <= 0;
             String message = issueBuilder.length() == 0
                     ? "Kết quả SELECT không khớp"
                     : issueBuilder.toString().trim();
 
-            return SelectDatasetDecision.ruleResult(allChecksPassed, failAllTriggered,
+            return SelectDatasetDecision.ruleResult(allChecksPassed, result.failAllTriggered(),
                     allChecksPassed ? null : message, earnedPoints);
         } catch (Exception e) {
             return SelectDatasetDecision.executionFailure("Lỗi chấm SELECT: " + e.getMessage());
@@ -1269,46 +1035,6 @@ public class SelectQuestionGrader {
 
             List<String> expectedColumns = extractSelectColumns(expected);
             List<String> actualColumns = extractSelectColumns(actual);
-            List<String> comparisonColumns = !expectedColumns.isEmpty() ? expectedColumns : actualColumns;
-
-            // Remap actual rows by column position so cell comparison works
-            // even when student uses different column aliases (e.g., missing AS).
-            List<Map<String, Object>> remappedActual = remapActualRowsByPosition(
-                    actual, actualColumns, expectedColumns);
-
-            int expectedRowsCount = expected == null ? 0 : expected.size();
-            int actualRowsCount = actual == null ? 0 : actual.size();
-            int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
-            int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
-
-            int nameMismatchAtSamePosition = 0;
-            int minCols = Math.min(expectedColumns.size(), actualColumns.size());
-            for (int i = 0; i < minCols; i++) {
-                if (!expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                    nameMismatchAtSamePosition++;
-                }
-            }
-            int trulyMissingColumns = Math.max(0, expectedColumns.size() - actualColumns.size());
-            int trulyExtraColumns = Math.max(0, actualColumns.size() - expectedColumns.size());
-
-            int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
-            int extraColumns = trulyExtraColumns;
-
-            int columnOrderViolations = 0;
-            if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
-                    && !expectedColumns.isEmpty() && !actualColumns.isEmpty()
-                    && !sameColumnOrderIgnoreCase(expectedColumns, actualColumns)) {
-                columnOrderViolations = 1;
-            }
-
-            JsonNode rowOrderRule = support.findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
-            int rowOrderViolations = 0;
-            if (requireStrictOrder && rowOrderRule != null && !support.hasInsertModifier(rowOrderRule, "SORT_ASC")) {
-                rowOrderViolations = countSelectRowOrderViolations(remappedActual, expected, comparisonColumns);
-                if (rowOrderViolations == 0) {
-                    rowOrderViolations = 1;
-                }
-            }
 
             JsonNode cellNotEqualRule = support.findInsertRule(gradingRules, "CELL_VALUE", "NOT_EQUAL");
             JsonNode cellNullRule = support.findInsertRule(gradingRules, "CELL_VALUE", "IS_NULL");
@@ -1316,107 +1042,36 @@ public class SelectQuestionGrader {
                     support.extractInsertRuleModifiers(cellNotEqualRule),
                     support.extractInsertRuleModifiers(cellNullRule));
 
-            List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                    remappedActual,
-                    expected,
-                    comparisonColumns,
-                    requireStrictOrder,
-                    cellCompareModifiers);
-            int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
-            int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
+            // SORT_ASC on the ROW_ORDER rule means "accept any row order" -> grade order-insensitive.
+            JsonNode rowOrderRule = support.findInsertRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER");
+            boolean orderSensitive = requireStrictOrder
+                    && !(rowOrderRule != null && support.hasInsertModifier(rowOrderRule, "SORT_ASC"));
 
-            double datasetPoints = datasetMaxPoints.doubleValue();
-            int expectedColumnsCount = Math.max(1, comparisonColumns.size());
-            int expectedRowsForPenalty = Math.max(1, expectedRowsCount);
-            double rowPenaltyDefault = datasetPoints / expectedRowsForPenalty;
-            double columnPenaltyDefault = datasetPoints / expectedColumnsCount;
-            double cellPenaltyDefault = rowPenaltyDefault / expectedColumnsCount;
+            List<SelectResultDiff.SelectResultEdit> edits = SelectResultDiff.collect(
+                    expectedColumns, actualColumns, expected, actual, orderSensitive, cellCompareModifiers, support);
+            SelectResultScorer.ScoringResult result =
+                    SelectResultScorer.score(edits, gradingRules, datasetMaxPoints, support);
 
-            List<SelectRuleApplication> applications = List.of(
-                    applySelectRule(gradingRules, "ROW", "IS_MISSING", missingRows,
-                            datasetMaxPoints, rowPenaltyDefault,
-                            "thiếu " + missingRows + " dòng"),
-                    applySelectRule(gradingRules, "ROW", "IS_EXTRA", extraRows,
-                            datasetMaxPoints, rowPenaltyDefault,
-                            "dư " + extraRows + " dòng"),
-                    applySelectRule(gradingRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
-                            datasetMaxPoints, cellPenaltyDefault,
-                            "sai " + wrongCells + " o du lieu"),
-                    applySelectRule(gradingRules, "CELL_VALUE", "IS_NULL", nullViolations,
-                            datasetMaxPoints, cellPenaltyDefault,
-                            "co " + nullViolations + " o gia tri rong"),
-                    applySelectRule(gradingRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
-                            datasetMaxPoints, rowPenaltyDefault,
-                            "sai thứ tự " + rowOrderViolations + " dòng"),
-                    applySelectRule(gradingRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                            datasetMaxPoints, columnPenaltyDefault,
-                            "sai thu tu cot ket qua"),
-                    applySelectRule(gradingRules, "COLUMN", "IS_MISSING", missingColumns,
-                            datasetMaxPoints, columnPenaltyDefault,
-                            "thiếu " + missingColumns + " cột"),
-                    applySelectRule(gradingRules, "COLUMN", "IS_EXTRA", extraColumns,
-                            datasetMaxPoints, columnPenaltyDefault,
-                            "du " + extraColumns + " cot"));
-
-            double earned = datasetPoints;
-            int matchedRuleCount = 0;
-            boolean failAllTriggered = false;
             StringBuilder issueBuilder = new StringBuilder();
-
-            for (SelectRuleApplication application : applications) {
-                if (!application.violationPresent()) {
-                    continue;
-                }
-                addSelectRuleTrace(
-                        null,
-                        datasetLabel,
-                        application,
-                        datasetMaxPoints,
+            for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+                addSelectEditTrace(null, datasetLabel, applied, datasetMaxPoints,
                         "SELECT dataset rubric: " + datasetLabel);
-
-                if (application.ruleMatched()) {
-                    matchedRuleCount++;
-                }
-
-                if (application.failAllTriggered()) {
-                    failAllTriggered = true;
-                }
-
-                if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                    earned -= application.deduction().doubleValue();
-                }
-
-                if (application.message() != null && !application.message().isBlank()) {
-                    appendSelectIssue(issueBuilder, application.message());
+                if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
+                    appendSelectIssue(issueBuilder, describeAppliedEdit(applied));
                 }
             }
 
-            if (failAllTriggered) {
-                earned = 0d;
-            } else if (matchedRuleCount == 0) {
-                // Violations exist but no rules matched -> don't deduct points
-                appendSelectIssue(issueBuilder,
-                        "Phát hiện sai lệch nhưng không có quy tắc chấm phù hợp trên " + datasetLabel
-                                + " -> không trừ điểm.");
-            }
-
-            if (earned < 0d) {
-                earned = 0d;
-            }
-            if (earned > datasetPoints) {
-                earned = datasetPoints;
-            }
-
-            BigDecimal earnedPoints = BigDecimal.valueOf(earned).setScale(8, RoundingMode.HALF_UP);
+            BigDecimal earnedPoints = datasetMaxPoints.subtract(result.totalDeduction())
+                    .max(BigDecimal.ZERO).min(datasetMaxPoints).setScale(8, RoundingMode.HALF_UP);
             BigDecimal delta = datasetMaxPoints.subtract(earnedPoints).abs();
-            boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
+            boolean allChecksPassed = !result.failAllTriggered() && delta.compareTo(new BigDecimal("0.0001")) <= 0;
             String message = issueBuilder.length() == 0
                     ? "Kết quả SELECT không khớp trên " + datasetLabel
                     : "[" + datasetLabel + "] " + issueBuilder.toString().trim();
 
             return SelectDatasetDecision.ruleResult(
                     allChecksPassed,
-                    failAllTriggered,
+                    result.failAllTriggered(),
                     allChecksPassed ? null : message,
                     earnedPoints);
         } catch (Exception e) {
@@ -1475,431 +1130,41 @@ public class SelectQuestionGrader {
         return new ArrayList<>(rows.get(0).keySet());
     }
 
-    private List<Map<String, Object>> remapActualRowsByPosition(
-            List<Map<String, Object>> actualRows,
-            List<String> actualColumns,
-            List<String> expectedColumns) {
-        if (actualRows == null || actualRows.isEmpty()
-                || expectedColumns == null || expectedColumns.isEmpty()) {
-            return actualRows != null ? actualRows : List.of();
-        }
-
-        boolean allMatch = actualColumns.size() >= expectedColumns.size();
-        if (allMatch) {
-            for (int i = 0; i < expectedColumns.size(); i++) {
-                if (i >= actualColumns.size()
-                        || !expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                    allMatch = false;
-                    break;
-                }
-            }
-        }
-        if (allMatch) {
-            return actualRows;
-        }
-
-        List<Map<String, Object>> remapped = new ArrayList<>();
-        for (Map<String, Object> actualRow : actualRows) {
-            Map<String, Object> newRow = new LinkedHashMap<>();
-            for (int i = 0; i < expectedColumns.size(); i++) {
-                String expectedCol = expectedColumns.get(i);
-                Object value = null;
-                if (i < actualColumns.size()) {
-                    String actualCol = actualColumns.get(i);
-                    if (actualRow.containsKey(actualCol)) {
-                        value = actualRow.get(actualCol);
-                    } else {
-                        for (Map.Entry<String, Object> entry : actualRow.entrySet()) {
-                            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(actualCol)) {
-                                value = entry.getValue();
-                                break;
-                            }
-                        }
-                    }
-                }
-                newRow.put(expectedCol, value);
-            }
-            remapped.add(newRow);
-        }
-        return remapped;
-    }
-
-    private boolean sameColumnOrderIgnoreCase(List<String> expectedColumns, List<String> actualColumns) {
-        if (expectedColumns == null || actualColumns == null) {
-            return false;
-        }
-        if (expectedColumns.size() != actualColumns.size()) {
-            return false;
-        }
-        for (int i = 0; i < expectedColumns.size(); i++) {
-            String expected = expectedColumns.get(i);
-            String actual = actualColumns.get(i);
-            if (expected == null && actual == null) {
-                continue;
-            }
-            if (expected == null || actual == null || !expected.equalsIgnoreCase(actual)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private int countSelectRowOrderViolations(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            List<String> columns) {
-        if (actualRows == null || expectedRows == null) {
-            return 0;
-        }
-
-        int limit = Math.min(actualRows.size(), expectedRows.size());
-        int violations = 0;
-        for (int i = 0; i < limit; i++) {
-            String actualSig = buildSelectRowSignature(actualRows.get(i), columns);
-            String expectedSig = buildSelectRowSignature(expectedRows.get(i), columns);
-            if (!actualSig.equals(expectedSig)) {
-                violations++;
-            }
-        }
-        return violations;
-    }
-
-    private String buildSelectRowSignature(Map<String, Object> row, List<String> columns) {
-        if (row == null) {
-            return "";
-        }
-
-        StringBuilder signature = new StringBuilder();
-        if (columns != null && !columns.isEmpty()) {
-            for (String column : columns) {
-                signature.append(support.normalizeValue(support.getRowValueIgnoreCase(row, column))).append("|||");
-            }
-            return signature.toString().toLowerCase(Locale.ROOT);
-        }
-
-        for (Object value : row.values()) {
-            signature.append(support.normalizeValue(value)).append("|||");
-        }
-        return signature.toString().toLowerCase(Locale.ROOT);
-    }
-
-    private List<SelectRowPair> buildSelectRowPairs(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            List<String> columns,
-            boolean strictOrdering,
-            JsonNode cellModifiers) {
-        if (actualRows == null || expectedRows == null || columns == null || columns.isEmpty()) {
-            return List.of();
-        }
-
-        List<SelectRowPair> pairs = new ArrayList<>();
-        if (strictOrdering) {
-            int limit = Math.min(actualRows.size(), expectedRows.size());
-            for (int i = 0; i < limit; i++) {
-                pairs.add(new SelectRowPair(actualRows.get(i), expectedRows.get(i)));
-            }
-            return pairs;
-        }
-
-        List<Map<String, Object>> remainingActualRows = new ArrayList<>(actualRows);
-        for (Map<String, Object> expectedRow : expectedRows) {
-            int matchedIndex = findBestSelectRowMatchIndex(
-                    remainingActualRows,
-                    expectedRow,
-                    columns,
-                    cellModifiers);
-            if (matchedIndex < 0) {
-                continue;
-            }
-
-            Map<String, Object> matchedRow = remainingActualRows.remove(matchedIndex);
-            pairs.add(new SelectRowPair(matchedRow, expectedRow));
-        }
-
-        return pairs;
-    }
-
-    private int findBestSelectRowMatchIndex(
-            List<Map<String, Object>> actualRows,
-            Map<String, Object> expectedRow,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (actualRows == null || actualRows.isEmpty()) {
-            return -1;
-        }
-
-        int bestIndex = -1;
-        int bestScore = -1;
-        for (int i = 0; i < actualRows.size(); i++) {
-            int score = scoreSelectRowMatch(actualRows.get(i), expectedRow, columns, cellModifiers);
-            if (score > bestScore) {
-                bestScore = score;
-                bestIndex = i;
-            }
-        }
-        return bestIndex;
-    }
-
-    private int scoreSelectRowMatch(
-            Map<String, Object> actualRow,
-            Map<String, Object> expectedRow,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (actualRow == null || expectedRow == null || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int score = 0;
-        for (String column : columns) {
-            Object actualValue = support.getRowValueIgnoreCase(actualRow, column);
-            Object expectedValue = support.getRowValueIgnoreCase(expectedRow, column);
-            if (support.valuesEqualByMatchTypeWithModifiers(
-                    actualValue,
-                    expectedValue,
-                    "EXACT",
-                    cellModifiers,
-                    false,
-                    false)) {
-                score++;
-            }
-        }
-        return score;
-    }
-
-    private int countSelectCellMismatches(
-            List<SelectRowPair> rowPairs,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int mismatches = 0;
-        for (SelectRowPair rowPair : rowPairs) {
-            for (String column : columns) {
-                Object actualValue = support.getRowValueIgnoreCase(rowPair.actualRow(), column);
-                Object expectedValue = support.getRowValueIgnoreCase(rowPair.expectedRow(), column);
-
-                boolean equals = support.valuesEqualByMatchTypeWithModifiers(
-                        actualValue,
-                        expectedValue,
-                        "EXACT",
-                        cellModifiers,
-                        false,
-                        false);
-                if (!equals) {
-                    mismatches++;
-                }
-            }
-        }
-
-        return mismatches;
-    }
-
-    private int countSelectNullViolations(
-            List<SelectRowPair> rowPairs,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int nullViolations = 0;
-        for (SelectRowPair rowPair : rowPairs) {
-            for (String column : columns) {
-                Object actualValue = support.getRowValueIgnoreCase(rowPair.actualRow(), column);
-                Object expectedValue = support.getRowValueIgnoreCase(rowPair.expectedRow(), column);
-
-                String normalizedActual = support.applyInsertModifiers(
-                        support.normalizeValueStr(actualValue, false, false),
-                        cellModifiers);
-                String normalizedExpected = support.applyInsertModifiers(
-                        support.normalizeValueStr(expectedValue, false, false),
-                        cellModifiers);
-
-                if (!support.isNullLike(normalizedExpected) && support.isNullLike(normalizedActual)) {
-                    nullViolations++;
-                }
-            }
-        }
-
-        return nullViolations;
-    }
-
-    private SelectRuleApplication applySelectRule(
-            JsonNode gradingRules,
-            String target,
-            String condition,
-            int violationCount,
-            BigDecimal datasetMaxPoints,
-            double defaultPenaltyPerViolation,
-            String violationSummary) {
-        if (violationCount <= 0) {
-            return SelectRuleApplication.noViolation();
-        }
-
-        JsonNode ruleNode = support.findInsertRule(gradingRules, target, condition);
-        if (ruleNode == null) {
-            return SelectRuleApplication.unmatchedViolation(target, condition, violationSummary);
-        }
-
-        SelectRuleDecision decision = resolveSelectRuleDecision(
-                ruleNode,
-                datasetMaxPoints,
-                defaultPenaltyPerViolation);
-
-        String ruleLabel = selectRuleLabel(target, condition);
-        BigDecimal configuredPenalty = decision.failAll()
-                ? datasetMaxPoints
-                : BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()));
-        if (decision.ignore()) {
-            String message = String.format(
-                    Locale.ROOT,
-                    "Rule %s bỏ qua vi phạm (%s).",
-                    ruleLabel,
-                    violationSummary);
-            return SelectRuleApplication.matchedViolation(
-                    target,
-                    condition,
-                    decision.action(),
-                    configuredPenalty,
-                    false,
-                    BigDecimal.ZERO,
-                    message,
-                    violationSummary);
-        }
-
-        if (decision.failAll()) {
-            String message = String.format(
-                    Locale.ROOT,
-                    "Rule %s kích hoạt FAIL_ALL (%s).",
-                    ruleLabel,
-                    violationSummary);
-            return SelectRuleApplication.matchedViolation(
-                    target,
-                    condition,
-                    decision.action(),
-                    configuredPenalty,
-                    true,
-                    BigDecimal.ZERO,
-                    message,
-                    violationSummary);
-        }
-
-        BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
-                .multiply(BigDecimal.valueOf(violationCount));
-
-        String message = buildSelectRuleMessage(
-                ruleLabel,
-                violationSummary,
-                deduction,
-                decision.action());
-        return SelectRuleApplication.matchedViolation(
-                target,
-                condition,
-                decision.action(),
-                configuredPenalty,
-                false,
-                deduction,
-                message,
-                violationSummary);
-    }
-
-    private SelectRuleDecision resolveSelectRuleDecision(
-            JsonNode ruleNode,
-            BigDecimal datasetMaxPoints,
-            double defaultPenaltyPerViolation) {
-        String action = ruleNode != null ? ruleNode.path("action").asText("").trim() : "";
-        if (action.isBlank()) {
-            action = "DEDUCT_POINTS";
-        }
-
-        String normalizedAction = action.toUpperCase(Locale.ROOT);
-        double safeDefaultPenalty = Math.max(0d, defaultPenaltyPerViolation);
-        double penaltyValue = ruleNode != null
-                ? support.readDoubleSetting(ruleNode.path("penalty_value"), -1d)
-                : -1d;
-
-        switch (normalizedAction) {
-            case "IGNORE":
-                return new SelectRuleDecision(normalizedAction, 0d, true, false);
-            case "FAIL_ALL":
-                return new SelectRuleDecision(normalizedAction, 0d, false, true);
-            case "FAIL_ITEM":
-                return new SelectRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
-            case "DEDUCT_PERCENTAGE": {
-                double penalty = penaltyValue >= 0d
-                        ? Math.max(0d, datasetMaxPoints.doubleValue() * penaltyValue / 100d)
-                        : safeDefaultPenalty;
-                return new SelectRuleDecision(normalizedAction, penalty, false, false);
-            }
-            case "DEDUCT_POINTS": {
-                double penalty = penaltyValue >= 0d
-                        ? Math.max(0d, penaltyValue)
-                        : safeDefaultPenalty;
-                return new SelectRuleDecision(normalizedAction, penalty, false, false);
-            }
-            default:
-                return new SelectRuleDecision("DEDUCT_POINTS", safeDefaultPenalty, false, false);
-        }
-    }
-
     private String selectRuleLabel(String target, String condition) {
         return target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
     }
 
-    private String buildSelectRuleMessage(
-            String ruleLabel,
-            String violationSummary,
-            BigDecimal deduction,
-            String action) {
-        String formattedDeduction = deduction.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
-        return String.format(
-                Locale.ROOT,
-                "Rule %s (%s, action=%s): trừ %s điểm.",
-                ruleLabel,
-                violationSummary,
-                action,
-                formattedDeduction);
+    private String describeAppliedEdit(SelectResultScorer.AppliedEdit applied) {
+        return SelectResultScorer.describe(applied);
     }
 
-    private void addSelectRuleTrace(
+    private void addSelectEditTrace(
             String caseId,
             String caseName,
-            SelectRuleApplication application,
+            SelectResultScorer.AppliedEdit applied,
             BigDecimal maxPoints,
             String configSummary) {
-        if (!GradingTraceCollector.isActive() || application == null || !application.violationPresent()) {
+        if (!GradingTraceCollector.isActive() || applied == null) {
             return;
         }
 
-        String target = application.target() == null ? "UNKNOWN" : application.target();
-        String condition = application.condition() == null ? "UNKNOWN" : application.condition();
-        String ruleLabel = selectRuleLabel(target, condition);
-        String message = application.message();
-        if (message == null || message.isBlank()) {
-            message = "Phát hiện " + application.violationSummary()
-                    + " nhưng không có rule " + ruleLabel + " tương ứng trong cấu hình.";
-        }
-
-        BigDecimal deductedPoints = application.failAllTriggered()
-                ? maxPoints
-                : application.deduction();
+        String ruleLabel = selectRuleLabel(applied.target(), applied.condition());
+        boolean deducted = applied.failAllTriggered() || applied.deduction().compareTo(BigDecimal.ZERO) > 0;
+        BigDecimal deductedPoints = applied.failAllTriggered() ? maxPoints : applied.deduction();
         GradingTraceCollector.add(new GradingTraceItem(
                 GradingTraceItem.KIND_RUBRIC_RULE,
-                application.ruleMatched() ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_WARN,
+                deducted ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_WARN,
                 "Rule " + ruleLabel,
-                message,
+                describeAppliedEdit(applied),
                 caseId,
                 caseName,
-                target,
-                condition,
-                application.action(),
-                application.configuredPenalty(),
+                applied.target(),
+                applied.condition(),
+                applied.action(),
+                applied.configuredPenalty(),
                 null,
                 maxPoints,
-                deductedPoints != null && deductedPoints.compareTo(BigDecimal.ZERO) > 0 ? deductedPoints : null,
+                deductedPoints.compareTo(BigDecimal.ZERO) > 0 ? deductedPoints : null,
                 null,
                 null,
                 configSummary));
@@ -1940,64 +1205,6 @@ public class SelectQuestionGrader {
     }
 
     private record SelectDatasetSpec(String datasetLabel, String datasetScript) {
-    }
-
-    private record SelectRowPair(Map<String, Object> actualRow, Map<String, Object> expectedRow) {
-    }
-
-    private record SelectRuleDecision(String action, double penaltyPerViolation, boolean ignore, boolean failAll) {
-    }
-
-    private record SelectRuleApplication(
-            boolean violationPresent,
-            boolean ruleMatched,
-            boolean failAllTriggered,
-            String target,
-            String condition,
-            String action,
-            BigDecimal configuredPenalty,
-            BigDecimal deduction,
-            String message,
-            String violationSummary) {
-        static SelectRuleApplication noViolation() {
-            return new SelectRuleApplication(false, false, false, null, null, null, null, BigDecimal.ZERO, null, null);
-        }
-
-        static SelectRuleApplication unmatchedViolation(String target, String condition, String violationSummary) {
-            return new SelectRuleApplication(
-                    true,
-                    false,
-                    false,
-                    target,
-                    condition,
-                    null,
-                    null,
-                    BigDecimal.ZERO,
-                    null,
-                    violationSummary);
-        }
-
-        static SelectRuleApplication matchedViolation(
-                String target,
-                String condition,
-                String action,
-                BigDecimal configuredPenalty,
-                boolean failAllTriggered,
-                BigDecimal deduction,
-                String message,
-                String violationSummary) {
-            return new SelectRuleApplication(
-                    true,
-                    true,
-                    failAllTriggered,
-                    target,
-                    condition,
-                    action,
-                    configuredPenalty,
-                    deduction,
-                    message,
-                    violationSummary);
-        }
     }
 
     private record SelectDatasetDecision(

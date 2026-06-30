@@ -7,9 +7,12 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.AIService;
+import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.GradingSupport;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
+import graduation_project_be.application.usecases.grading.QueryStructureFacts;
+import graduation_project_be.application.usecases.grading.SelectDatasetAdequacyLinter;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectResultDiff;
 import graduation_project_be.application.usecases.grading.SelectResultScorer;
@@ -82,8 +85,11 @@ public class RubricTestingUsecase {
     // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
     private final SelectQuestionGrader selectGrader;
     private final WhiteboxEngine whiteboxEngine;
-    // Stateless helper; constructed directly so it stays out of the generated constructor.
+    // Reused (read-only) to detect whether the correct query aggregates, gating the NULL-presence lint.
+    private final SelectQueryStructureAnalyzer queryStructureAnalyzer;
+    // Stateless helpers; constructed directly so they stay out of the generated constructor.
     private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
+    private final SelectDatasetAdequacyLinter adequacyLinter = new SelectDatasetAdequacyLinter();
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
         String sc = request.schemaContext();
@@ -1002,6 +1008,7 @@ public class RubricTestingUsecase {
                                 "message", "[" + caseId + "] Dùng kết quả đáp án giáo viên làm expected cho test case",
                                 "points", 0));
 
+                        checkDatasetAdequacy(caseId, correctQuery, teacherRows, details);
                         checkTrapDiscrimination(caseSchema, caseId, caseName, correctQuery, teacherRows, details);
                     } else {
                         JsonNode expectedResult = tc.path("expected_result");
@@ -1309,6 +1316,33 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    /**
+     * Runs the cheap authoring data-adequacy checks on the teacher reference rows already produced
+     * for this test case and surfaces any degenerate-dataset warnings to the teacher. Advisory only
+     * — it appends response details and never blocks. The query's aggregate/GROUP BY shape is passed
+     * to the linter so the output-shape checks are skipped for scalar-aggregate queries (whose single
+     * row is correct) and the column-NULL check is skipped when an aggregate may be NULL by design.
+     */
+    private void checkDatasetAdequacy(
+            String caseId,
+            String correctQuery,
+            List<Map<String, Object>> teacherRows,
+            List<Map<String, Object>> details) {
+        QueryStructureFacts facts = queryStructureAnalyzer.analyze(correctQuery);
+        boolean aggregatePresent = facts.parseOk() && !facts.aggregateFns().isEmpty();
+        boolean groupByPresent = facts.parseOk() && facts.hasGroupBy();
+        for (SelectDatasetAdequacyLinter.Finding finding
+                : adequacyLinter.lint(teacherRows, aggregatePresent, groupByPresent)) {
+            String prefix = finding.severity() == SelectDatasetAdequacyLinter.Severity.HARD_WARN
+                    ? "[" + caseId + "] ⚠ Dữ liệu test case yếu: "
+                    : "[" + caseId + "] Dữ liệu test case: ";
+            details.add(Map.of(
+                    "type", "warning",
+                    "message", prefix + finding.message(),
+                    "points", 0));
         }
     }
 

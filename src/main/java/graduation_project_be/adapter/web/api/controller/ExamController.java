@@ -2,6 +2,7 @@ package graduation_project_be.adapter.web.api.controller;
 
 import graduation_project_be.adapter.web.api.dtos.request.*;
 import graduation_project_be.adapter.web.api.dtos.response.*;
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.services.PdfStorageService;
 import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.request.*;
@@ -20,6 +21,9 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -84,6 +88,7 @@ public class ExamController {
         private final InitializePreviewSchemaUsecase initializePreviewSchemaUsecase;
         private final ClearPreviewSchemaUsecase clearPreviewSchemaUsecase;
         private final PreviewSubmitExamUsecase previewSubmitExamUsecase;
+        private final MoodleSqlImportUsecase moodleSqlImportUsecase;
 
         // ===== TEACHER ENDPOINTS =====
 
@@ -402,6 +407,32 @@ public class ExamController {
                                                 "Exam result detail retrieved successfully"));
         }
 
+        @PostMapping(value = "/{examId}/moodle-sql-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> previewMoodleSqlImport(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestPart("files") MultipartFile[] files) {
+                MoodleSqlImportPreviewResponse response = moodleSqlImportUsecase.preview(
+                                toMoodleSqlImportRequest(examId, files));
+                return ResponseEntity.ok(ResponseDto.of(
+                                MoodleSqlImportPreviewResponseDto.fromResponse(response),
+                                "OK",
+                                "SQL import preview generated successfully"));
+        }
+
+        @PostMapping(value = "/{examId}/moodle-sql-import/confirm", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> confirmMoodleSqlImport(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestPart("files") MultipartFile[] files) {
+                MoodleSqlImportConfirmResponse response = moodleSqlImportUsecase.confirm(
+                                toMoodleSqlImportRequest(examId, files));
+                return ResponseEntity.status(HttpStatus.ACCEPTED).body(ResponseDto.of(
+                                MoodleSqlImportConfirmResponseDto.fromResponse(response),
+                                "ACCEPTED",
+                                response.message()));
+        }
+
         @PatchMapping("/{examId}/results/{resultId}/submissions/{submissionId}/override")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> overrideSubmissionScore(
@@ -699,6 +730,32 @@ public class ExamController {
 
                 // Priority 3: Last resort (will be Docker Gateway if headers are missing)
                 return request.getRemoteAddr();
+        }
+
+        private MoodleSqlImportRequest toMoodleSqlImportRequest(Long examId, MultipartFile[] files) {
+                if (files == null || files.length == 0) {
+                        throw new BadRequestException("Cần upload ít nhất một file .sql.");
+                }
+
+                List<MoodleSqlImportRequest.UploadedSqlFile> uploadedFiles = Arrays.stream(files)
+                                .map(this::toUploadedSqlFile)
+                                .toList();
+                return new MoodleSqlImportRequest(examId, uploadedFiles);
+        }
+
+        private MoodleSqlImportRequest.UploadedSqlFile toUploadedSqlFile(MultipartFile file) {
+                if (file == null) {
+                        throw new BadRequestException("Có file SQL không hợp lệ trong danh sách upload.");
+                }
+                try {
+                        return new MoodleSqlImportRequest.UploadedSqlFile(
+                                        file.getOriginalFilename(),
+                                        new String(file.getBytes(), StandardCharsets.UTF_8),
+                                        file.getSize(),
+                                        file.getContentType());
+                } catch (IOException e) {
+                        throw new BadRequestException("Không đọc được file SQL: " + file.getOriginalFilename());
+                }
         }
 
         // ===== AI RUBRIC GENERATION =====

@@ -45,6 +45,10 @@ public final class WhiteboxRubricParser {
                     WhiteboxPenaltyUnit.class, WhiteboxPenaltyUnit.ABSOLUTE);
             WhiteboxSeverity severity = parseEnum(node.path("severity").asText(null),
                     WhiteboxSeverity.class, WhiteboxSeverity.WARNING_ONLY);
+            if (severity == WhiteboxSeverity.WARNING_ONLY) {
+                penaltyValue = BigDecimal.ZERO;
+                unit = WhiteboxPenaltyUnit.ABSOLUTE;
+            }
             String description = node.path("description").asText(null);
             JsonNode params = node.path("params");
             rules.add(new WhiteboxRule(ruleId.toUpperCase(Locale.ROOT), enabled, type,

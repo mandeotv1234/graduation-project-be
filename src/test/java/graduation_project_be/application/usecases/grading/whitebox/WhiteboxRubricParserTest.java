@@ -50,6 +50,39 @@ class WhiteboxRubricParserTest {
     }
 
     @Test
+    void parseRules_customRegexRuleKeepsParams() throws Exception {
+        String json = """
+                [
+                  {
+                    "rule_id": "CUSTOM_REGEX_abc123",
+                    "enabled": true,
+                    "type": "CUSTOM_REGEX",
+                    "penalty_value": 0.5,
+                    "penalty_unit": "ABSOLUTE",
+                    "severity": "DEDUCTION",
+                    "description": "Rule regex tùy chỉnh",
+                    "params": {
+                      "name": "Cấm NOLOCK",
+                      "policy": "FORBID",
+                      "pattern": "\\\\bNOLOCK\\\\b",
+                      "case_insensitive": true,
+                      "message": "Không được dùng NOLOCK"
+                    }
+                  }
+                ]
+                """;
+        List<WhiteboxRule> rules = WhiteboxRubricParser.parseRules(mapper.readTree(json));
+
+        assertEquals(1, rules.size());
+        WhiteboxRule rule = rules.get(0);
+        assertEquals("CUSTOM_REGEX_ABC123", rule.ruleId());
+        assertEquals(WhiteboxRuleType.CUSTOM_REGEX, rule.type());
+        assertEquals("Cấm NOLOCK", rule.params().path("name").asText());
+        assertEquals("\\bNOLOCK\\b", rule.params().path("pattern").asText());
+        assertTrue(rule.params().path("case_insensitive").asBoolean());
+    }
+
+    @Test
     void parseRules_ruleIdUpperCased() throws Exception {
         String json = """
                 [{"rule_id": "forbidden_subquery", "enabled": true}]

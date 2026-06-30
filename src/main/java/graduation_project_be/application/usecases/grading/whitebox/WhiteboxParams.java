@@ -63,6 +63,21 @@ public final class WhiteboxParams {
         return value.isEmpty() ? fallback : value;
     }
 
+    /** Reads a boolean param; accepts JSON booleans and "true"/"false" strings. */
+    public static boolean boolParam(WhiteboxRule rule, String name, boolean fallback) {
+        JsonNode params = rule.params();
+        if (params == null) return fallback;
+        JsonNode node = params.path(name);
+        if (node.isMissingNode() || node.isNull()) return fallback;
+        if (node.isBoolean()) return node.asBoolean(fallback);
+        if (node.isTextual()) {
+            String text = node.asText("").trim();
+            if ("true".equalsIgnoreCase(text)) return true;
+            if ("false".equalsIgnoreCase(text)) return false;
+        }
+        return fallback;
+    }
+
     private static void addToken(List<String> out, String raw) {
         String token = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
         if (!token.isEmpty() && !out.contains(token)) {

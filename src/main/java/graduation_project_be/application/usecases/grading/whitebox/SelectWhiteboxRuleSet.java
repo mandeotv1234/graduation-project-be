@@ -263,34 +263,6 @@ final class SelectWhiteboxRuleSet {
                 });
 
         // ---- Group 7: Generic function / keyword ----
-        reg(entries, evaluators, "FORBIDDEN_FUNCTION", WhiteboxRuleType.FORBIDDEN, "GENERIC",
-                "Cấm hàm cụ thể", "Cấm gọi các hàm liệt kê trong functions.",
-                10, false,
-                WhiteboxFeature.FUNCTION, WhiteboxFeatureKind.SET, WhiteboxPolicy.FORBID_ANY,
-                List.of(),
-                List.of(WhiteboxParamSpec.stringList("functions", "Danh sách hàm", true)),
-                (ctx, rule) -> {
-                    List<String> fns = WhiteboxParams.stringList(rule, "functions");
-                    if (fns.isEmpty()) {
-                        return WhiteboxEvaluation.pass();
-                    }
-                    String hit = firstFunctionPresent(ctx.cleanedSql(), fns);
-                    return WhiteboxEvaluation.of(hit != null, "Dùng hàm bị cấm: " + hit);
-                });
-        reg(entries, evaluators, "REQUIRED_FUNCTION", WhiteboxRuleType.REQUIRED, "GENERIC",
-                "Bắt buộc hàm cụ thể", "Bắt buộc gọi tất cả các hàm liệt kê trong functions.",
-                10, false,
-                WhiteboxFeature.FUNCTION, WhiteboxFeatureKind.SET, WhiteboxPolicy.REQUIRE_ALL,
-                List.of(),
-                List.of(WhiteboxParamSpec.stringList("functions", "Danh sách hàm", true)),
-                (ctx, rule) -> {
-                    List<String> fns = WhiteboxParams.stringList(rule, "functions");
-                    if (fns.isEmpty()) {
-                        return WhiteboxEvaluation.pass();
-                    }
-                    List<String> missing = missingFunctions(ctx.cleanedSql(), fns);
-                    return WhiteboxEvaluation.of(!missing.isEmpty(), "Thiếu hàm: " + missing);
-                });
         reg(entries, evaluators, "FORBIDDEN_KEYWORD", WhiteboxRuleType.FORBIDDEN, "GENERIC",
                 "Cấm từ khóa cụ thể", "Cấm dùng các từ khóa liệt kê trong keywords.",
                 10, false,
@@ -304,20 +276,6 @@ final class SelectWhiteboxRuleSet {
                     }
                     String hit = firstKeywordPresent(ctx.cleanedSql(), kws);
                     return WhiteboxEvaluation.of(hit != null, "Dùng từ khóa bị cấm: " + hit);
-                });
-        reg(entries, evaluators, "REQUIRED_KEYWORD", WhiteboxRuleType.REQUIRED, "GENERIC",
-                "Bắt buộc từ khóa cụ thể", "Bắt buộc dùng tất cả các từ khóa liệt kê trong keywords.",
-                10, false,
-                WhiteboxFeature.KEYWORD, WhiteboxFeatureKind.SET, WhiteboxPolicy.REQUIRE_ALL,
-                List.of(),
-                List.of(WhiteboxParamSpec.stringList("keywords", "Danh sách từ khóa", true)),
-                (ctx, rule) -> {
-                    List<String> kws = WhiteboxParams.stringList(rule, "keywords");
-                    if (kws.isEmpty()) {
-                        return WhiteboxEvaluation.pass();
-                    }
-                    List<String> missing = missingKeywords(ctx.cleanedSql(), kws);
-                    return WhiteboxEvaluation.of(!missing.isEmpty(), "Thiếu từ khóa: " + missing);
                 });
     }
 

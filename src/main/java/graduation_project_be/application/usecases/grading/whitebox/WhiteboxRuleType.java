@@ -12,5 +12,6 @@ package graduation_project_be.application.usecases.grading.whitebox;
 public enum WhiteboxRuleType {
     FORBIDDEN,
     REQUIRED,
-    LIMIT
+    LIMIT,
+    CUSTOM_REGEX
 }

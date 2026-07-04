@@ -9,3 +9,15 @@ app:
   upload:
     pdf-dir: ${APP_UPLOAD_PDF_DIR:uploads/exams/pdf}
 
+grading:
+  worker:
+    enabled: ${GRADING_WORKER_ENABLED:true}
+    concurrency: ${GRADING_WORKER_CONCURRENCY:1}
+    max-jobs-per-cycle: ${GRADING_MAX_JOBS_PER_CYCLE:3}
+    stale-timeout-seconds: ${GRADING_STALE_TIMEOUT_SECONDS:300}
+
+exam:
+  auto-submit-worker:
+    enabled: ${AUTO_SUBMIT_WORKER_ENABLED:true}
+  heartbeat-sweep:
+    enabled: ${HEARTBEAT_SWEEP_ENABLED:true}

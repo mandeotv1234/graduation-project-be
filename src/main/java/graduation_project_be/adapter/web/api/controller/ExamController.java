@@ -794,6 +794,17 @@ public class ExamController {
                                 ResponseDto.of(response, "OK", "Cập nhật rubric thành công!"));
         }
 
+        @PostMapping("/rubric-agent/run")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> runRubricQaAgent(
+                        @RequestBody @Valid RubricAgentRunRequestDto requestDto) {
+                RubricAgentRunResponse response = rubricTestingUsecase.runRubricQaAgent(
+                                requestDto.toRequest(objectMapper));
+
+                return ResponseEntity.ok(
+                                ResponseDto.of(response, "OK", "Rubric QA agent completed"));
+        }
+
         // ===== TEST GRADING =====
 
         @PostMapping("/{examId}/test-grade-insert")

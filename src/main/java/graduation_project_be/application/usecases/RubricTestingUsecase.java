@@ -1097,37 +1097,18 @@ public class RubricTestingUsecase {
                 finalEarned = maxPoints;
             }
 
-            // Apply whitebox on top of rubric test-case score (mirrors GradeExamUsecase.applySelectWhitebox)
-            ExamQuestion whiteboxQ = ExamQuestion.builder()
-                    .examId(request.examId())
-                    .questionType(QuestionType.SELECT_QUERY)
-                    .points(maxPoints)
-                    .gradingRubric(gradingRubric)
-                    .build();
-            BigDecimal preWhiteboxEarned = finalEarned;
-            GradeDecision whiteboxAdjusted = applySelectWhiteboxPreview(whiteboxQ, studentQuery,
-                    allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0
-                            ? GradeDecision.pass(finalEarned) : GradeDecision.partial(finalEarned, ""));
-            if (whiteboxAdjusted.scoreEarned() != null) {
-                finalEarned = whiteboxAdjusted.scoreEarned();
-                if (!whiteboxAdjusted.isCorrect()) allPassed = false;
-                BigDecimal whiteboxDeduction = preWhiteboxEarned.subtract(finalEarned);
-                if (whiteboxDeduction.compareTo(BigDecimal.ZERO) > 0) {
-                    String wbMsg = (whiteboxAdjusted.errorMessage() != null && !whiteboxAdjusted.errorMessage().isBlank())
-                            ? whiteboxAdjusted.errorMessage()
-                            : "Bị trừ " + whiteboxDeduction.toPlainString() + " điểm do vi phạm quy tắc whitebox (phương pháp viết câu lệnh).";
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", "[Whitebox] " + wbMsg,
-                            "points", -whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue()));
-                }
-            }
-
-            return RubricTestGradeResponse.of(
+            RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
                     finalEarned.doubleValue(),
                     totalPoints,
                     allPassed && totalDeduction.compareTo(BigDecimal.ZERO) <= 0,
-                    details);
+                    details,
+                    totalDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue());
+            return applyWhiteboxPreviewResponse(
+                    QuestionType.SELECT_QUERY.name(),
+                    studentQuery,
+                    payload,
+                    totalPoints,
+                    blackbox);
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi chấm thử SELECT: " + e.getMessage(), e);
@@ -1170,70 +1151,33 @@ public class RubricTestingUsecase {
         try {
             GradeDecision decision = selectGrader.gradeSelectAcrossDatasets(
                     specification, previewSchema, question, request.studentQuery());
-            decision = applySelectWhiteboxPreview(question, request.studentQuery(), decision);
             BigDecimal earned = decision.scoreEarned() != null ? decision.scoreEarned() : BigDecimal.ZERO;
             String message = decision.isCorrect()
                     ? "Chấm so sánh dataset: kết quả khớp đáp án mẫu"
                     : (decision.errorMessage() != null && !decision.errorMessage().isBlank()
                             ? decision.errorMessage()
                             : "Kết quả không khớp đáp án mẫu");
-            return RubricTestGradeResponse.of(
+            RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
                     earned.doubleValue(),
                     totalPoints,
                     decision.isCorrect(),
                     List.of(Map.of(
                             "type", decision.isCorrect() ? "success" : "error",
                             "message", message,
-                            "points", earned.doubleValue())));
+                            "points", earned.doubleValue())),
+                    Math.max(0d, totalPoints - earned.doubleValue()));
+            return applyWhiteboxPreviewResponse(
+                    QuestionType.SELECT_QUERY.name(),
+                    request.studentQuery(),
+                    gradingPayloadNode(question),
+                    totalPoints,
+                    blackbox);
         } finally {
             try {
                 examSchemaService.dropSchema(previewSchema);
             } catch (Exception ignore) {
             }
         }
-    }
-
-    private GradeDecision applySelectWhiteboxPreview(ExamQuestion question, String studentQuery, GradeDecision blackbox) {
-        BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
-        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
-                graduation_project_be.domain.models.QuestionType.SELECT_QUERY.name(),
-                studentQuery, gradingPayloadNode(question), points, false);
-        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
-            return blackbox;
-        }
-        BigDecimal blackboxScore = blackbox.scoreEarned() == null ? BigDecimal.ZERO : blackbox.scoreEarned();
-        BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction()).setScale(2, java.math.RoundingMode.HALF_UP);
-        if (finalScore.signum() < 0) finalScore = BigDecimal.ZERO;
-        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
-            return GradeDecision.pass(finalScore);
-        }
-        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
-                ? blackbox.errorMessage()
-                : "Bị trừ " + whitebox.cappedDeduction().toPlainString() + " điểm do vi phạm quy tắc whitebox.";
-        return GradeDecision.partial(finalScore, message);
-    }
-
-    private GradeDecision applyRoutineWhiteboxPreview(String questionType, String studentQuery,
-                                                       JsonNode gradingPayloadNode, double totalPoints,
-                                                       GradeDecision blackbox) {
-        java.math.BigDecimal points = java.math.BigDecimal.valueOf(totalPoints);
-        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
-                questionType, studentQuery, gradingPayloadNode, points, false);
-        if (whitebox.isEmpty() || whitebox.cappedDeduction().signum() <= 0) {
-            return blackbox;
-        }
-        java.math.BigDecimal blackboxScore = blackbox.scoreEarned() == null
-                ? java.math.BigDecimal.ZERO : blackbox.scoreEarned();
-        java.math.BigDecimal finalScore = blackboxScore.subtract(whitebox.cappedDeduction())
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-        if (finalScore.signum() < 0) finalScore = java.math.BigDecimal.ZERO;
-        if (points.signum() > 0 && finalScore.compareTo(points) >= 0) {
-            return GradeDecision.pass(finalScore);
-        }
-        String message = (blackbox.errorMessage() != null && !blackbox.errorMessage().isBlank())
-                ? blackbox.errorMessage()
-                : "Bị trừ " + whitebox.cappedDeduction().toPlainString() + " điểm do vi phạm quy tắc whitebox.";
-        return GradeDecision.partial(finalScore, message);
     }
 
     private com.fasterxml.jackson.databind.JsonNode gradingPayloadNode(ExamQuestion question) {
@@ -3278,6 +3222,47 @@ public class RubricTestingUsecase {
         }
     }
 
+    private RubricTestGradeResponse applyWhiteboxPreviewResponse(
+            String questionType,
+            String studentQuery,
+            JsonNode gradingPayload,
+            double totalPoints,
+            RubricTestGradeResponse blackbox) {
+        BigDecimal questionPoints = BigDecimal.valueOf(totalPoints);
+        WhiteboxResult whitebox = whiteboxEngine.evaluateFromPayload(
+                questionType,
+                studentQuery,
+                gradingPayload,
+                questionPoints,
+                false);
+
+        BigDecimal whiteboxDeduction = whitebox.cappedDeduction() == null
+                ? BigDecimal.ZERO
+                : whitebox.cappedDeduction();
+        BigDecimal blackboxScore = BigDecimal.valueOf(blackbox.earnedPoints())
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal finalScore = blackboxScore.subtract(whiteboxDeduction)
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        List<Map<String, Object>> details = new ArrayList<>(blackbox.details());
+        if (!whitebox.isEmpty()) {
+            appendWhiteboxDetails(details, whitebox, whiteboxDeduction);
+        }
+
+        double blackboxDeductions = blackbox.totalDeductions() == null
+                ? Math.max(0d, totalPoints - blackbox.earnedPoints())
+                : blackbox.totalDeductions();
+        return RubricTestGradeResponse.withWhitebox(
+                blackboxScore.doubleValue(),
+                whiteboxDeduction.setScale(2, RoundingMode.HALF_UP).doubleValue(),
+                finalScore.doubleValue(),
+                totalPoints,
+                blackbox.allPassed() && whiteboxDeduction.signum() <= 0,
+                details,
+                blackboxDeductions + whiteboxDeduction.doubleValue());
+    }
+
     private int parseIntegerSafe(String rawValue) {
         if (rawValue == null || rawValue.isBlank()) {
             return 0;
@@ -3572,32 +3557,21 @@ public class RubricTestingUsecase {
                 finalScore = 0;
             }
 
-            // Apply routine white-box on top of black-box score (mirrors testGradeSelect)
             String questionTypeStr = isStoredProcedureRubric(rubric, expectedRoutines)
                     ? "STORED_PROCEDURE" : "FUNCTION";
-            GradeDecision bbDecision = allPassed
-                    ? GradeDecision.pass(java.math.BigDecimal.valueOf(finalScore))
-                    : GradeDecision.partial(java.math.BigDecimal.valueOf(finalScore), null);
-            GradeDecision wbDecision = applyRoutineWhiteboxPreview(
-                    questionTypeStr, studentQuery,
-                    objectMapper.readTree(gradingRubricJson).path("grading_payload"),
-                    totalPoints, bbDecision);
-            if (wbDecision.scoreEarned() != null
-                    && wbDecision.scoreEarned().doubleValue() < finalScore) {
-                double whiteboxDeduction = finalScore - wbDecision.scoreEarned().doubleValue();
-                finalScore = wbDecision.scoreEarned().doubleValue();
-                allPassed = wbDecision.isCorrect();
-                String wbMsg = wbDecision.errorMessage() != null
-                        ? wbDecision.errorMessage()
-                        : "Bị trừ " + String.format("%.2f", whiteboxDeduction)
-                                + " điểm do vi phạm quy tắc whitebox.";
-                details.add(java.util.Map.of(
-                        "type", "warning",
-                        "message", "[Whitebox] " + wbMsg,
-                        "points", -Math.round(whiteboxDeduction * 100.0) / 100.0));
-            }
 
-            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+            RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
+                    finalScore,
+                    totalPoints,
+                    allPassed,
+                    details,
+                    Math.max(0d, totalPoints - finalScore));
+            return applyWhiteboxPreviewResponse(
+                    questionTypeStr,
+                    studentQuery,
+                    objectMapper.readTree(gradingRubricJson).path("grading_payload"),
+                    totalPoints,
+                    blackbox);
 
         } catch (Exception e) {
             details.add(Map.of(
@@ -4181,32 +4155,19 @@ public class RubricTestingUsecase {
 
             double finalScore = roundTo2(Math.max(0d, Math.min(earnedWeight, 1d)) * totalPoints);
 
-            // Apply trigger white-box rules on top of test-case score
-            // (mirrors executeRoutineRubricGrading — this is the "Quy tắc cách viết câu lệnh" step).
-            GradeDecision bbDecision = allPassed
-                    ? GradeDecision.pass(BigDecimal.valueOf(finalScore))
-                    : GradeDecision.partial(BigDecimal.valueOf(finalScore), null);
-            GradeDecision wbDecision = applyRoutineWhiteboxPreview(
-                    "TRIGGER", studentQuery, gradingPayload, totalPoints, bbDecision);
-            if (wbDecision.scoreEarned() != null
-                    && wbDecision.scoreEarned().doubleValue() < finalScore) {
-                double whiteboxDeduction = finalScore - wbDecision.scoreEarned().doubleValue();
-                finalScore = wbDecision.scoreEarned().doubleValue();
-                allPassed = wbDecision.isCorrect();
-                String wbMsg = wbDecision.errorMessage() != null
-                        ? wbDecision.errorMessage()
-                        : "Bị trừ " + String.format("%.2f", whiteboxDeduction)
-                                + " điểm do vi phạm quy tắc whitebox.";
-                details.add(Map.of(
-                        "type", "warning",
-                        "message", "[Whitebox] " + wbMsg,
-                        "points", -Math.round(whiteboxDeduction * 100.0) / 100.0));
-            }
-
-            // Ensure final score is not negative
             finalScore = Math.max(0, Math.min(finalScore, totalPoints));
-
-            return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
+            RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
+                    finalScore,
+                    totalPoints,
+                    allPassed,
+                    details,
+                    Math.max(0d, totalPoints - finalScore));
+            return applyWhiteboxPreviewResponse(
+                    QuestionType.TRIGGER.name(),
+                    studentQuery,
+                    gradingPayload,
+                    totalPoints,
+                    blackbox);
 
         } catch (Exception e) {
             details.add(Map.of(

@@ -17,6 +17,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import graduation_project_be.application.usecases.GlobalSearchUsecase;
+import graduation_project_be.application.port.repositories.GlobalSearchRepository;
 
 @Configuration
 public class UsecasesConfiguration {
@@ -1284,4 +1286,10 @@ public class UsecasesConfiguration {
                 objectMapper, whiteboxEngine);
     }
 
+    @Bean
+    GlobalSearchUsecase globalSearchUsecase(
+            GlobalSearchRepository globalSearchRepository,
+            CurrentUserService currentUserService) {
+        return new GlobalSearchUsecase(globalSearchRepository, currentUserService);
+    }
 }

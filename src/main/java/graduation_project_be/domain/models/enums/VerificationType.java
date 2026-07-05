@@ -19,6 +19,9 @@ public enum VerificationType {
      *  the affected table after invocation_query runs. */
     SIDE_EFFECT,
 
+    /** Trigger/SP validation case where correctness is whether invocation succeeds or fails. */
+    EXECUTION_STATUS,
+
     /** SP / Function that emits messages via PRINT. Captured from JDBC SQLWarning chain. */
     PRINT_OUTPUT
 }

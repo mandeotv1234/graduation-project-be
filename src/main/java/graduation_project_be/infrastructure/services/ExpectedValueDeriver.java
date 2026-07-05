@@ -176,9 +176,15 @@ public class ExpectedValueDeriver {
      * by the same logic.
      */
     private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+    private static final String EXECUTION_STATUS_PREFIX = "__GRAD_EXECUTION_STATUS__:";
+    private static final String EXECUTION_STATUS_OK = EXECUTION_STATUS_PREFIX + "OK";
+    private static final String EXECUTION_STATUS_ERROR = EXECUTION_STATUS_PREFIX + "ERROR";
 
     private String deriveOneTestCase(String sandboxSchema, TestCase tc) {
         ValidationQueryBuilder.Built built = validationQueryBuilder.build(tc, sandboxSchema, sandboxSchema);
+        boolean executionStatusOnly = built.type() == VerificationType.EXECUTION_STATUS
+                || (built.validationSql() == null || built.validationSql().isBlank())
+                        && built.type() != VerificationType.PRINT_OUTPUT;
 
         StringBuilder batch = new StringBuilder();
         batch.append("BEGIN TRY\n");
@@ -189,7 +195,7 @@ public class ExpectedValueDeriver {
         if (built.invocationSql() != null && !built.invocationSql().isBlank()) {
             batch.append("  ").append(built.invocationSql()).append(";\n");
         }
-        if (built.validationSql() != null && !built.validationSql().isBlank()) {
+        if (!executionStatusOnly && built.validationSql() != null && !built.validationSql().isBlank()) {
             batch.append("  SELECT NULL AS ").append(VALIDATION_MARKER_COLUMN).append(";\n");
             batch.append("  ").append(built.validationSql()).append(";\n");
         }
@@ -206,7 +212,19 @@ public class ExpectedValueDeriver {
         // expected_value reflects the same permission scope as the actual run.
         // Also gets query timeout, preventing teacher-side infinite loops from
         // blocking question creation.
-        SqlExecutionResult execResult = examSchemaService.executeSqlBatchAsSchemaUser(sandboxSchema, batch.toString());
+        SqlExecutionResult execResult;
+        try {
+            execResult = examSchemaService.executeSqlBatchAsSchemaUser(sandboxSchema, batch.toString());
+        } catch (Exception e) {
+            if (executionStatusOnly || built.type() == VerificationType.SIDE_EFFECT) {
+                return EXECUTION_STATUS_ERROR;
+            }
+            throw e;
+        }
+
+        if (executionStatusOnly) {
+            return EXECUTION_STATUS_OK;
+        }
 
         // Capture per verification_type. MUST match the format used by
         // GradeExamUsecase.serializeResultForCompare so EXACT compare works.

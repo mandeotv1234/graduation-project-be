@@ -6,4 +6,5 @@ import java.util.List;
 public interface TestCaseRepository {
     List<TestCase> findByQuestionId(Long questionId);
     TestCase save(TestCase testCase);
+    void deleteByQuestionId(Long questionId);
 }

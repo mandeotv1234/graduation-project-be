@@ -23,6 +23,11 @@ final class TriggerWhiteboxPatterns {
     // ---- Timing / event header ----
     static final Pattern AFTER_OR_FOR_EVENT = ci("\\b(AFTER|FOR)\\s+(INSERT|UPDATE|DELETE)\\b");
     static final Pattern INSTEAD_OF = ci("\\bINSTEAD\\s+OF\\b");
+    private static final Pattern TRIGGER_HEADER_EVENTS = ci(
+            "\\bCREATE\\s+(?:OR\\s+ALTER\\s+)?TRIGGER\\b[\\s\\S]{0,500}?\\bON\\b[\\s\\S]{0,300}?"
+                    + "\\b(?:AFTER|FOR|INSTEAD\\s+OF)\\s+"
+                    + "((?:INSERT|UPDATE|DELETE)(?:\\s*,\\s*(?:INSERT|UPDATE|DELETE))*)\\b");
+    private static final Pattern TRIGGER_EVENT_TOKEN = ci("\\b(INSERT|UPDATE|DELETE)\\b");
 
     // ---- Column-change check ----
     static final Pattern UPDATE_FN_CHECK = ci("\\bUPDATE\\s*\\(\\s*\\w+\\s*\\)|\\bCOLUMNS_UPDATED\\s*\\(");
@@ -38,7 +43,8 @@ final class TriggerWhiteboxPatterns {
                     + "(?!(?:TOP\\s+\\d+\\s+|DISTINCT\\s+)*@\\w+\\s*=)" // not a variable assignment
                     + "(?![^;]*\\bINTO\\b)"                              // not SELECT ... INTO
                     + "[^;]*?\\bFROM\\b");
-    private static final Pattern INSERT_BEFORE = ci("\\bINSERT\\b");
+    private static final Pattern INSERT_INTO_BEFORE_SELECT = ci("\\bINSERT\\s+(?:INTO\\s+)?");
+    private static final Pattern BEGIN_TOKEN = ci("\\bBEGIN\\b");
 
     private static Pattern ci(String regex) {
         return Pattern.compile(regex, Pattern.CASE_INSENSITIVE);
@@ -103,23 +109,42 @@ final class TriggerWhiteboxPatterns {
         return p.matcher(sql).find();
     }
 
-    /** Events from {@code params.events} not present in the trigger definition. */
+    /** Events from {@code params.events} not present in the trigger header. */
     static List<String> missingEvents(String sql, List<String> requiredEvents) {
         List<String> missing = new ArrayList<>();
         if (sql == null || requiredEvents == null) {
             return missing;
         }
+        List<String> declaredEvents = triggerHeaderEvents(sql);
         for (String event : requiredEvents) {
             if (event == null || event.isBlank()) {
                 continue;
             }
-            Pattern p = Pattern.compile("\\b" + Pattern.quote(event.trim()) + "\\b",
-                    Pattern.CASE_INSENSITIVE);
-            if (!p.matcher(sql).find()) {
-                missing.add(event.trim().toUpperCase(Locale.ROOT));
+            String normalized = event.trim().toUpperCase(Locale.ROOT);
+            if (!declaredEvents.contains(normalized)) {
+                missing.add(normalized);
             }
         }
         return missing;
+    }
+
+    static List<String> triggerHeaderEvents(String sql) {
+        List<String> events = new ArrayList<>();
+        if (sql == null || sql.isBlank()) {
+            return events;
+        }
+        Matcher header = TRIGGER_HEADER_EVENTS.matcher(sql);
+        if (!header.find()) {
+            return events;
+        }
+        Matcher token = TRIGGER_EVENT_TOKEN.matcher(header.group(1));
+        while (token.find()) {
+            String event = token.group(1).toUpperCase(Locale.ROOT);
+            if (!events.contains(event)) {
+                events.add(event);
+            }
+        }
+        return events;
     }
 
     /**
@@ -132,12 +157,37 @@ final class TriggerWhiteboxPatterns {
         }
         Matcher m = RESULTSET_SELECT.matcher(sql);
         while (m.find()) {
-            String before = sql.substring(Math.max(0, m.start() - 40), m.start());
-            if (INSERT_BEFORE.matcher(before).find()) {
+            if (isParenthesizedSubquery(sql, m.start())) {
+                continue;
+            }
+            if (isInsertSelect(sql, m.start())) {
                 continue; // INSERT ... SELECT — populates a table, does not return rows
             }
             return true;
         }
         return false;
+    }
+
+    private static boolean isInsertSelect(String sql, int selectStart) {
+        int boundary = Math.max(sql.lastIndexOf(';', selectStart), lastBeginBefore(sql, selectStart));
+        String currentStatementPrefix = sql.substring(Math.max(0, boundary), selectStart);
+        return INSERT_INTO_BEFORE_SELECT.matcher(currentStatementPrefix).find();
+    }
+
+    private static int lastBeginBefore(String sql, int selectStart) {
+        Matcher matcher = BEGIN_TOKEN.matcher(sql);
+        int last = -1;
+        while (matcher.find() && matcher.start() < selectStart) {
+            last = matcher.start();
+        }
+        return last;
+    }
+
+    private static boolean isParenthesizedSubquery(String sql, int selectStart) {
+        int i = selectStart - 1;
+        while (i >= 0 && Character.isWhitespace(sql.charAt(i))) {
+            i--;
+        }
+        return i >= 0 && sql.charAt(i) == '(';
     }
 }

@@ -3304,6 +3304,43 @@ public class RubricTestingUsecase {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    private List<Double> normalizedTriggerWeights(JsonNode testCases) {
+        if (testCases == null || !testCases.isArray() || testCases.isEmpty()) {
+            return List.of();
+        }
+
+        List<Double> rawWeights = new ArrayList<>();
+        double sum = 0d;
+        for (JsonNode tc : testCases) {
+            double weight = Math.abs(rawTriggerWeight(tc));
+            rawWeights.add(weight);
+            sum += weight;
+        }
+
+        if (sum <= 0d) {
+            double equal = 1d / rawWeights.size();
+            return rawWeights.stream().map(ignored -> equal).toList();
+        }
+
+        double divisor = sum;
+        return rawWeights.stream().map(weight -> weight / divisor).toList();
+    }
+
+    private double rawTriggerWeight(JsonNode testCase) {
+        if (testCase == null || !testCase.isObject()) {
+            return 1d;
+        }
+        JsonNode scoreWeight = testCase.get("score_weight");
+        if (scoreWeight != null && scoreWeight.isNumber()) {
+            return scoreWeight.asDouble();
+        }
+        JsonNode penaltyValue = testCase.get("penalty_value");
+        if (penaltyValue != null && penaltyValue.isNumber()) {
+            return penaltyValue.asDouble();
+        }
+        return 1d;
+    }
+
     private String safeIdentifier(String identifier, String fieldName) {
         if (identifier == null || identifier.isBlank() || !IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException("Định danh SQL không hợp lệ cho " + fieldName);
@@ -3877,39 +3914,37 @@ public class RubricTestingUsecase {
             JsonNode rubric = objectMapper.readTree(gradingRubricJson);
             JsonNode gradingPayload = rubric.path("grading_payload");
             JsonNode testCases = gradingPayload.path("test_cases");
-            JsonNode gradingSettings = gradingPayload.path("grading_settings");
-
-            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
 
             // Trigger metadata scoring (existence / table / event / timing) removed.
             // Grading is now driven purely by test cases and white-box rules.
-            // Start with full points, then deduct for failed test cases / whitebox.
-            double earnedPoints = totalPoints;
+            // Match runtime: score_weight is a normalized ratio, then multiplied by totalPoints.
+            double earnedWeight = 0d;
             boolean allPassed = true;
 
             // Execute test cases if defined
             if (testCases.isArray() && testCases.size() > 0) {
+                List<Double> normalizedWeights = normalizedTriggerWeights(testCases);
+                int caseIndex = 0;
                 for (JsonNode tc : testCases) {
-                    String caseId = tc.path("case_id").asText("");
                     String caseName = tc.path("case_name").asText("Unnamed");
                     String setupScript = tc.path("setup_script").asText("");
 
                     String invocationQuery = tc.path("invocation_query").asText("");
                     String validationQuery = tc.path("validation_query").asText("");
                     String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
-
-                    // Support both score_weight (new) and penalty_value (old)
-                    double scoreWeight = tc.path("score_weight").asDouble(-1);
-                    if (scoreWeight < 0) {
-                        scoreWeight = tc.path("penalty_value").asDouble(0.2);
-                    }
+                    double scoreWeight = caseIndex < normalizedWeights.size()
+                            ? normalizedWeights.get(caseIndex)
+                            : 0d;
+                    double casePoints = roundTo2(totalPoints * scoreWeight);
+                    caseIndex++;
 
                     if (invocationQuery.isBlank()) {
                         details.add(Map.of(
-                                "type", "info",
+                                "type", "error",
                                 "message",
-                                String.format("Test case '%s': bỏ qua (thiếu invocation_query)", caseName),
-                                "points", 0));
+                                String.format("Test case '%s': lỗi cấu hình (thiếu invocation_query)", caseName),
+                                "points", -casePoints));
+                        allPassed = false;
                         continue;
                     }
 
@@ -3928,10 +3963,14 @@ public class RubricTestingUsecase {
                             executeSqlScriptBatches(examSchemaService, studentSchema, studentQuery);
                         }
 
-                        // For EXECUTION_STATUS verification, we only check if invocation succeeds/fails
-                        // For SIDE_EFFECT verification, we also need to check validation_query results
-                        boolean checkSideEffect = !validationQuery.isBlank() &&
-                                "SIDE_EFFECT".equalsIgnoreCase(verificationType);
+                        // EXECUTION_STATUS checks whether invocation succeeds/fails. For backward
+                        // compatibility with older trigger rubrics, a blank validation_query also
+                        // means status-only. If the reference trigger itself rejects the DML, fall
+                        // back to status comparison instead of reporting "teacher answer failed".
+                        boolean executionStatusOnly = "EXECUTION_STATUS".equalsIgnoreCase(verificationType)
+                                || validationQuery.isBlank();
+                        boolean checkSideEffect = !executionStatusOnly
+                                && "SIDE_EFFECT".equalsIgnoreCase(verificationType);
 
                         // Build batch SQL that wraps setup + invocation + validation in a single
                         // transaction
@@ -4033,19 +4072,12 @@ public class RubricTestingUsecase {
                             studentInvocationError = e.getMessage();
                         }
 
-                        // Check if both failed with "transaction ended in trigger" (ROLLBACK trigger)
-                        boolean isRollbackTrigger = teacherInvocationError != null
-                                && teacherInvocationError.toLowerCase().contains("transaction ended in the trigger");
-                        boolean studentAlsoRollback = studentInvocationError != null
-                                && studentInvocationError.toLowerCase().contains("transaction ended in the trigger");
-
-                        // If validation_query is empty, we only check execution status (for validation
-                        // triggers)
-                        if (validationQuery.isBlank()) {
-                            // For validation triggers (ROLLBACK), check if both succeeded or both failed
-                            // the same way
+                        // For status-only TC's, or SIDE_EFFECT TC's whose reference trigger rejects
+                        // the DML, compare execution status (both reject or both accept).
+                        if (executionStatusOnly || teacherInvocationFailed || studentInvocationFailed) {
                             if (teacherInvocationFailed == studentInvocationFailed) {
-                                if (isRollbackTrigger && studentAlsoRollback) {
+                                if (teacherInvocationFailed) {
+                                    earnedWeight += scoreWeight;
                                     details.add(Map.of(
                                             "type", "success",
                                             "message",
@@ -4053,7 +4085,8 @@ public class RubricTestingUsecase {
                                                     "Test case '%s': Đạt (trigger đã từ chối giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
-                                } else if (!teacherInvocationFailed && !studentInvocationFailed) {
+                                } else {
+                                    earnedWeight += scoreWeight;
                                     details.add(Map.of(
                                             "type", "success",
                                             "message",
@@ -4061,21 +4094,13 @@ public class RubricTestingUsecase {
                                                     "Test case '%s': Đạt (trigger đã chấp nhận giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
-                                } else {
-                                    details.add(Map.of(
-                                            "type", "success",
-                                            "message", String.format("Test case '%s': Đạt", caseName),
-                                            "points", 0));
                                 }
                             } else {
                                 details.add(Map.of(
                                         "type", "error",
                                         "message",
                                         String.format("Test case '%s': Không đạt (trạng thái thực thi không khớp)", caseName),
-                                        "points", -scoreWeight));
-                                if (!positiveOnlyScoring) {
-                                    earnedPoints -= scoreWeight;
-                                }
+                                        "points", -casePoints));
                                 allPassed = false;
                             }
                             continue;
@@ -4084,6 +4109,29 @@ public class RubricTestingUsecase {
                         // For SIDE_EFFECT verification, compare validation query results
                         // Results were already captured in the batch execution above
                         if (checkSideEffect) {
+                            if (teacherInvocationFailed) {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message",
+                                        String.format("Test case '%s': lỗi khi chạy đáp án chuẩn - %s",
+                                                caseName, teacherInvocationError != null
+                                                        ? teacherInvocationError : "không rõ lỗi"),
+                                        "points", -casePoints));
+                                allPassed = false;
+                                continue;
+                            }
+                            if (studentInvocationFailed) {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message",
+                                        String.format("Test case '%s': Không đạt (lỗi khi chạy bài làm - %s)",
+                                                caseName, studentInvocationError != null
+                                                        ? studentInvocationError : "không rõ lỗi"),
+                                        "points", -casePoints));
+                                allPassed = false;
+                                continue;
+                            }
+
                             // Extract validation results from batch execution (after
                             // VALIDATION_MARKER_COLUMN)
                             SqlExecutionResult teacherFiltered = dropRowsBeforeValidationMarker(teacherResult);
@@ -4102,6 +4150,7 @@ public class RubricTestingUsecase {
                             boolean testPassed = compareQueryResults(actualRows, expectedRows);
 
                             if (testPassed) {
+                                earnedWeight += scoreWeight;
                                 details.add(Map.of(
                                         "type", "success",
                                         "message", String.format("Test case '%s': Đạt", caseName),
@@ -4110,10 +4159,7 @@ public class RubricTestingUsecase {
                                 details.add(Map.of(
                                         "type", "error",
                                         "message", String.format("Test case '%s': Không đạt (kết quả không khớp)", caseName),
-                                        "points", -scoreWeight));
-                                if (!positiveOnlyScoring) {
-                                    earnedPoints -= scoreWeight;
-                                }
+                                        "points", -casePoints));
                                 allPassed = false;
                             }
                         }
@@ -4121,16 +4167,19 @@ public class RubricTestingUsecase {
                         details.add(Map.of(
                                 "type", "error",
                                 "message", String.format("Test case '%s': ERROR - %s", caseName, e.getMessage()),
-                                "points", -scoreWeight));
-                        if (!positiveOnlyScoring) {
-                            earnedPoints -= scoreWeight;
-                        }
+                                "points", -casePoints));
                         allPassed = false;
                     }
                 }
+            } else {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Rubric TRIGGER không có test_cases để chấm thử.",
+                        "points", 0));
+                allPassed = false;
             }
 
-            double finalScore = Math.max(0, Math.min(earnedPoints, totalPoints));
+            double finalScore = roundTo2(Math.max(0d, Math.min(earnedWeight, 1d)) * totalPoints);
 
             // Apply trigger white-box rules on top of test-case score
             // (mirrors executeRoutineRubricGrading — this is the "Quy tắc cách viết câu lệnh" step).

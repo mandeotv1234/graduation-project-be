@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface TestCaseJpaRepository extends JpaRepository<TestCaseEntity, Long> {
     List<TestCaseEntity> findByQuestionIdOrderByOrderIndexAsc(Long questionId);
+    void deleteByQuestionId(Long questionId);
 }

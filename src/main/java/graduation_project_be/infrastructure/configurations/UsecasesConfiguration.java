@@ -7,7 +7,9 @@ import graduation_project_be.application.usecases.*;
 import graduation_project_be.application.usecases.grading.*;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxCatalog;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
+import graduation_project_be.infrastructure.services.ExpectedValueDeriver;
 import graduation_project_be.infrastructure.services.JSqlParserSelectQueryStructureAnalyzer;
+import graduation_project_be.infrastructure.services.RubricToTestCaseTransformer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ExecutorService;
 
@@ -905,8 +907,20 @@ public class UsecasesConfiguration {
             ExamQuestionRepository examQuestionRepository,
             ExamRepository examRepository,
             ClassRepository classRepository,
-            CurrentUserService currentUserService) {
-        return new UpdateExamQuestionUsecase(examQuestionRepository, examRepository, classRepository, currentUserService);
+            CurrentUserService currentUserService,
+            ExamSpecificationRepository examSpecificationRepository,
+            RubricToTestCaseTransformer rubricTransformer,
+            ExpectedValueDeriver expectedValueDeriver,
+            TestCaseRepository testCaseRepository) {
+        return new UpdateExamQuestionUsecase(
+                examQuestionRepository,
+                examRepository,
+                classRepository,
+                currentUserService,
+                examSpecificationRepository,
+                rubricTransformer,
+                expectedValueDeriver,
+                testCaseRepository);
     }
 
     @Bean

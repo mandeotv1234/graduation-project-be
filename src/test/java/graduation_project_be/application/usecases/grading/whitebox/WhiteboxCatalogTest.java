@@ -100,6 +100,19 @@ class WhiteboxCatalogTest {
     }
 
     @Test
+    void triggerCatalogIncludesSelectAuthoringRules() {
+        Set<String> ids = catalog.entriesFor("TRIGGER").stream()
+                .map(WhiteboxCatalogEntry::ruleId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        assertTrue(ids.contains("FORBIDDEN_SELECT_STAR"));
+        assertTrue(ids.contains("REQUIRED_JOIN"));
+        assertTrue(ids.contains("REQUIRED_GROUP_BY"));
+        assertTrue(ids.contains("MAX_JOIN_COUNT"));
+        assertTrue(ids.contains("TR_REQUIRED_FOR_EVENT"));
+    }
+
+    @Test
     void unknownRuleIsNotSupported() {
         assertFalse(catalog.supports("NOT_A_RULE"));
         assertTrue(catalog.supports("forbidden_subquery")); // case-insensitive

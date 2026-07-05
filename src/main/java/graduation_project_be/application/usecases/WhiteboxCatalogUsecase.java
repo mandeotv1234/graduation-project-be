@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.util.List;
 
-/** Returns the backend-owned white-box rule catalog for a question type (SELECT_QUERY in v1). */
+/** Returns the backend-owned white-box rule catalog for a question type. */
 @RequiredArgsConstructor
 public class WhiteboxCatalogUsecase {
 

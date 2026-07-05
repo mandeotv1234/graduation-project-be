@@ -85,6 +85,24 @@ class TriggerWhiteboxEvaluatorsTest {
                 resultSetTrigger));
     }
 
+    @Test
+    void selectRulesCanApplyToTriggerBodies() {
+        String triggerWithSelectStar = """
+                CREATE TRIGGER trg_items ON dbo.Items
+                AFTER INSERT
+                AS
+                BEGIN
+                    SELECT *
+                    FROM inserted;
+                END
+                """;
+
+        assertEquals(BigDecimal.ONE.setScale(2), deduction(
+                "FORBIDDEN_SELECT_STAR",
+                "{}",
+                triggerWithSelectStar));
+    }
+
     private BigDecimal deduction(String ruleId, String paramsJson, String sql) {
         WhiteboxRule rule = new WhiteboxRule(ruleId, true, null, BigDecimal.ONE,
                 WhiteboxPenaltyUnit.ABSOLUTE, WhiteboxSeverity.DEDUCTION, null, params(paramsJson));

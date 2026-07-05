@@ -243,6 +243,34 @@ class WhiteboxEngineTest {
     }
 
     @Test
+    void customRegex_typeControlsDetection_withoutPrefix() {
+        WhiteboxResult r = eval("SELECT * FROM Orders WITH (NOLOCK)",
+                List.of(rule("TEACHER_RULE_NOLOCK", WhiteboxRuleType.CUSTOM_REGEX,
+                        WhiteboxSeverity.DEDUCTION, WhiteboxPenaltyUnit.ABSOLUTE, 1,
+                        """
+                        { "policy": "FORBID", "pattern": "\\\\bNOLOCK\\\\b" }
+                        """)),
+                WhiteboxSettings.defaults());
+
+        assertAmount("1", r.cappedDeduction());
+        assertEquals(WhiteboxStatus.FAIL, r.violations().get(0).status());
+    }
+
+    @Test
+    void customRegex_unsafePattern_isUnverifiedAndDoesNotDeduct() {
+        WhiteboxResult r = eval("aaaaaaaaaaaaaaaaaaaaaaaa!",
+                List.of(rule("CUSTOM_REGEX_SLOW", WhiteboxRuleType.CUSTOM_REGEX,
+                        WhiteboxSeverity.DEDUCTION, WhiteboxPenaltyUnit.ABSOLUTE, 1,
+                        """
+                        { "policy": "FORBID", "pattern": "(a+)+" }
+                        """)),
+                WhiteboxSettings.defaults());
+
+        assertAmount("0", r.cappedDeduction());
+        assertEquals(WhiteboxStatus.UNVERIFIED, r.violations().get(0).status());
+    }
+
+    @Test
     void disabledRule_isSkipped() {
         WhiteboxRule disabled = new WhiteboxRule("FORBIDDEN_SELECT_STAR", false,
                 WhiteboxRuleType.FORBIDDEN, BigDecimal.valueOf(2), WhiteboxPenaltyUnit.ABSOLUTE,

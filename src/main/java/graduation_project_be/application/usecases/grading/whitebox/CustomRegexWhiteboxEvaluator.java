@@ -13,12 +13,24 @@ final class CustomRegexWhiteboxEvaluator {
     static final String PREFIX = "CUSTOM_REGEX_";
     static final int MAX_PATTERN_LENGTH = 500;
     static final int MAX_RULES_PER_QUESTION = 10;
+    static final int MAX_SQL_SCAN_LENGTH = 20_000;
+
+    private static final Pattern NESTED_QUANTIFIER_PATTERN = Pattern.compile(
+            "\\((?:[^()\\\\]|\\\\.|\\[[^\\]]*]){0,120}[+*][^()]{0,120}\\)[+*?{]");
+    private static final Pattern BACKREFERENCE_PATTERN = Pattern.compile("\\\\[1-9]");
+    private static final Pattern LOOKAROUND_PATTERN = Pattern.compile("\\(\\?([=!]|<[=!])");
 
     private CustomRegexWhiteboxEvaluator() {
     }
 
     static boolean isCustomRegexRule(WhiteboxRule rule) {
-        return rule != null && rule.ruleId() != null && rule.ruleId().startsWith(PREFIX);
+        if (rule == null) {
+            return false;
+        }
+        if (rule.type() == WhiteboxRuleType.CUSTOM_REGEX) {
+            return true;
+        }
+        return rule.type() == null && rule.ruleId() != null && rule.ruleId().startsWith(PREFIX);
     }
 
     static CustomRegexResult evaluate(SelectWhiteboxContext context, WhiteboxRule rule) {
@@ -29,6 +41,11 @@ final class CustomRegexWhiteboxEvaluator {
         if (pattern.length() > MAX_PATTERN_LENGTH) {
             return CustomRegexResult.invalid(
                     "Regex tùy chỉnh vượt quá " + MAX_PATTERN_LENGTH + " ký tự.");
+        }
+
+        String safetyError = validateSafety(pattern);
+        if (safetyError != null) {
+            return CustomRegexResult.invalid(safetyError);
         }
 
         String policy = WhiteboxParams.stringParam(rule, "policy", "FORBID")
@@ -50,6 +67,9 @@ final class CustomRegexWhiteboxEvaluator {
         }
 
         String sql = context == null || context.cleanedSql() == null ? "" : context.cleanedSql();
+        if (sql.length() > MAX_SQL_SCAN_LENGTH) {
+            sql = sql.substring(0, MAX_SQL_SCAN_LENGTH);
+        }
         Matcher matcher = compiled.matcher(sql);
         boolean matched = matcher.find();
         String actual = matched ? excerpt(matcher.group()) : null;
@@ -58,6 +78,19 @@ final class CustomRegexWhiteboxEvaluator {
             actual = null;
         }
         return CustomRegexResult.valid(new WhiteboxEvaluation(violated, actual));
+    }
+
+    private static String validateSafety(String pattern) {
+        if (BACKREFERENCE_PATTERN.matcher(pattern).find()) {
+            return "Regex tùy chỉnh không hỗ trợ backreference để tránh làm chậm hệ thống chấm.";
+        }
+        if (LOOKAROUND_PATTERN.matcher(pattern).find()) {
+            return "Regex tùy chỉnh không hỗ trợ lookaround để tránh làm chậm hệ thống chấm.";
+        }
+        if (NESTED_QUANTIFIER_PATTERN.matcher(pattern).find()) {
+            return "Regex tùy chỉnh có lượng từ lồng nhau, có nguy cơ làm chậm hệ thống chấm.";
+        }
+        return null;
     }
 
     private static String excerpt(String raw) {

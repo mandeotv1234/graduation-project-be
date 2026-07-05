@@ -26,4 +26,9 @@ public class TestCaseRepositoryImpl implements TestCaseRepository {
         TestCaseEntity entity = TestCaseEntity.fromModel(testCase);
         return jpaRepository.save(entity).toModel();
     }
+
+    @Override
+    public void deleteByQuestionId(Long questionId) {
+        jpaRepository.deleteByQuestionId(questionId);
+    }
 }

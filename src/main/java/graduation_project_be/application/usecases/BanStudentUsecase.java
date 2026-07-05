@@ -48,11 +48,18 @@ public class BanStudentUsecase {
         ClassStudentBan ban = ClassStudentBan.builder()
                 .classId(classId)
                 .studentId(studentId)
-                .reason(request.reason())
+                .reason(normalizeReason(request.reason()))
                 .bannedBy(currentUserId)
                 .active(true)
                 .build();
 
         classStudentBanRepository.save(ban);
+    }
+
+    private String normalizeReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        return reason.trim();
     }
 }

@@ -1,9 +1,12 @@
 package graduation_project_be.application.usecases.grading.whitebox;
 
 /**
- * A SQL construct a teacher reasons about when authoring white-box rules. The enum name is the stable
- * {@code featureId} the frontend groups by; the label is the Vietnamese display name. Several catalog
- * entries (different policies) can share one feature — e.g. {@code SUBQUERY} carries both FORBID
+ * A SQL construct a teacher reasons about when authoring white-box rules. The
+ * enum name is the stable
+ * {@code featureId} the frontend groups by; the label is the Vietnamese display
+ * name. Several catalog
+ * entries (different policies) can share one feature — e.g. {@code SUBQUERY}
+ * carries both FORBID
  * ({@code FORBIDDEN_SUBQUERY}) and AT_MOST ({@code MAX_SUBQUERY_DEPTH}).
  */
 public enum WhiteboxFeature {
@@ -55,6 +58,17 @@ public enum WhiteboxFeature {
     UPDATE_DELETE("UPDATE/DELETE"),
     MERGE("MERGE"),
     STATEMENT_COUNT("Số câu lệnh"),
+    // TRIGGER question type features
+    INSERTED_TABLE("Bảng INSERTED"),
+    DELETED_TABLE("Bảng DELETED"),
+    MULTIROW_SAFETY("An toàn nhiều dòng"),
+    TRIGGER_TIMING("Thời điểm trigger (AFTER/INSTEAD OF)"),
+    TRIGGER_TABLE("Bảng gắn trigger"),
+    TRIGGER_EVENT("Sự kiện trigger"),
+    TRIGGER_NAME("Tên trigger"),
+    UPDATE_COLUMN_CHECK("Kiểm tra cột UPDATE"),
+    ROLLBACK_IN_TRIGGER("ROLLBACK trong trigger"),
+    RESULTSET_IN_TRIGGER("Trả result set trong trigger"),
     // CREATE_TABLE question type features
     PRIMARY_KEY("PRIMARY KEY"),
     CONSTRAINT_NAME("Tên ràng buộc"),

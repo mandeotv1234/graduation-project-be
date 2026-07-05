@@ -732,6 +732,9 @@ public class GradingSupport {
         String setup = applyPlaceholders(tc.getSetupScript(), schemaName, teacherSchemaName);
         String invocation = applyPlaceholders(tc.getInvocationQuery(), schemaName, teacherSchemaName);
         String validation = applyPlaceholders(tc.getValidationQuery(), schemaName, teacherSchemaName);
+        boolean executionStatusOnly = type == VerificationType.EXECUTION_STATUS
+                || isExecutionStatusValue(tc.getExpectedValue())
+                || (validation == null || validation.isBlank()) && type != VerificationType.PRINT_OUTPUT;
 
         // Build a single SQL batch that wraps the whole TC in a transaction.
         // Why TRY/CATCH: if any inner statement throws, we still want a clean
@@ -745,7 +748,7 @@ public class GradingSupport {
         if (invocation != null && !invocation.isBlank()) {
             batch.append("  ").append(invocation).append(";\n");
         }
-        if (validation != null && !validation.isBlank()) {
+        if (!executionStatusOnly && validation != null && !validation.isBlank()) {
             // P1-2: emit a marker result set right before validation_query.
             // If invocation_query unintentionally produced result sets (e.g. an
             // SP whose body has SELECT statements), executeSqlBatchAsSchemaUser
@@ -764,7 +767,19 @@ public class GradingSupport {
         // Run as the student's schema-scoped DB user (NOT admin) so that any
         // student-defined routine called inside the batch is restricted to its
         // own schema's permissions. Also enforces query timeout.
-        SqlExecutionResult execResult = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
+        SqlExecutionResult execResult;
+        try {
+            execResult = examSchemaService.executeSqlBatchAsSchemaUser(schemaName, batch.toString());
+        } catch (Exception e) {
+            if (executionStatusOnly) {
+                return new TestCaseRunResult(EXECUTION_STATUS_ERROR);
+            }
+            throw e;
+        }
+
+        if (executionStatusOnly) {
+            return new TestCaseRunResult(EXECUTION_STATUS_OK);
+        }
 
         // Capture per verification_type — must match ExpectedValueDeriver.serializeResult
         // exactly so EXACT compare works.
@@ -782,6 +797,9 @@ public class GradingSupport {
 
     /** Column name used to mark the start of validation_query's result set. */
     private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
+    private static final String EXECUTION_STATUS_PREFIX = "__GRAD_EXECUTION_STATUS__:";
+    private static final String EXECUTION_STATUS_OK = EXECUTION_STATUS_PREFIX + "OK";
+    private static final String EXECUTION_STATUS_ERROR = EXECUTION_STATUS_PREFIX + "ERROR";
 
     /**
      * Returns a copy of {@code execResult} with all rows up to AND including the
@@ -864,6 +882,10 @@ public class GradingSupport {
         return actual.equalsIgnoreCase(expected);
     }
 
+    private boolean isExecutionStatusValue(String value) {
+        return value != null && value.trim().startsWith(EXECUTION_STATUS_PREFIX);
+    }
+
     public String readPrintOutputCompareMode(ExamQuestion question) {
         if (question == null || question.getGradingRubric() == null || question.getGradingRubric().isBlank()) {
             return "LENIENT";
@@ -911,6 +933,9 @@ public class GradingSupport {
 
     public static String truncateForLog(String s) {
         if (s == null) return "null";
+        if (s.startsWith(EXECUTION_STATUS_PREFIX)) {
+            return s.substring(EXECUTION_STATUS_PREFIX.length());
+        }
         return s.length() <= 200 ? s : s.substring(0, 200) + "...";
     }
 

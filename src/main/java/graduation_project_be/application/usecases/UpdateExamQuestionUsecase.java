@@ -1,15 +1,27 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
+import graduation_project_be.application.port.repositories.TestCaseRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.usecases.request.UpdateExamQuestionRequest;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
+import graduation_project_be.domain.models.ExamSpecification;
+import graduation_project_be.domain.models.QuestionType;
+import graduation_project_be.domain.models.TestCase;
+import graduation_project_be.infrastructure.services.ExpectedValueDeriver;
+import graduation_project_be.infrastructure.services.RubricToTestCaseTransformer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
 
 @RequiredArgsConstructor
 public class UpdateExamQuestionUsecase {
@@ -18,7 +30,12 @@ public class UpdateExamQuestionUsecase {
     private final ExamRepository examRepository;
     private final ClassRepository classRepository;
     private final CurrentUserService currentUserService;
+    private final ExamSpecificationRepository examSpecificationRepository;
+    private final RubricToTestCaseTransformer rubricTransformer;
+    private final ExpectedValueDeriver expectedValueDeriver;
+    private final TestCaseRepository testCaseRepository;
 
+    @Transactional
     public ExamQuestionResponse execute(UpdateExamQuestionRequest request) {
         Long currentUserId = currentUserService.getCurrentUserId();
         Exam exam = examRepository.findById(request.examId())
@@ -42,10 +59,61 @@ public class UpdateExamQuestionUsecase {
         question.setDifficultyLevel(request.difficultyLevel());
         question.setPoints(request.points());
         question.setOrderIndex(request.orderIndex());
-        question.setQuestionType(graduation_project_be.domain.models.QuestionType.valueOf(request.questionType().toUpperCase()));
+        QuestionType questionType = QuestionType.valueOf(request.questionType().toUpperCase());
+        question.setQuestionType(questionType);
         question.setGradingRubric(request.gradingRubric());
 
         ExamQuestion updated = examQuestionRepository.save(question);
+        if (isRoutineOrTriggerType(questionType)
+                && request.gradingRubric() != null
+                && !request.gradingRubric().isBlank()) {
+            syncRubricTestCases(updated, exam);
+        }
         return ExamQuestionResponse.fromModel(updated);
+    }
+
+    private boolean isRoutineOrTriggerType(QuestionType type) {
+        return type == QuestionType.STORED_PROCEDURE
+                || type == QuestionType.FUNCTION
+                || type == QuestionType.TRIGGER;
+    }
+
+    private void syncRubricTestCases(ExamQuestion question, Exam exam) {
+        List<TestCase> testCases = rubricTransformer.parse(
+                question.getId(), question.getQuestionType().name(), question.getGradingRubric());
+        if (testCases.isEmpty()) {
+            throw new BadRequestException(String.format(
+                    "Q%d (%s): rubric không có test_cases hợp lệ. Vui lòng kiểm tra lại đề.",
+                    question.getOrderIndex(), question.getQuestionType()));
+        }
+
+        ExamSpecification specification = exam.getSpecificationId() != null
+                ? examSpecificationRepository.findById(exam.getSpecificationId()).orElse(null)
+                : null;
+        String ddlScript = specification != null ? specification.getDdlScript() : null;
+
+        ExpectedValueDeriver.DerivationResult result;
+        try {
+            result = expectedValueDeriver.derive(
+                    question.getId(), ddlScript, question.getCorrectQuery(), testCases);
+        } catch (ExpectedValueDeriver.DerivationException e) {
+            throw new BadRequestException(String.format(
+                    "Q%d (%s): %s",
+                    question.getOrderIndex(), question.getQuestionType(), e.getMessage()));
+        }
+
+        if (!result.isFullySuccessful()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("Q%d (%s): có test case không derive được expected:\n",
+                    question.getOrderIndex(), question.getQuestionType()));
+            for (Map.Entry<Integer, String> entry : result.testCaseErrors().entrySet()) {
+                sb.append("  - TC").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+            }
+            sb.append("Hãy điều chỉnh setup_script / invocation_query trong rubric và thử lại.");
+            throw new BadRequestException(sb.toString());
+        }
+
+        testCaseRepository.deleteByQuestionId(question.getId());
+        rubricTransformer.persist(question.getId(), testCases);
     }
 }

@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -891,8 +892,11 @@ public class ExamController {
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> getWhiteboxCatalog(
                         @RequestParam(value = "questionType", required = false) String questionType) {
-                return ResponseEntity.ok(ResponseDto.of(
-                                whiteboxCatalogUsecase.execute(questionType), "OK", "Whitebox catalog"));
+                return ResponseEntity.ok()
+                                .cacheControl(CacheControl.noStore())
+                                .body(ResponseDto.of(
+                                                whiteboxCatalogUsecase.execute(questionType), "OK",
+                                                "Whitebox catalog"));
         }
 
         @PostMapping("/whitebox/validate")

@@ -37,7 +37,6 @@ import graduation_project_be.domain.models.QuestionType;
 import graduation_project_be.domain.models.RoutineMetadata;
 import graduation_project_be.domain.models.SqlExecutionResult;
 import graduation_project_be.domain.models.TableMetadata;
-import graduation_project_be.domain.models.TriggerMetadata;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -1485,7 +1484,17 @@ public class RubricTestingUsecase {
 
             examSchemaService.resetSchema(teacherSchema, false);
             loadDdlIfPresent(teacherSchema, ddlScript);
-            executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+            try {
+                executeSetupThenRoutine(examSchemaService, teacherSchema, setupScript, correctQuery);
+            } catch (Exception e) {
+                return RubricTestGradeResponse.of(
+                        0,
+                        totalPoints,
+                        false,
+                        List.of(
+                                Map.of("type", "error", "message",
+                                        "Lỗi cú pháp SQL trong đáp án mẫu: " + e.getMessage(), "points", 0)));
+            }
 
             examSchemaService.resetSchema(studentSchema, false);
             loadDdlIfPresent(studentSchema, ddlScript);
@@ -3295,6 +3304,43 @@ public class RubricTestingUsecase {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    private List<Double> normalizedTriggerWeights(JsonNode testCases) {
+        if (testCases == null || !testCases.isArray() || testCases.isEmpty()) {
+            return List.of();
+        }
+
+        List<Double> rawWeights = new ArrayList<>();
+        double sum = 0d;
+        for (JsonNode tc : testCases) {
+            double weight = Math.abs(rawTriggerWeight(tc));
+            rawWeights.add(weight);
+            sum += weight;
+        }
+
+        if (sum <= 0d) {
+            double equal = 1d / rawWeights.size();
+            return rawWeights.stream().map(ignored -> equal).toList();
+        }
+
+        double divisor = sum;
+        return rawWeights.stream().map(weight -> weight / divisor).toList();
+    }
+
+    private double rawTriggerWeight(JsonNode testCase) {
+        if (testCase == null || !testCase.isObject()) {
+            return 1d;
+        }
+        JsonNode scoreWeight = testCase.get("score_weight");
+        if (scoreWeight != null && scoreWeight.isNumber()) {
+            return scoreWeight.asDouble();
+        }
+        JsonNode penaltyValue = testCase.get("penalty_value");
+        if (penaltyValue != null && penaltyValue.isNumber()) {
+            return penaltyValue.asDouble();
+        }
+        return 1d;
+    }
+
     private String safeIdentifier(String identifier, String fieldName) {
         if (identifier == null || identifier.isBlank() || !IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException("Định danh SQL không hợp lệ cho " + fieldName);
@@ -3867,171 +3913,38 @@ public class RubricTestingUsecase {
         try {
             JsonNode rubric = objectMapper.readTree(gradingRubricJson);
             JsonNode gradingPayload = rubric.path("grading_payload");
-            JsonNode triggersConfig = gradingPayload.path("triggers");
             JsonNode testCases = gradingPayload.path("test_cases");
-            JsonNode gradingSettings = gradingPayload.path("grading_settings");
 
-            boolean positiveOnlyScoring = gradingSettings.path("positive_only_scoring").asBoolean(false);
-            boolean caseSensitiveNames = gradingSettings.path("case_sensitive_names").asBoolean(false);
-
-            List<TriggerMetadata> expectedTriggers = examSchemaService
-                    .extractTriggerMetadata(teacherSchema);
-            List<TriggerMetadata> actualTriggers = examSchemaService
-                    .extractTriggerMetadata(studentSchema);
-
-            // Start with full points, then deduct for errors
-            double earnedPoints = totalPoints;
+            // Trigger metadata scoring (existence / table / event / timing) removed.
+            // Grading is now driven purely by test cases and white-box rules.
+            // Match runtime: score_weight is a normalized ratio, then multiplied by totalPoints.
+            double earnedWeight = 0d;
             boolean allPassed = true;
-
-            if (expectedTriggers.isEmpty()) {
-                details.add(Map.of(
-                        "type", "error",
-                        "message", "Không tìm thấy trigger trong đáp án chuẩn",
-                        "points", 0));
-                return RubricTestGradeResponse.of(0, totalPoints, false, details);
-            }
-
-            // Build trigger config map for easy lookup
-            Map<String, JsonNode> triggerConfigMap = new LinkedHashMap<>();
-            if (triggersConfig.isArray()) {
-                for (JsonNode tc : triggersConfig) {
-                    String expectedName = tc.path("expected_name").asText("");
-                    if (!expectedName.isBlank()) {
-                        triggerConfigMap.put(expectedName.toLowerCase(), tc);
-                    }
-                }
-            }
-
-            // Check each trigger metadata
-            for (TriggerMetadata expected : expectedTriggers) {
-                String triggerNameKey = caseSensitiveNames
-                        ? expected.getTriggerName()
-                        : expected.getTriggerName().toLowerCase();
-
-                JsonNode triggerConfig = triggerConfigMap.get(triggerNameKey);
-
-                // Use rubric config if available, otherwise use default weights
-                double existencePoints = triggerConfig != null
-                        ? triggerConfig.path("existence_points").asDouble(0.3)
-                        : 0.3;
-                double tablePoints = triggerConfig != null
-                        ? triggerConfig.path("table_points").asDouble(0.2)
-                        : 0.2;
-                double eventPoints = triggerConfig != null
-                        ? triggerConfig.path("event_points").asDouble(0.3)
-                        : 0.3;
-                double timingPoints = triggerConfig != null
-                        ? triggerConfig.path("timing_points").asDouble(0.2)
-                        : 0.2;
-
-                TriggerMetadata actual = actualTriggers.stream()
-                        .filter(t -> caseSensitiveNames
-                                ? t.getTriggerName().equals(expected.getTriggerName())
-                                : t.getTriggerName().equalsIgnoreCase(expected.getTriggerName()))
-                        .findFirst()
-                        .orElse(null);
-
-                // Check existence
-                if (actual == null) {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Thiếu Trigger %s", expected.getTriggerName()),
-                            "points", -existencePoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= existencePoints;
-                    }
-                    allPassed = false;
-                    continue;
-                }
-
-                details.add(Map.of(
-                        "type", "success",
-                        "message", String.format("Trigger %s: tồn tại", expected.getTriggerName()),
-                        "points", 0));
-
-                // Check table
-                if (expected.getTableName().equalsIgnoreCase(actual.getTableName())) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message", String.format("Trigger %s: đúng bảng %s",
-                                    expected.getTriggerName(), expected.getTableName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message", String.format("Trigger %s: gắn sai bảng (kỳ vọng: %s, thực tế: %s)",
-                                    expected.getTriggerName(), expected.getTableName(), actual.getTableName()),
-                            "points", -tablePoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= tablePoints;
-                    }
-                    allPassed = false;
-                }
-
-                // Check events
-                if (expected.isInsert() == actual.isInsert()
-                        && expected.isUpdate() == actual.isUpdate()
-                        && expected.isDelete() == actual.isDelete()) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message", String.format("Trigger %s: đúng sự kiện", expected.getTriggerName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Trigger %s: sai sự kiện (INSERT/UPDATE/DELETE)", expected.getTriggerName()),
-                            "points", -eventPoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= eventPoints;
-                    }
-                    allPassed = false;
-                }
-
-                // Check timing
-                if (expected.isAfter() == actual.isAfter()) {
-                    details.add(Map.of(
-                            "type", "success",
-                            "message",
-                            String.format("Trigger %s: đúng thời điểm chạy", expected.getTriggerName()),
-                            "points", 0));
-                } else {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Trigger %s: sai thời điểm chạy (AFTER/INSTEAD OF)", expected.getTriggerName()),
-                            "points", -timingPoints));
-                    if (!positiveOnlyScoring) {
-                        earnedPoints -= timingPoints;
-                    }
-                    allPassed = false;
-                }
-            }
 
             // Execute test cases if defined
             if (testCases.isArray() && testCases.size() > 0) {
+                List<Double> normalizedWeights = normalizedTriggerWeights(testCases);
+                int caseIndex = 0;
                 for (JsonNode tc : testCases) {
-                    String caseId = tc.path("case_id").asText("");
                     String caseName = tc.path("case_name").asText("Unnamed");
                     String setupScript = tc.path("setup_script").asText("");
 
                     String invocationQuery = tc.path("invocation_query").asText("");
                     String validationQuery = tc.path("validation_query").asText("");
                     String verificationType = tc.path("verification_type").asText("SIDE_EFFECT");
-
-                    // Support both score_weight (new) and penalty_value (old)
-                    double scoreWeight = tc.path("score_weight").asDouble(-1);
-                    if (scoreWeight < 0) {
-                        scoreWeight = tc.path("penalty_value").asDouble(0.2);
-                    }
+                    double scoreWeight = caseIndex < normalizedWeights.size()
+                            ? normalizedWeights.get(caseIndex)
+                            : 0d;
+                    double casePoints = roundTo2(totalPoints * scoreWeight);
+                    caseIndex++;
 
                     if (invocationQuery.isBlank()) {
                         details.add(Map.of(
-                                "type", "info",
+                                "type", "error",
                                 "message",
-                                String.format("Test case '%s': bỏ qua (thiếu invocation_query)", caseName),
-                                "points", 0));
+                                String.format("Test case '%s': lỗi cấu hình (thiếu invocation_query)", caseName),
+                                "points", -casePoints));
+                        allPassed = false;
                         continue;
                     }
 
@@ -4050,10 +3963,14 @@ public class RubricTestingUsecase {
                             executeSqlScriptBatches(examSchemaService, studentSchema, studentQuery);
                         }
 
-                        // For EXECUTION_STATUS verification, we only check if invocation succeeds/fails
-                        // For SIDE_EFFECT verification, we also need to check validation_query results
-                        boolean checkSideEffect = !validationQuery.isBlank() &&
-                                "SIDE_EFFECT".equalsIgnoreCase(verificationType);
+                        // EXECUTION_STATUS checks whether invocation succeeds/fails. For backward
+                        // compatibility with older trigger rubrics, a blank validation_query also
+                        // means status-only. If the reference trigger itself rejects the DML, fall
+                        // back to status comparison instead of reporting "teacher answer failed".
+                        boolean executionStatusOnly = "EXECUTION_STATUS".equalsIgnoreCase(verificationType)
+                                || validationQuery.isBlank();
+                        boolean checkSideEffect = !executionStatusOnly
+                                && "SIDE_EFFECT".equalsIgnoreCase(verificationType);
 
                         // Build batch SQL that wraps setup + invocation + validation in a single
                         // transaction
@@ -4155,19 +4072,12 @@ public class RubricTestingUsecase {
                             studentInvocationError = e.getMessage();
                         }
 
-                        // Check if both failed with "transaction ended in trigger" (ROLLBACK trigger)
-                        boolean isRollbackTrigger = teacherInvocationError != null
-                                && teacherInvocationError.toLowerCase().contains("transaction ended in the trigger");
-                        boolean studentAlsoRollback = studentInvocationError != null
-                                && studentInvocationError.toLowerCase().contains("transaction ended in the trigger");
-
-                        // If validation_query is empty, we only check execution status (for validation
-                        // triggers)
-                        if (validationQuery.isBlank()) {
-                            // For validation triggers (ROLLBACK), check if both succeeded or both failed
-                            // the same way
+                        // For status-only TC's, or SIDE_EFFECT TC's whose reference trigger rejects
+                        // the DML, compare execution status (both reject or both accept).
+                        if (executionStatusOnly || teacherInvocationFailed || studentInvocationFailed) {
                             if (teacherInvocationFailed == studentInvocationFailed) {
-                                if (isRollbackTrigger && studentAlsoRollback) {
+                                if (teacherInvocationFailed) {
+                                    earnedWeight += scoreWeight;
                                     details.add(Map.of(
                                             "type", "success",
                                             "message",
@@ -4175,7 +4085,8 @@ public class RubricTestingUsecase {
                                                     "Test case '%s': Đạt (trigger đã từ chối giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
-                                } else if (!teacherInvocationFailed && !studentInvocationFailed) {
+                                } else {
+                                    earnedWeight += scoreWeight;
                                     details.add(Map.of(
                                             "type", "success",
                                             "message",
@@ -4183,21 +4094,13 @@ public class RubricTestingUsecase {
                                                     "Test case '%s': Đạt (trigger đã chấp nhận giao dịch đúng như kỳ vọng)",
                                                     caseName),
                                             "points", 0));
-                                } else {
-                                    details.add(Map.of(
-                                            "type", "success",
-                                            "message", String.format("Test case '%s': Đạt", caseName),
-                                            "points", 0));
                                 }
                             } else {
                                 details.add(Map.of(
                                         "type", "error",
                                         "message",
                                         String.format("Test case '%s': Không đạt (trạng thái thực thi không khớp)", caseName),
-                                        "points", -scoreWeight));
-                                if (!positiveOnlyScoring) {
-                                    earnedPoints -= scoreWeight;
-                                }
+                                        "points", -casePoints));
                                 allPassed = false;
                             }
                             continue;
@@ -4206,6 +4109,29 @@ public class RubricTestingUsecase {
                         // For SIDE_EFFECT verification, compare validation query results
                         // Results were already captured in the batch execution above
                         if (checkSideEffect) {
+                            if (teacherInvocationFailed) {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message",
+                                        String.format("Test case '%s': lỗi khi chạy đáp án chuẩn - %s",
+                                                caseName, teacherInvocationError != null
+                                                        ? teacherInvocationError : "không rõ lỗi"),
+                                        "points", -casePoints));
+                                allPassed = false;
+                                continue;
+                            }
+                            if (studentInvocationFailed) {
+                                details.add(Map.of(
+                                        "type", "error",
+                                        "message",
+                                        String.format("Test case '%s': Không đạt (lỗi khi chạy bài làm - %s)",
+                                                caseName, studentInvocationError != null
+                                                        ? studentInvocationError : "không rõ lỗi"),
+                                        "points", -casePoints));
+                                allPassed = false;
+                                continue;
+                            }
+
                             // Extract validation results from batch execution (after
                             // VALIDATION_MARKER_COLUMN)
                             SqlExecutionResult teacherFiltered = dropRowsBeforeValidationMarker(teacherResult);
@@ -4224,6 +4150,7 @@ public class RubricTestingUsecase {
                             boolean testPassed = compareQueryResults(actualRows, expectedRows);
 
                             if (testPassed) {
+                                earnedWeight += scoreWeight;
                                 details.add(Map.of(
                                         "type", "success",
                                         "message", String.format("Test case '%s': Đạt", caseName),
@@ -4232,10 +4159,7 @@ public class RubricTestingUsecase {
                                 details.add(Map.of(
                                         "type", "error",
                                         "message", String.format("Test case '%s': Không đạt (kết quả không khớp)", caseName),
-                                        "points", -scoreWeight));
-                                if (!positiveOnlyScoring) {
-                                    earnedPoints -= scoreWeight;
-                                }
+                                        "points", -casePoints));
                                 allPassed = false;
                             }
                         }
@@ -4243,17 +4167,44 @@ public class RubricTestingUsecase {
                         details.add(Map.of(
                                 "type", "error",
                                 "message", String.format("Test case '%s': ERROR - %s", caseName, e.getMessage()),
-                                "points", -scoreWeight));
-                        if (!positiveOnlyScoring) {
-                            earnedPoints -= scoreWeight;
-                        }
+                                "points", -casePoints));
                         allPassed = false;
                     }
                 }
+            } else {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "Rubric TRIGGER không có test_cases để chấm thử.",
+                        "points", 0));
+                allPassed = false;
+            }
+
+            double finalScore = roundTo2(Math.max(0d, Math.min(earnedWeight, 1d)) * totalPoints);
+
+            // Apply trigger white-box rules on top of test-case score
+            // (mirrors executeRoutineRubricGrading — this is the "Quy tắc cách viết câu lệnh" step).
+            GradeDecision bbDecision = allPassed
+                    ? GradeDecision.pass(BigDecimal.valueOf(finalScore))
+                    : GradeDecision.partial(BigDecimal.valueOf(finalScore), null);
+            GradeDecision wbDecision = applyRoutineWhiteboxPreview(
+                    "TRIGGER", studentQuery, gradingPayload, totalPoints, bbDecision);
+            if (wbDecision.scoreEarned() != null
+                    && wbDecision.scoreEarned().doubleValue() < finalScore) {
+                double whiteboxDeduction = finalScore - wbDecision.scoreEarned().doubleValue();
+                finalScore = wbDecision.scoreEarned().doubleValue();
+                allPassed = wbDecision.isCorrect();
+                String wbMsg = wbDecision.errorMessage() != null
+                        ? wbDecision.errorMessage()
+                        : "Bị trừ " + String.format("%.2f", whiteboxDeduction)
+                                + " điểm do vi phạm quy tắc whitebox.";
+                details.add(Map.of(
+                        "type", "warning",
+                        "message", "[Whitebox] " + wbMsg,
+                        "points", -Math.round(whiteboxDeduction * 100.0) / 100.0));
             }
 
             // Ensure final score is not negative
-            double finalScore = Math.max(0, Math.min(earnedPoints, totalPoints));
+            finalScore = Math.max(0, Math.min(finalScore, totalPoints));
 
             return RubricTestGradeResponse.of(finalScore, totalPoints, allPassed, details);
 

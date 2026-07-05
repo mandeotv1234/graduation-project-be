@@ -93,13 +93,8 @@ public class RubricToTestCaseTransformer {
      * non-null on every TC at this point.
      */
     public void persist(Long questionId, List<TestCase> testCases) {
-        // Replace strategy: delete-then-insert. Simpler than diff-update and
-        // there is no grading-in-progress race because rubric regeneration
-        // happens at question-authoring time, not during grading.
-        // NOTE: TestCaseRepository currently has no deleteByQuestionId — see
-        //       T08-followup note in TASKS.md. For now we only INSERT and rely on
-        //       the auto-trigger pipeline running on a question that has no
-        //       existing test cases (CreateExamQuestionsUsecase path).
+        // Callers that update an existing question delete old rows before this insert-only step.
+        // The create path has no old rows, so it can call persist directly.
         for (TestCase tc : testCases) {
             if (tc.getExpectedValue() == null) {
                 log.error("Từ chối lưu câu {} TC{} vì expectedValue đang null. "
@@ -117,12 +112,15 @@ public class RubricToTestCaseTransformer {
         String validationQuery = textOrNull(tc, "validation_query");
 
         // For PRINT_OUTPUT, validation_query is optional because output comes from PRINT messages.
-        // For TRIGGER with SIDE_EFFECT, validation_query can be optional if it's a validation trigger
-        // that only checks execution status (ROLLBACK vs success).
+        // For EXECUTION_STATUS, validation_query is optional because correctness is whether
+        // invocation_query succeeds or fails.
+        // For TRIGGER with SIDE_EFFECT, validation_query can be optional for older AI rubrics
+        // that model validation triggers as status-only checks.
         // For all other types (RETURN_VALUE, RESULT_SET, OUT_PARAMETER), validation_query is REQUIRED.
         boolean isTriggerSideEffect = "TRIGGER".equalsIgnoreCase(questionType) && vType == VerificationType.SIDE_EFFECT;
         if (validationQuery == null 
             && vType != VerificationType.PRINT_OUTPUT 
+            && vType != VerificationType.EXECUTION_STATUS
             && !isTriggerSideEffect) {
             throw new IllegalArgumentException(String.format(
                     "Câu %d TC%d (%s): validation_query là bắt buộc với verification_type=%s. "

@@ -11,9 +11,9 @@ public enum WhiteboxPolicy {
     AT_MOST("Tối đa"),
     AT_LEAST("Tối thiểu"),
     EXACTLY("Đúng bằng"),
-    REQUIRE_ANY("Bắt buộc (bất kỳ)"),
+    REQUIRE_ANY("Bắt buộc"),
     REQUIRE_ALL("Bắt buộc (tất cả)"),
-    FORBID_ANY("Cấm (bất kỳ)");
+    FORBID_ANY("Cấm");
 
     private final String label;
 

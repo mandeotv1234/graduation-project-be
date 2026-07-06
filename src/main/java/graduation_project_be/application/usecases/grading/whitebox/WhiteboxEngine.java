@@ -64,11 +64,61 @@ public class WhiteboxEngine {
         int failCount = 0;
         int warnCount = 0;
         int unverifiedCount = 0;
+        int customRegexCount = 0;
 
         for (WhiteboxRule rule : rules) {
             if (!rule.enabled()) {
                 continue;
             }
+            if (CustomRegexWhiteboxEvaluator.isCustomRegexRule(rule)) {
+                customRegexCount++;
+                String label = customRegexLabel(rule);
+                BigDecimal configured = rule.penaltyValueOrZero();
+                WhiteboxViolation violation;
+
+                if (customRegexCount > CustomRegexWhiteboxEvaluator.MAX_RULES_PER_QUESTION) {
+                    unverifiedCount++;
+                    violation = new WhiteboxViolation(rule.ruleId(), WhiteboxStatus.UNVERIFIED, label,
+                            "Regex tùy chỉnh", null,
+                            "Vượt quá số lượng regex tùy chỉnh cho phép trong một câu hỏi.",
+                            configured, BigDecimal.ZERO);
+                } else {
+                    CustomRegexWhiteboxEvaluator.CustomRegexResult result =
+                            CustomRegexWhiteboxEvaluator.evaluate(context, rule);
+                    if (!result.valid()) {
+                        unverifiedCount++;
+                        violation = new WhiteboxViolation(rule.ruleId(), WhiteboxStatus.UNVERIFIED, label,
+                                "Regex tùy chỉnh", null, result.error(), configured, BigDecimal.ZERO);
+                    } else if (!result.evaluation().violated()) {
+                        passCount++;
+                        violation = new WhiteboxViolation(rule.ruleId(), WhiteboxStatus.PASS, label,
+                                customRegexExpected(rule), null, "Đạt", configured, BigDecimal.ZERO);
+                    } else if (rule.severity() == WhiteboxSeverity.DEDUCTION) {
+                        failCount++;
+                        BigDecimal penalty = computePenalty(rule, points);
+                        rawDeduction = rawDeduction.add(penalty);
+                        violation = new WhiteboxViolation(rule.ruleId(), WhiteboxStatus.FAIL, label,
+                                customRegexExpected(rule), result.evaluation().actual(),
+                                customRegexReason(rule, label), configured, penalty);
+                    } else {
+                        warnCount++;
+                        violation = new WhiteboxViolation(rule.ruleId(), WhiteboxStatus.WARN, label,
+                                customRegexExpected(rule), result.evaluation().actual(),
+                                "Vi phạm (chỉ cảnh báo, không trừ điểm): " + label,
+                                configured, BigDecimal.ZERO);
+                    }
+                }
+
+                violations.add(violation);
+                if (emitTrace && violation.isDetailed()) {
+                    emitDetail(violation, rule, traceConfigSummary(normalizedType));
+                }
+                if (effectiveSettings.stopOnFirstViolation() && violation.status() == WhiteboxStatus.FAIL) {
+                    break;
+                }
+                continue;
+            }
+
             WhiteboxCatalogEntry entry = catalog.entry(rule.ruleId());
             WhiteboxRuleEvaluator evaluator = catalog.evaluator(rule.ruleId());
             if (entry == null || evaluator == null || !entry.questionTypes().contains(normalizedType)) {
@@ -146,6 +196,28 @@ public class WhiteboxEngine {
 
     private static String violationReason(String label) {
         return "Vi phạm: " + label;
+    }
+
+    private static String customRegexLabel(WhiteboxRule rule) {
+        String name = WhiteboxParams.stringParam(rule, "name", "");
+        if (!name.isBlank()) {
+            return name;
+        }
+        return (rule.description() != null && !rule.description().isBlank())
+                ? rule.description()
+                : "Rule regex tùy chỉnh";
+    }
+
+    private static String customRegexExpected(WhiteboxRule rule) {
+        String pattern = WhiteboxParams.stringParam(rule, "pattern", "");
+        String policy = WhiteboxParams.stringParam(rule, "policy", "FORBID").toUpperCase(Locale.ROOT);
+        String prefix = "REQUIRE".equals(policy) ? "Bắt buộc khớp regex" : "Cấm khớp regex";
+        return pattern.isBlank() ? prefix : prefix + ": " + pattern;
+    }
+
+    private static String customRegexReason(WhiteboxRule rule, String label) {
+        String message = WhiteboxParams.stringParam(rule, "message", "");
+        return message.isBlank() ? violationReason(label) : message;
     }
 
     private static String traceConfigSummary(String questionType) {

@@ -71,6 +71,93 @@ class WhiteboxValidateUsecaseTest {
     }
 
     @Test
+    void execute_customRegexStoredProcedure_forbidsSelectStar() throws Exception {
+        String rulesJson = """
+                [
+                  {
+                    "rule_id": "CUSTOM_REGEX_TEST",
+                    "enabled": true,
+                    "type": "CUSTOM_REGEX",
+                    "severity": "DEDUCTION",
+                    "penalty_value": 0.5,
+                    "penalty_unit": "ABSOLUTE",
+                    "description": "select*",
+                    "params": {
+                      "name": "select*",
+                      "policy": "FORBID",
+                      "pattern": "\\\\bSELECT\\\\s*\\\\*",
+                      "case_insensitive": true,
+                      "message": "Không được dùng SELECT *"
+                    }
+                  }
+                ]
+                """;
+        WhiteboxValidateRequest request = new WhiteboxValidateRequest(
+                "STORED_PROCEDURE",
+                """
+                CREATE PROCEDURE SP_InTKXe_MSSV
+                AS
+                BEGIN
+                  SELECT*
+                  FROM ChuyenXe;
+                END;
+                """,
+                mapper.readTree(rulesJson),
+                null,
+                BigDecimal.valueOf(2.5));
+
+        WhiteboxValidateResponse response = usecase.execute(request);
+
+        assertEquals(1, response.failCount());
+        assertEquals(0.5, response.rawDeduction());
+        assertEquals(0.5, response.cappedDeduction());
+        assertEquals("SELECT*", response.violations().get(0).actual());
+    }
+
+    @Test
+    void execute_customRegexStoredProcedure_doubleEscapedPatternDoesNotMatchSelectStar() throws Exception {
+        String rulesJson = """
+                [
+                  {
+                    "rule_id": "CUSTOM_REGEX_TEST",
+                    "enabled": true,
+                    "type": "CUSTOM_REGEX",
+                    "severity": "DEDUCTION",
+                    "penalty_value": 0.5,
+                    "penalty_unit": "ABSOLUTE",
+                    "description": "select*",
+                    "params": {
+                      "name": "select*",
+                      "policy": "FORBID",
+                      "pattern": "\\\\\\\\bSELECT\\\\\\\\s*\\\\\\\\*",
+                      "case_insensitive": true,
+                      "message": "Không được dùng SELECT *"
+                    }
+                  }
+                ]
+                """;
+        WhiteboxValidateRequest request = new WhiteboxValidateRequest(
+                "STORED_PROCEDURE",
+                """
+                CREATE PROCEDURE SP_InTKXe_MSSV
+                AS
+                BEGIN
+                  SELECT*
+                  FROM ChuyenXe;
+                END;
+                """,
+                mapper.readTree(rulesJson),
+                null,
+                BigDecimal.valueOf(2.5));
+
+        WhiteboxValidateResponse response = usecase.execute(request);
+
+        assertEquals(1, response.passCount());
+        assertEquals(0, response.failCount());
+        assertEquals(0.0, response.cappedDeduction());
+    }
+
+    @Test
     void execute_nullQuestionType_defaultsToSelectQuery() throws Exception {
         String rulesJson = """
                 [

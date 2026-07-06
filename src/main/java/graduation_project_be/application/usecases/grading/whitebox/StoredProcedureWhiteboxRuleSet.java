@@ -7,8 +7,8 @@ import java.util.Map;
 import static graduation_project_be.application.usecases.grading.whitebox.RoutineWhiteboxPatterns.*;
 
 /**
- * White-box rule catalog for STORED_PROCEDURE question type (12 rules).
- * All rules use {@code parserRequired=false} — text-scan only, no JSQLParser dependency.
+ * Danh mục rule white-box cho loại câu STORED_PROCEDURE.
+ * Tất cả rule dùng {@code parserRequired=false}: chỉ quét text, không phụ thuộc JSQLParser.
  */
 final class StoredProcedureWhiteboxRuleSet {
 
@@ -21,7 +21,7 @@ final class StoredProcedureWhiteboxRuleSet {
     static void registerInto(Map<String, WhiteboxCatalogEntry> entries,
                              Map<String, WhiteboxRuleEvaluator> evaluators) {
 
-        // ---- Group: Error handling ----
+        // ---- Nhóm: Xử lý lỗi ----
         reg(entries, evaluators, "SP_REQUIRED_TRY_CATCH", WhiteboxRuleType.REQUIRED, "ERROR_HANDLING",
                 "Bắt buộc TRY/CATCH", "Stored procedure phải có khối BEGIN TRY ... BEGIN CATCH để xử lý lỗi.",
                 15, false,
@@ -36,9 +36,9 @@ final class StoredProcedureWhiteboxRuleSet {
                     return WhiteboxEvaluation.of(violated, violated ? actual : "Có đầy đủ BEGIN TRY/CATCH");
                 });
 
-        // ---- Group: Transaction ----
+        // ---- Nhóm: Transaction ----
         reg(entries, evaluators, "SP_REQUIRED_TRANSACTION", WhiteboxRuleType.REQUIRED, "TRANSACTION",
-                "Bắt buộc Transaction", "Stored procedure phải dùng BEGIN TRAN kết hợp COMMIT hoặc ROLLBACK.",
+                "Bắt buộc transaction", "Stored procedure phải dùng BEGIN TRAN kết hợp COMMIT hoặc ROLLBACK.",
                 20, false,
                 WhiteboxFeature.TRANSACTION, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
                 List.of(), List.of(),
@@ -51,49 +51,7 @@ final class StoredProcedureWhiteboxRuleSet {
                     return WhiteboxEvaluation.of(violated, violated ? actual : "Có đầy đủ transaction");
                 });
 
-        // ---- Group: Settings ----
-        reg(entries, evaluators, "SP_REQUIRED_SET_NOCOUNT_ON", WhiteboxRuleType.REQUIRED, "SETTINGS",
-                "Bắt buộc SET NOCOUNT ON", "Stored procedure nên khai báo SET NOCOUNT ON để tắt thông báo số dòng.",
-                5, false,
-                WhiteboxFeature.SET_NOCOUNT, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
-                List.of(), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(
-                        !find(ctx.cleanedSql(), SET_NOCOUNT_ON),
-                        "Không tìm thấy SET NOCOUNT ON"));
-
-        // ---- Group: Validation ----
-        reg(entries, evaluators, "SP_REQUIRED_INPUT_VALIDATION", WhiteboxRuleType.REQUIRED, "VALIDATION",
-                "Bắt buộc kiểm tra tham số đầu vào", "Stored procedure phải kiểm tra tham số NULL trước khi xử lý.",
-                10, false,
-                WhiteboxFeature.INPUT_VALIDATION, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
-                List.of(), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(
-                        !find(ctx.cleanedSql(), INPUT_VALIDATION),
-                        "Không tìm thấy kiểm tra NULL cho tham số đầu vào"));
-
-        // ---- Group: Parameters ----
-        reg(entries, evaluators, "SP_REQUIRED_OUTPUT_PARAMETER", WhiteboxRuleType.REQUIRED, "PARAMETERS",
-                "Bắt buộc tham số OUTPUT", "Stored procedure phải khai báo ít nhất một tham số OUTPUT/OUT.",
-                15, false,
-                WhiteboxFeature.OUTPUT_PARAM, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
-                List.of(), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(
-                        !find(ctx.cleanedSql(), OUTPUT_PARAM),
-                        "Không tìm thấy tham số OUTPUT"));
-
-        reg(entries, evaluators, "SP_MAX_PARAM_COUNT", WhiteboxRuleType.LIMIT, "PARAMETERS",
-                "Giới hạn số lượng tham số", "Số tham số đầu vào không được vượt quá max_params.",
-                5, false,
-                WhiteboxFeature.PARAM_COUNT, WhiteboxFeatureKind.NUMERIC, WhiteboxPolicy.AT_MOST,
-                List.of(), List.of(WhiteboxParamSpec.number("max_params", "Số tham số tối đa", true, 5)),
-                (ctx, rule) -> {
-                    int max = WhiteboxParams.intParam(rule, "max_params", 5);
-                    int actual = countParameters(ctx.cleanedSql());
-                    return WhiteboxEvaluation.of(actual > max,
-                            "Số tham số: " + actual + (actual > max ? " > " : " <= ") + max);
-                });
-
-        // ---- Group: Forbidden ----
+        // ---- Nhóm: Cấm dùng ----
         reg(entries, evaluators, "SP_FORBIDDEN_CURSOR", WhiteboxRuleType.FORBIDDEN, "CURSOR",
                 "Cấm CURSOR", "Cấm khai báo và dùng CURSOR trong stored procedure.",
                 20, false,
@@ -129,24 +87,6 @@ final class StoredProcedureWhiteboxRuleSet {
                 (ctx, rule) -> WhiteboxEvaluation.of(
                         find(ctx.cleanedSql(), TRUNCATE_TABLE),
                         "Phát hiện TRUNCATE TABLE"));
-
-        reg(entries, evaluators, "SP_FORBIDDEN_PRINT", WhiteboxRuleType.FORBIDDEN, "DEBUG",
-                "Cấm PRINT", "Cấm dùng câu lệnh PRINT (chỉ dùng để debug, không nên có trong code production).",
-                5, false,
-                WhiteboxFeature.PRINT, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
-                List.of(), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(
-                        find(ctx.cleanedSql(), PRINT_STMT),
-                        "Phát hiện câu lệnh PRINT"));
-
-        reg(entries, evaluators, "SP_FORBIDDEN_RAISERROR_LEGACY", WhiteboxRuleType.FORBIDDEN, "ERROR_HANDLING",
-                "Cấm RAISERROR cũ", "Cấm dùng RAISERROR (cú pháp cũ) — nên dùng THROW thay thế.",
-                5, false,
-                WhiteboxFeature.RAISERROR, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
-                List.of(), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(
-                        find(ctx.cleanedSql(), RAISERROR_LEGACY),
-                        "Phát hiện RAISERROR (cú pháp cũ, nên dùng THROW)"));
     }
 
     private static void reg(Map<String, WhiteboxCatalogEntry> entries,

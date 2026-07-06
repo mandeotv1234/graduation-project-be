@@ -113,18 +113,9 @@ class SelectWhiteboxEvaluatorsTest {
             new Case("REQUIRED_SET_OPERATOR", "{}",
                     "SELECT id FROM a",
                     "SELECT id FROM a UNION SELECT id FROM b"),
-            new Case("FORBIDDEN_FUNCTION", "{\"functions\":[\"FORMAT\"]}",
-                    "SELECT FORMAT(d, 'x') AS c FROM a",
-                    "SELECT d FROM a"),
-            new Case("REQUIRED_FUNCTION", "{\"functions\":[\"DATEDIFF\"]}",
-                    "SELECT d FROM a",
-                    "SELECT DATEDIFF(YEAR, a, b) AS c FROM a"),
             new Case("FORBIDDEN_KEYWORD", "{\"keywords\":[\"TOP\"]}",
                     "SELECT TOP 1 id FROM a",
-                    "SELECT id FROM a"),
-            new Case("REQUIRED_KEYWORD", "{\"keywords\":[\"BETWEEN\"]}",
-                    "SELECT id FROM a",
-                    "SELECT id FROM a WHERE x BETWEEN 1 AND 5"));
+                    "SELECT id FROM a"));
 
     @Test
     void everyExposedSelectRuleHasACaseHere() {

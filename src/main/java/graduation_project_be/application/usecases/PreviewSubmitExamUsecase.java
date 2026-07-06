@@ -251,7 +251,8 @@ public class PreviewSubmitExamUsecase {
                                 errorMessage = "Kết quả không khớp với đáp án mẫu.";
                             }
                             if (question.getQuestionType() == QuestionType.FUNCTION
-                                    || question.getQuestionType() == QuestionType.INSERT_DATA) {
+                                    || question.getQuestionType() == QuestionType.INSERT_DATA
+                                    || question.getQuestionType() == QuestionType.TRIGGER) {
                                 BigDecimal currentScore = submission.getScoreEarned() != null
                                         ? submission.getScoreEarned() : BigDecimal.ZERO;
                                 GradeDecision decision = isCorrect

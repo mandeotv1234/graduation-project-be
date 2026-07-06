@@ -271,6 +271,20 @@ class WhiteboxEngineTest {
     }
 
     @Test
+    void customRegex_matchTimeout_isUnverifiedAndDoesNotDeduct() {
+        WhiteboxResult r = eval("a".repeat(20_000) + "!",
+                List.of(rule("CUSTOM_REGEX_TIMEOUT", WhiteboxRuleType.CUSTOM_REGEX,
+                        WhiteboxSeverity.DEDUCTION, WhiteboxPenaltyUnit.ABSOLUTE, 1,
+                        """
+                        { "policy": "FORBID", "pattern": "^(a|aa)+$" }
+                        """)),
+                WhiteboxSettings.defaults());
+
+        assertAmount("0", r.cappedDeduction());
+        assertEquals(WhiteboxStatus.UNVERIFIED, r.violations().get(0).status());
+    }
+
+    @Test
     void disabledRule_isSkipped() {
         WhiteboxRule disabled = new WhiteboxRule("FORBIDDEN_SELECT_STAR", false,
                 WhiteboxRuleType.FORBIDDEN, BigDecimal.valueOf(2), WhiteboxPenaltyUnit.ABSOLUTE,

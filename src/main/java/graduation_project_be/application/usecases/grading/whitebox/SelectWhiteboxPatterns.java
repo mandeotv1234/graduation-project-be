@@ -17,13 +17,11 @@ public final class SelectWhiteboxPatterns {
     static final Pattern LEFT_JOIN = ci("\\bLEFT\\s+(OUTER\\s+)?JOIN\\b");
     static final Pattern INNER_JOIN = ci("\\bINNER\\s+JOIN\\b");
     static final Pattern CROSS_JOIN = ci("\\bCROSS\\s+JOIN\\b");
-    static final Pattern CTE = ci("\\bWITH\\s+[\\[\\]\\w]+\\s+AS\\s*\\(");
     static final Pattern SELECT_STAR = ci("\\bSELECT\\s+(DISTINCT\\s+)?(TOP\\s*\\(?\\s*\\d+\\s*\\)?\\s+)?([\\[\\]\\w]+\\.)?\\*");
     static final Pattern DISTINCT = ci("\\bSELECT\\s+DISTINCT\\b");
     static final Pattern GROUP_BY = ci("\\bGROUP\\s+BY\\b");
     static final Pattern HAVING = ci("\\bHAVING\\b");
     static final Pattern ORDER_BY = ci("\\bORDER\\s+BY\\b");
-    static final Pattern WINDOW = ci("\\bOVER\\s*\\(");
     static final Pattern SET_OPERATOR = ci("\\b(UNION|INTERSECT|EXCEPT)\\b");
     static final Pattern AGGREGATE = ci("\\b(SUM|COUNT|AVG|MIN|MAX)\\s*\\(");
 

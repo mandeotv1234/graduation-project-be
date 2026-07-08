@@ -33,7 +33,7 @@ final class SelectWhiteboxRuleSet {
 
     static void registerInto(Map<String, WhiteboxCatalogEntry> entries,
                              Map<String, WhiteboxRuleEvaluator> evaluators) {
-        // ---- Group 1: Subquery & CTE ----
+        // ---- Group 1: Subquery ----
         reg(entries, evaluators, "FORBIDDEN_SUBQUERY", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
                 "Cấm tất cả truy vấn lồng", "Cấm mọi SELECT lồng trong bất kỳ mệnh đề nào (SELECT/FROM/WHERE/HAVING).",
                 25, true,
@@ -94,19 +94,6 @@ final class SelectWhiteboxRuleSet {
                 List.of(), List.of(),
                 (ctx, rule) -> WhiteboxEvaluation.of(ctx.facts().hasCorrelatedSubquery(),
                         "Có truy vấn con tương quan (tham chiếu bảng ngoài)"));
-        reg(entries, evaluators, "FORBIDDEN_CTE", WhiteboxRuleType.FORBIDDEN, "SUBQUERY_CTE",
-                "Cấm CTE", "Cấm dùng CTE (WITH ... AS (...)).",
-                15, false,
-                WhiteboxFeature.CTE, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
-                List.of("REQUIRED_CTE"), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(find(ctx.cleanedSql(), CTE), "Phát hiện CTE (WITH ... AS)"));
-        reg(entries, evaluators, "REQUIRED_CTE", WhiteboxRuleType.REQUIRED, "SUBQUERY_CTE",
-                "Bắt buộc dùng CTE", "Bắt buộc dùng CTE (WITH ... AS (...)).",
-                20, false,
-                WhiteboxFeature.CTE, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
-                List.of("FORBIDDEN_CTE"), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(!find(ctx.cleanedSql(), CTE), "Không tìm thấy CTE"));
-
         // ---- Group 2: JOIN ----
         reg(entries, evaluators, "REQUIRED_JOIN", WhiteboxRuleType.REQUIRED, "JOIN",
                 "Bắt buộc dùng JOIN", "Bắt buộc dùng từ khóa JOIN.",
@@ -222,25 +209,13 @@ final class SelectWhiteboxRuleSet {
                     return WhiteboxEvaluation.of(hit != null, "Dùng hàm bị cấm: " + hit);
                 });
 
-        // ---- Group 5: ORDER BY & Window ----
+        // ---- Group 5: ORDER BY ----
         reg(entries, evaluators, "REQUIRED_ORDER_BY", WhiteboxRuleType.REQUIRED, "ORDER_WINDOW",
                 "Bắt buộc ORDER BY", "Bắt buộc có ORDER BY.",
                 10, false,
                 WhiteboxFeature.ORDER_BY, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
                 List.of(), List.of(),
                 (ctx, rule) -> WhiteboxEvaluation.of(!find(ctx.cleanedSql(), ORDER_BY), "Không tìm thấy ORDER BY"));
-        reg(entries, evaluators, "FORBIDDEN_WINDOW_FUNCTION", WhiteboxRuleType.FORBIDDEN, "ORDER_WINDOW",
-                "Cấm window function", "Cấm dùng window function (OVER(...)).",
-                20, false,
-                WhiteboxFeature.WINDOW_FUNCTION, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.FORBID,
-                List.of("REQUIRED_WINDOW_FUNCTION"), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(find(ctx.cleanedSql(), WINDOW), "Phát hiện OVER(...)"));
-        reg(entries, evaluators, "REQUIRED_WINDOW_FUNCTION", WhiteboxRuleType.REQUIRED, "ORDER_WINDOW",
-                "Bắt buộc window function", "Bắt buộc dùng window function (OVER(...)).",
-                25, false,
-                WhiteboxFeature.WINDOW_FUNCTION, WhiteboxFeatureKind.BOOLEAN, WhiteboxPolicy.REQUIRE,
-                List.of("FORBIDDEN_WINDOW_FUNCTION"), List.of(),
-                (ctx, rule) -> WhiteboxEvaluation.of(!find(ctx.cleanedSql(), WINDOW), "Không tìm thấy OVER(...)"));
 
         // ---- Group 6: Set operations ----
         reg(entries, evaluators, "FORBIDDEN_SET_OPERATOR", WhiteboxRuleType.FORBIDDEN, "SET_OPERATION",

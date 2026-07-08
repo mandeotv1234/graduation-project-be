@@ -17,38 +17,38 @@ class WhiteboxCatalogUsecaseTest {
     private final WhiteboxCatalogUsecase usecase = new WhiteboxCatalogUsecase(new WhiteboxCatalog());
 
     @Test
-    void execute_selectQuery_returns33Entries() {
+    void execute_selectQuery_returns29Entries() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("SELECT_QUERY");
 
-        assertEquals(33, entries.size(), "SELECT_QUERY should have 33 rules");
+        assertEquals(29, entries.size(), "SELECT_QUERY should have 29 rules");
     }
 
     @Test
     void execute_nullQuestionType_defaultsToSelectQuery() {
         List<WhiteboxCatalogEntry> entries = usecase.execute(null);
 
-        assertEquals(33, entries.size(), "Null question type should default to SELECT_QUERY");
+        assertEquals(29, entries.size(), "Null question type should default to SELECT_QUERY");
     }
 
     @Test
     void execute_blankQuestionType_defaultsToSelectQuery() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("  ");
 
-        assertEquals(33, entries.size(), "Blank question type should default to SELECT_QUERY");
+        assertEquals(29, entries.size(), "Blank question type should default to SELECT_QUERY");
     }
 
     @Test
     void execute_lowercaseQuestionType_normalized() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("select_query");
 
-        assertEquals(33, entries.size(), "Lowercase question type should be normalized to uppercase");
+        assertEquals(29, entries.size(), "Lowercase question type should be normalized to uppercase");
     }
 
     @Test
     void execute_mixedCaseQuestionType_normalized() {
         List<WhiteboxCatalogEntry> entries = usecase.execute("Select_Query");
 
-        assertEquals(33, entries.size(), "Mixed case question type should be normalized to uppercase");
+        assertEquals(29, entries.size(), "Mixed case question type should be normalized to uppercase");
     }
 
     @Test

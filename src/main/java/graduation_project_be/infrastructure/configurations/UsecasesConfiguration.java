@@ -479,12 +479,13 @@ public class UsecasesConfiguration {
             GradingSupport gradingSupport,
             ObjectMapper objectMapper,
             SelectQuestionGrader selectQuestionGrader,
-            WhiteboxEngine whiteboxEngine) {
+            WhiteboxEngine whiteboxEngine,
+            SelectQueryStructureAnalyzer selectQueryStructureAnalyzer) {
         return new RubricTestingUsecase(
                 aiService, examSchemaService,
                 examRepository, examSpecificationRepository,
                 getExamQuestionsUsecase, insertDataQuestionGrader, gradingSupport, objectMapper,
-                selectQuestionGrader, whiteboxEngine);
+                selectQuestionGrader, whiteboxEngine, selectQueryStructureAnalyzer);
     }
 
     @Bean

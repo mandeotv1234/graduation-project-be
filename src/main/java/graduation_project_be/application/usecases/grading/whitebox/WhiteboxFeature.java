@@ -12,7 +12,6 @@ package graduation_project_be.application.usecases.grading.whitebox;
 public enum WhiteboxFeature {
     SUBQUERY("Truy vấn con"),
     CORRELATED_SUBQUERY("Truy vấn con tương quan"),
-    CTE("CTE (WITH)"),
     JOIN("JOIN"),
     LEFT_JOIN("LEFT JOIN"),
     INNER_JOIN("INNER JOIN"),
@@ -24,7 +23,6 @@ public enum WhiteboxFeature {
     HAVING("HAVING"),
     AGGREGATE_FUNCTION("Hàm tổng hợp"),
     ORDER_BY("ORDER BY"),
-    WINDOW_FUNCTION("Window function"),
     SET_OPERATOR("Toán tử tập hợp"),
     FUNCTION("Hàm cụ thể"),
     KEYWORD("Từ khóa cụ thể"),

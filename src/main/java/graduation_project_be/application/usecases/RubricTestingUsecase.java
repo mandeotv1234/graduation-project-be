@@ -7,10 +7,15 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.AIService;
+import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.usecases.grading.GradeDecision;
 import graduation_project_be.application.usecases.grading.GradingSupport;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
+import graduation_project_be.application.usecases.grading.QueryStructureFacts;
+import graduation_project_be.application.usecases.grading.SelectDatasetAdequacyLinter;
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
+import graduation_project_be.application.usecases.grading.SelectResultDiff;
+import graduation_project_be.application.usecases.grading.SelectResultScorer;
 import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
@@ -80,8 +85,11 @@ public class RubricTestingUsecase {
     // Reused so the SELECT preview falls back to dataset grading exactly like runtime does.
     private final SelectQuestionGrader selectGrader;
     private final WhiteboxEngine whiteboxEngine;
-    // Stateless helper; constructed directly so it stays out of the generated constructor.
+    // Reused (read-only) to detect whether the correct query aggregates, gating the NULL-presence lint.
+    private final SelectQueryStructureAnalyzer queryStructureAnalyzer;
+    // Stateless helpers; constructed directly so they stay out of the generated constructor.
     private final SelectTrapDiscriminationChecker trapChecker = new SelectTrapDiscriminationChecker();
+    private final SelectDatasetAdequacyLinter adequacyLinter = new SelectDatasetAdequacyLinter();
 
     public String generateGradingRubric(GenerateGradingRubricRequest request) {
         String sc = request.schemaContext();
@@ -1000,6 +1008,7 @@ public class RubricTestingUsecase {
                                 "message", "[" + caseId + "] Dùng kết quả đáp án giáo viên làm expected cho test case",
                                 "points", 0));
 
+                        checkDatasetAdequacy(caseId, correctQuery, teacherRows, details);
                         checkTrapDiscrimination(caseSchema, caseId, caseName, correctQuery, teacherRows, details);
                     } else {
                         JsonNode expectedResult = tc.path("expected_result");
@@ -1307,6 +1316,33 @@ public class RubricTestingUsecase {
     private void loadDdlIfPresent(String schemaName, String ddlScript) {
         if (ddlScript != null && !ddlScript.isBlank()) {
             examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, null);
+        }
+    }
+
+    /**
+     * Runs the cheap authoring data-adequacy checks on the teacher reference rows already produced
+     * for this test case and surfaces any degenerate-dataset warnings to the teacher. Advisory only
+     * — it appends response details and never blocks. The query's aggregate/GROUP BY shape is passed
+     * to the linter so the output-shape checks are skipped for scalar-aggregate queries (whose single
+     * row is correct) and the column-NULL check is skipped when an aggregate may be NULL by design.
+     */
+    private void checkDatasetAdequacy(
+            String caseId,
+            String correctQuery,
+            List<Map<String, Object>> teacherRows,
+            List<Map<String, Object>> details) {
+        QueryStructureFacts facts = queryStructureAnalyzer.analyze(correctQuery);
+        boolean aggregatePresent = facts.parseOk() && !facts.aggregateFns().isEmpty();
+        boolean groupByPresent = facts.parseOk() && facts.hasGroupBy();
+        for (SelectDatasetAdequacyLinter.Finding finding
+                : adequacyLinter.lint(teacherRows, aggregatePresent, groupByPresent)) {
+            String prefix = finding.severity() == SelectDatasetAdequacyLinter.Severity.HARD_WARN
+                    ? "[" + caseId + "] ⚠ Dữ liệu test case yếu: "
+                    : "[" + caseId + "] Dữ liệu test case: ";
+            details.add(Map.of(
+                    "type", "warning",
+                    "message", prefix + finding.message(),
+                    "points", 0));
         }
     }
 
@@ -1914,117 +1950,29 @@ public class RubricTestingUsecase {
                 ? new ArrayList<>()
                 : new ArrayList<>(actualRows.get(0).keySet());
 
-        List<String> effectiveExpectedColumns = new ArrayList<>();
-        if (expectedColumns != null) {
-            for (String col : expectedColumns) {
-                if (col != null && !col.isBlank()) {
-                    effectiveExpectedColumns.add(col);
-                }
-            }
-        }
-
-        if (effectiveExpectedColumns.isEmpty() || actualColumns.isEmpty()) {
+        List<SelectResultDiff.SelectResultEdit> edits =
+                SelectResultDiff.collectColumnEdits(expectedColumns, actualColumns);
+        if (edits.isEmpty()) {
             return BigDecimal.ZERO;
         }
 
-        // Positional column analysis
-        int nameMismatchAtSamePosition = 0;
-        int minCols = Math.min(effectiveExpectedColumns.size(), actualColumns.size());
-        for (int i = 0; i < minCols; i++) {
-            if (!effectiveExpectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                nameMismatchAtSamePosition++;
-            }
-        }
-        int trulyMissingColumns = Math.max(0, effectiveExpectedColumns.size() - actualColumns.size());
-        int trulyExtraColumns = Math.max(0, actualColumns.size() - effectiveExpectedColumns.size());
-        int missingColumns = nameMismatchAtSamePosition + trulyMissingColumns;
-        int extraColumns = trulyExtraColumns;
+        SelectResultScorer.ScoringResult result =
+                SelectResultScorer.score(edits, selectRules, maxTotalPoints, gradingSupport);
 
-        int columnOrderViolations = 0;
-        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && trulyExtraColumns == 0
-                && !sameColumnOrder(effectiveExpectedColumns, actualColumns)) {
-            columnOrderViolations = 1;
-        }
-
-        // No structural issues
-        if (nameMismatchAtSamePosition == 0 && trulyMissingColumns == 0 && extraColumns == 0
-                && columnOrderViolations == 0) {
-            return BigDecimal.ZERO;
-        }
-
-        // Build structural rule checks:
-        // - COLUMN/NOT_EQUAL: column exists at same position but has different name
-        // (e.g., missing alias)
-        // - COLUMN/IS_MISSING: column is truly missing (student has fewer columns)
-        // - COLUMN/IS_EXTRA: student has extra columns
-        // - COLUMN_ORDER/OUT_OF_ORDER: columns are reordered
-        List<SelectRuleApplication> structuralApps = new ArrayList<>();
-        if (nameMismatchAtSamePosition > 0) {
-            structuralApps.add(applySelectRule(selectRules, "COLUMN", "NOT_EQUAL", nameMismatchAtSamePosition,
-                    maxTotalPoints, 0.0,
-                    "t\u00ean " + nameMismatchAtSamePosition + " c\u1ed9t kh\u00f4ng kh\u1edbp \u0111\u00e1p \u00e1n"));
-        }
-        if (trulyMissingColumns > 0) {
-            structuralApps.add(applySelectRule(selectRules, "COLUMN", "IS_MISSING", trulyMissingColumns,
-                    maxTotalPoints, 0.0,
-                    "thi\u1ebfu " + trulyMissingColumns + " c\u1ed9t"));
-        }
-        if (extraColumns > 0) {
-            structuralApps.add(applySelectRule(selectRules, "COLUMN", "IS_EXTRA", extraColumns,
-                    maxTotalPoints, 0.0,
-                    "th\u1eeba " + extraColumns + " c\u1ed9t"));
-        }
-        if (columnOrderViolations > 0) {
-            structuralApps.add(applySelectRule(selectRules, "COLUMN_ORDER", "OUT_OF_ORDER", columnOrderViolations,
-                    maxTotalPoints, 0.0,
-                    "sai th\u1ee9 t\u1ef1 c\u1ed9t k\u1ebft qu\u1ea3"));
-        }
-
-        double totalStructuralDeduction = 0d;
         StringBuilder issueBuilder = new StringBuilder();
-        boolean anyViolation = false;
-
-        for (SelectRuleApplication app : structuralApps) {
-            if (!app.violationPresent())
-                continue;
-            anyViolation = true;
-            if (app.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                totalStructuralDeduction += app.deduction().doubleValue();
-            }
-            if (app.message() != null && !app.message().isBlank()) {
-                appendSelectIssue(issueBuilder, app.message());
-            }
+        for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+            appendSelectIssue(issueBuilder, SelectResultScorer.describe(applied));
         }
 
-        if (!anyViolation) {
-            return BigDecimal.ZERO;
-        }
-
-        // If violations exist but no rules matched (totalDeduction=0 with rule not
-        // found),
-        // still report the issue as info so teacher can see it
-        if (totalStructuralDeduction <= 0) {
-            String unmatchedMsg = "Ph\u00e1t hi\u1ec7n kh\u00e1c bi\u1ec7t c\u1ed9t k\u1ebft qu\u1ea3";
-            if (missingColumns > 0) {
-                unmatchedMsg += " (thi\u1ebfu/sai t\u00ean " + missingColumns + " c\u1ed9t)";
-            }
-            if (extraColumns > 0) {
-                unmatchedMsg += " (th\u1eeba " + extraColumns + " c\u1ed9t)";
-            }
-            unmatchedMsg += " nh\u01b0ng kh\u00f4ng t\u00ecm th\u1ea5y quy t\u1eafc COLUMN t\u01b0\u01a1ng \u1ee9ng \u2192 kh\u00f4ng tr\u1eeb \u0111i\u1ec3m.";
+        BigDecimal rounded = result.totalDeduction().setScale(2, RoundingMode.HALF_UP);
+        if (rounded.compareTo(BigDecimal.ZERO) <= 0) {
             details.add(Map.of(
                     "type", "info",
-                    "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + unmatchedMsg,
+                    "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + issueBuilder.toString().trim(),
                     "points", 0));
             return BigDecimal.ZERO;
         }
 
-        // Cap at total points
-        if (totalStructuralDeduction > maxTotalPoints.doubleValue()) {
-            totalStructuralDeduction = maxTotalPoints.doubleValue();
-        }
-
-        BigDecimal rounded = BigDecimal.valueOf(totalStructuralDeduction).setScale(2, RoundingMode.HALF_UP);
         details.add(Map.of(
                 "type", "warning",
                 "message", "[\u0110i\u1ec3m c\u1ea5u tr\u00fac c\u1ed9t] " + issueBuilder.toString().trim()
@@ -2065,20 +2013,27 @@ public class RubricTestingUsecase {
         }
 
         List<Map<String, Object>> expectedRowMaps = buildExpectedRowMaps(effectiveExpectedColumns, safeExpectedRows);
-        List<String> comparisonColumns = !effectiveExpectedColumns.isEmpty()
-                ? new ArrayList<>(effectiveExpectedColumns)
-                : new ArrayList<>(actualColumns);
-        if (comparisonColumns.isEmpty() && !expectedRowMaps.isEmpty()) {
-            comparisonColumns.addAll(expectedRowMaps.get(0).keySet());
-        }
 
-        // Remap actual rows by column position so cell comparison works
-        // even when student uses different column aliases (e.g., missing AS).
-        // Column name mismatches are still tracked separately via COLUMN rules.
-        List<Map<String, Object>> remappedActualRows = remapActualRowsByPosition(
-                safeActualRows, actualColumns, effectiveExpectedColumns);
+        JsonNode cellNotEqualRule = gradingSupport.findInsertRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
+        JsonNode cellNullRule = gradingSupport.findInsertRule(selectRules, "CELL_VALUE", "IS_NULL");
+        JsonNode cellCompareModifiers = gradingSupport.firstNonEmptyModifiers(
+                gradingSupport.extractInsertRuleModifiers(cellNotEqualRule),
+                gradingSupport.extractInsertRuleModifiers(cellNullRule));
 
-        if (compareSelectResultStrict(remappedActualRows, expectedRowMaps, strictOrdering, comparisonColumns)) {
+        // SORT_ASC on the ROW_ORDER rule means "accept any row order" -> grade order-insensitive.
+        JsonNode rowOrderRule = gradingSupport.findInsertRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
+        boolean orderSensitive = strictOrdering
+                && !(rowOrderRule != null && gradingSupport.hasInsertModifier(rowOrderRule, "SORT_ASC"));
+
+        List<SelectResultDiff.SelectResultEdit> edits = SelectResultDiff.collectRowAndCellEdits(
+                effectiveExpectedColumns,
+                actualColumns,
+                expectedRowMaps,
+                safeActualRows,
+                orderSensitive,
+                cellCompareModifiers,
+                gradingSupport);
+        if (edits.isEmpty()) {
             details.add(Map.of(
                     "type", "success",
                     "message", "[" + caseId + "] " + caseName + ": Khớp hoàn toàn kết quả, không bị trừ điểm",
@@ -2086,99 +2041,15 @@ public class RubricTestingUsecase {
             return BigDecimal.ZERO;
         }
 
-        int expectedRowsCount = expectedRowMaps.size();
-        int actualRowsCount = safeActualRows.size();
-        int missingRows = Math.max(0, expectedRowsCount - actualRowsCount);
-        int extraRows = Math.max(0, actualRowsCount - expectedRowsCount);
-
-        JsonNode rowOrderRule = findSelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER");
-        int rowOrderViolations = 0;
-        if (strictOrdering && rowOrderRule != null && !hasSelectModifier(rowOrderRule, "SORT_ASC")) {
-            rowOrderViolations = countSelectRowOrderViolations(remappedActualRows, expectedRowMaps, comparisonColumns);
-            if (rowOrderViolations == 0) {
-                rowOrderViolations = 1;
-            }
-        }
-
-        JsonNode cellNotEqualRule = findSelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL");
-        JsonNode cellNullRule = findSelectRule(selectRules, "CELL_VALUE", "IS_NULL");
-        JsonNode cellCompareModifiers = firstNonEmptyArray(
-                extractSelectRuleModifiers(cellNotEqualRule),
-                extractSelectRuleModifiers(cellNullRule));
-
-        List<SelectRowPair> rowPairs = buildSelectRowPairs(
-                remappedActualRows,
-                expectedRowMaps,
-                comparisonColumns,
-                strictOrdering,
-                cellCompareModifiers);
-        int wrongCells = countSelectCellMismatches(rowPairs, comparisonColumns, cellCompareModifiers);
-        int nullViolations = countSelectNullViolations(rowPairs, comparisonColumns, cellCompareModifiers);
-
-        List<SelectRuleApplication> applications = List.of(
-                applySelectRule(selectRules, "ROW", "IS_MISSING", missingRows,
-                        caseMaxPenalty, 0.0,
-                        "thiếu " + missingRows + " dòng kết quả"),
-                applySelectRule(selectRules, "ROW", "IS_EXTRA", extraRows,
-                        caseMaxPenalty, 0.0,
-                        "thừa " + extraRows + " dòng kết quả"),
-                applySelectRule(selectRules, "CELL_VALUE", "NOT_EQUAL", wrongCells,
-                        caseMaxPenalty, 0.0,
-                        "sai giá trị " + wrongCells + " ô dữ liệu"),
-                applySelectRule(selectRules, "CELL_VALUE", "IS_NULL", nullViolations,
-                        caseMaxPenalty, 0.0,
-                        nullViolations + " ô dữ liệu bị rỗng/NULL"),
-                applySelectRule(selectRules, "ROW_ORDER", "OUT_OF_ORDER", rowOrderViolations,
-                        caseMaxPenalty, 0.0,
-                        "sai thứ tự " + rowOrderViolations + " dòng"));
-        // NOTE: COLUMN rules (IS_MISSING, IS_EXTRA, COLUMN_ORDER) are handled
-        // once in calculateSelectStructuralDeduction, not per test case.
-
-        double totalCaseDeduction = 0d;
-        int matchedRuleCount = 0;
-        boolean failAllTriggered = false;
+        SelectResultScorer.ScoringResult result =
+                SelectResultScorer.score(edits, selectRules, caseMaxPenalty, gradingSupport);
         StringBuilder issueBuilder = new StringBuilder();
-
-        for (SelectRuleApplication application : applications) {
-            if (!application.violationPresent()) {
-                continue;
-            }
-
-            if (application.ruleMatched()) {
-                matchedRuleCount++;
-            }
-
-            if (application.failAllTriggered()) {
-                failAllTriggered = true;
-            }
-
-            if (application.deduction().compareTo(BigDecimal.ZERO) > 0) {
-                totalCaseDeduction += application.deduction().doubleValue();
-            }
-
-            if (application.message() != null && !application.message().isBlank()) {
-                appendSelectIssue(issueBuilder, application.message());
-            }
+        for (SelectResultScorer.AppliedEdit applied : result.applied()) {
+            appendSelectIssue(issueBuilder, SelectResultScorer.describe(applied));
         }
 
-        if (failAllTriggered) {
-            totalCaseDeduction = caseMaxPenalty.doubleValue();
-        } else if (matchedRuleCount == 0 && totalCaseDeduction <= 0) {
-            // Violations exist but no rules matched → don't deduct,
-            // just report. Teacher didn't configure rules for these violations.
-            appendSelectIssue(issueBuilder,
-                    "Ph\u00e1t hi\u1ec7n sai l\u1ec7ch nh\u01b0ng kh\u00f4ng c\u00f3 quy t\u1eafc ch\u1ea5m ph\u00f9 h\u1ee3p \u2192 kh\u00f4ng tr\u1eeb \u0111i\u1ec3m.");
-        }
-
-        if (totalCaseDeduction > caseMaxPenalty.doubleValue()) {
-            totalCaseDeduction = caseMaxPenalty.doubleValue();
-        }
-
-        BigDecimal caseDeductionValue = BigDecimal.valueOf(totalCaseDeduction).setScale(8, RoundingMode.HALF_UP);
-        BigDecimal delta = caseDeductionValue.abs();
-        boolean allChecksPassed = !failAllTriggered && delta.compareTo(new BigDecimal("0.0001")) <= 0;
-
-        BigDecimal roundedDeduction = caseDeductionValue.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal roundedDeduction = result.totalDeduction().setScale(2, RoundingMode.HALF_UP);
+        boolean allChecksPassed = roundedDeduction.compareTo(BigDecimal.ZERO) <= 0;
         String scoreMessage = "[" + caseId + "] " + caseName
                 + (allChecksPassed ? ": Khớp một phần hợp lệ, trừ 0 điểm" : ": Bị trừ " + roundedDeduction + " điểm");
 
@@ -2215,59 +2086,6 @@ public class RubricTestingUsecase {
         return objectMapper.createArrayNode();
     }
 
-    private JsonNode findSelectRule(JsonNode gradingRules, String target, String condition) {
-        if (gradingRules == null || !gradingRules.isArray()) {
-            return null;
-        }
-
-        for (JsonNode ruleNode : gradingRules) {
-            if (!ruleNode.isObject()) {
-                continue;
-            }
-            String ruleTarget = ruleNode.path("target").asText("").trim();
-            String ruleCondition = ruleNode.path("condition").asText("").trim();
-            if (target.equalsIgnoreCase(ruleTarget) && condition.equalsIgnoreCase(ruleCondition)) {
-                return ruleNode;
-            }
-        }
-
-        return null;
-    }
-
-    private JsonNode extractSelectRuleModifiers(JsonNode ruleNode) {
-        if (ruleNode == null || !ruleNode.isObject()) {
-            return objectMapper.createArrayNode();
-        }
-
-        JsonNode modifiers = ruleNode.path("modifiers");
-        return modifiers.isArray() ? modifiers : objectMapper.createArrayNode();
-    }
-
-    private JsonNode firstNonEmptyArray(JsonNode primary, JsonNode fallback) {
-        if (primary != null && primary.isArray() && primary.size() > 0) {
-            return primary;
-        }
-        if (fallback != null && fallback.isArray() && fallback.size() > 0) {
-            return fallback;
-        }
-        return objectMapper.createArrayNode();
-    }
-
-    private boolean hasSelectModifier(JsonNode ruleNode, String expectedModifier) {
-        if (expectedModifier == null || expectedModifier.isBlank()) {
-            return false;
-        }
-
-        JsonNode modifiers = extractSelectRuleModifiers(ruleNode);
-        for (JsonNode modifierNode : modifiers) {
-            if (expectedModifier.equalsIgnoreCase(modifierNode.asText(""))) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private List<Map<String, Object>> buildExpectedRowMaps(
             List<String> expectedColumns,
             List<List<String>> expectedRows) {
@@ -2296,316 +2114,6 @@ public class RubricTestingUsecase {
         return rowMaps;
     }
 
-    private boolean compareSelectResultStrict(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            boolean requireStrictOrder,
-            List<String> comparisonColumns) {
-        if (actualRows == null || expectedRows == null) {
-            return false;
-        }
-        if (actualRows.size() != expectedRows.size()) {
-            return false;
-        }
-
-        List<String> actualSignatures = new ArrayList<>();
-        for (Map<String, Object> actualRow : actualRows) {
-            actualSignatures.add(buildSelectRowSignature(actualRow, comparisonColumns));
-        }
-
-        List<String> expectedSignatures = new ArrayList<>();
-        for (Map<String, Object> expectedRow : expectedRows) {
-            expectedSignatures.add(buildSelectRowSignature(expectedRow, comparisonColumns));
-        }
-
-        if (!requireStrictOrder) {
-            Collections.sort(actualSignatures);
-            Collections.sort(expectedSignatures);
-        }
-
-        return actualSignatures.equals(expectedSignatures);
-    }
-
-    private int countSelectRowOrderViolations(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            List<String> columns) {
-        if (actualRows == null || expectedRows == null) {
-            return 0;
-        }
-
-        int limit = Math.min(actualRows.size(), expectedRows.size());
-        int violations = 0;
-        for (int i = 0; i < limit; i++) {
-            String actualSig = buildSelectRowSignature(actualRows.get(i), columns);
-            String expectedSig = buildSelectRowSignature(expectedRows.get(i), columns);
-            if (!actualSig.equals(expectedSig)) {
-                violations++;
-            }
-        }
-        return violations;
-    }
-
-    private String buildSelectRowSignature(Map<String, Object> row, List<String> columns) {
-        if (row == null) {
-            return "";
-        }
-
-        StringBuilder signature = new StringBuilder();
-        if (columns != null && !columns.isEmpty()) {
-            for (String column : columns) {
-                signature.append(normalizeSelectValue(getRowValueIgnoreCase(row, column))).append("|||");
-            }
-            return signature.toString().toLowerCase(Locale.ROOT);
-        }
-
-        for (Object value : row.values()) {
-            signature.append(normalizeSelectValue(value)).append("|||");
-        }
-        return signature.toString().toLowerCase(Locale.ROOT);
-    }
-
-    private List<SelectRowPair> buildSelectRowPairs(
-            List<Map<String, Object>> actualRows,
-            List<Map<String, Object>> expectedRows,
-            List<String> columns,
-            boolean strictOrdering,
-            JsonNode cellModifiers) {
-        if (actualRows == null || expectedRows == null || columns == null || columns.isEmpty()) {
-            return List.of();
-        }
-
-        List<SelectRowPair> pairs = new ArrayList<>();
-        if (strictOrdering) {
-            int limit = Math.min(actualRows.size(), expectedRows.size());
-            for (int i = 0; i < limit; i++) {
-                pairs.add(new SelectRowPair(actualRows.get(i), expectedRows.get(i)));
-            }
-            return pairs;
-        }
-
-        List<Map<String, Object>> remainingActualRows = new ArrayList<>(actualRows);
-        for (Map<String, Object> expectedRow : expectedRows) {
-            int matchedIndex = findBestSelectRowMatchIndex(
-                    remainingActualRows,
-                    expectedRow,
-                    columns,
-                    cellModifiers);
-            if (matchedIndex < 0) {
-                continue;
-            }
-
-            Map<String, Object> matchedRow = remainingActualRows.remove(matchedIndex);
-            pairs.add(new SelectRowPair(matchedRow, expectedRow));
-        }
-
-        return pairs;
-    }
-
-    private int findBestSelectRowMatchIndex(
-            List<Map<String, Object>> actualRows,
-            Map<String, Object> expectedRow,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (actualRows == null || actualRows.isEmpty()) {
-            return -1;
-        }
-
-        int bestIndex = -1;
-        int bestScore = -1;
-        for (int i = 0; i < actualRows.size(); i++) {
-            int score = scoreSelectRowMatch(actualRows.get(i), expectedRow, columns, cellModifiers);
-            if (score > bestScore) {
-                bestScore = score;
-                bestIndex = i;
-            }
-        }
-        return bestIndex;
-    }
-
-    private int scoreSelectRowMatch(
-            Map<String, Object> actualRow,
-            Map<String, Object> expectedRow,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (actualRow == null || expectedRow == null || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int score = 0;
-        for (String column : columns) {
-            Object actualValue = getRowValueIgnoreCase(actualRow, column);
-            Object expectedValue = getRowValueIgnoreCase(expectedRow, column);
-            if (valuesEqualBySelectRule(actualValue, expectedValue, cellModifiers)) {
-                score++;
-            }
-        }
-        return score;
-    }
-
-    private int countSelectCellMismatches(
-            List<SelectRowPair> rowPairs,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int mismatches = 0;
-        for (SelectRowPair rowPair : rowPairs) {
-            for (String column : columns) {
-                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
-                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
-                if (!valuesEqualBySelectRule(actualValue, expectedValue, cellModifiers)) {
-                    mismatches++;
-                }
-            }
-        }
-
-        return mismatches;
-    }
-
-    private int countSelectNullViolations(
-            List<SelectRowPair> rowPairs,
-            List<String> columns,
-            JsonNode cellModifiers) {
-        if (rowPairs == null || rowPairs.isEmpty() || columns == null || columns.isEmpty()) {
-            return 0;
-        }
-
-        int nullViolations = 0;
-        for (SelectRowPair rowPair : rowPairs) {
-            for (String column : columns) {
-                Object actualValue = getRowValueIgnoreCase(rowPair.actualRow(), column);
-                Object expectedValue = getRowValueIgnoreCase(rowPair.expectedRow(), column);
-
-                String normalizedActual = applySelectModifiers(normalizeSelectValue(actualValue), cellModifiers);
-                String normalizedExpected = applySelectModifiers(normalizeSelectValue(expectedValue), cellModifiers);
-                if (!isNullLikeValue(normalizedExpected) && isNullLikeValue(normalizedActual)) {
-                    nullViolations++;
-                }
-            }
-        }
-
-        return nullViolations;
-    }
-
-    private SelectRuleApplication applySelectRule(
-            JsonNode gradingRules,
-            String target,
-            String condition,
-            int violationCount,
-            BigDecimal caseMaxPoints,
-            double defaultPenaltyPerViolation,
-            String violationSummary) {
-        if (violationCount <= 0) {
-            return SelectRuleApplication.noViolation();
-        }
-
-        JsonNode ruleNode = findSelectRule(gradingRules, target, condition);
-        if (ruleNode == null) {
-            return SelectRuleApplication.unmatchedViolation();
-        }
-
-        SelectRuleDecision decision = resolveSelectRuleDecision(
-                ruleNode,
-                caseMaxPoints,
-                defaultPenaltyPerViolation);
-
-        String ruleLabel = target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
-        if (decision.ignore()) {
-            String message = "Quy tắc " + ruleLabel + " bỏ qua vi phạm (" + violationSummary + ").";
-            return SelectRuleApplication.matchedViolation(false, BigDecimal.ZERO, message);
-        }
-
-        if (decision.failAll()) {
-            String message = "Quy tắc " + ruleLabel + " kích hoạt FAIL_ALL (" + violationSummary + ").";
-            return SelectRuleApplication.matchedViolation(true, BigDecimal.ZERO, message);
-        }
-
-        BigDecimal deduction = BigDecimal.valueOf(Math.max(0d, decision.penaltyPerViolation()))
-                .multiply(BigDecimal.valueOf(violationCount));
-
-        String message = buildSelectRuleMessage(ruleLabel, violationSummary, deduction, decision.action());
-        return SelectRuleApplication.matchedViolation(false, deduction, message);
-    }
-
-    private SelectRuleDecision resolveSelectRuleDecision(
-            JsonNode ruleNode,
-            BigDecimal caseMaxPoints,
-            double defaultPenaltyPerViolation) {
-        String action = ruleNode != null ? ruleNode.path("action").asText("").trim() : "";
-        if (action.isBlank()) {
-            action = "DEDUCT_POINTS";
-        }
-
-        double penaltyValue = -1d;
-        if (ruleNode != null) {
-            JsonNode penaltyNode = ruleNode.path("penalty_value");
-            if (penaltyNode.isNumber()) {
-                penaltyValue = penaltyNode.asDouble();
-            } else if (penaltyNode.isTextual()) {
-                penaltyValue = parseDoubleSafe(penaltyNode.asText(""), -1d);
-            }
-        }
-
-        String normalizedAction = action.toUpperCase(Locale.ROOT);
-        double safeDefaultPenalty = Math.max(0d, defaultPenaltyPerViolation);
-
-        switch (normalizedAction) {
-            case "IGNORE":
-                return new SelectRuleDecision(normalizedAction, 0d, true, false);
-            case "FAIL_ALL":
-                return new SelectRuleDecision(normalizedAction, 0d, false, true);
-            case "FAIL_ITEM":
-                return new SelectRuleDecision(normalizedAction, safeDefaultPenalty, false, false);
-            case "DEDUCT_PERCENTAGE": {
-                double penalty = penaltyValue >= 0d
-                        ? Math.max(0d, caseMaxPoints.doubleValue() * penaltyValue / 100d)
-                        : safeDefaultPenalty;
-                return new SelectRuleDecision(normalizedAction, penalty, false, false);
-            }
-            case "DEDUCT_POINTS": {
-                double penalty = penaltyValue >= 0d
-                        ? Math.max(0d, penaltyValue)
-                        : safeDefaultPenalty;
-                return new SelectRuleDecision(normalizedAction, penalty, false, false);
-            }
-            default:
-                return new SelectRuleDecision("DEDUCT_POINTS", safeDefaultPenalty, false, false);
-        }
-    }
-
-    private String buildSelectRuleMessage(
-            String ruleLabel,
-            String violationSummary,
-            BigDecimal deduction,
-            String action) {
-        String formattedDeduction = deduction
-                .setScale(2, RoundingMode.HALF_UP)
-                .stripTrailingZeros()
-                .toPlainString();
-
-        String actionLabel;
-        switch (action.toUpperCase(Locale.ROOT)) {
-            case "IGNORE":
-                actionLabel = "bỏ qua";
-                break;
-            case "FAIL_ALL":
-                actionLabel = "trượt toàn bộ";
-                break;
-            default:
-                actionLabel = "trừ điểm";
-                break;
-        }
-
-        return String.format(
-                "Phát hiện %s → %s %s điểm",
-                violationSummary,
-                actionLabel,
-                formattedDeduction);
-    }
-
     private void appendSelectIssue(StringBuilder builder, String message) {
         if (message == null || message.isBlank()) {
             return;
@@ -2614,256 +2122,6 @@ public class RubricTestingUsecase {
             builder.append(' ');
         }
         builder.append(message.trim());
-    }
-
-    private Object getRowValueIgnoreCase(Map<String, Object> row, String columnName) {
-        if (row == null || columnName == null) {
-            return null;
-        }
-
-        if (row.containsKey(columnName)) {
-            return row.get(columnName);
-        }
-
-        for (Map.Entry<String, Object> entry : row.entrySet()) {
-            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(columnName)) {
-                return entry.getValue();
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Remap actual row values to use expected column names by position.
-     * This allows cell-level comparison to work even when student uses different
-     * column aliases (e.g., missing AS clause). Column name differences are
-     * tracked separately via COLUMN/IS_MISSING and COLUMN/IS_EXTRA rules.
-     */
-    private List<Map<String, Object>> remapActualRowsByPosition(
-            List<Map<String, Object>> actualRows,
-            List<String> actualColumns,
-            List<String> expectedColumns) {
-        if (actualRows == null || actualRows.isEmpty()
-                || expectedColumns == null || expectedColumns.isEmpty()) {
-            return actualRows != null ? actualRows : List.of();
-        }
-
-        // If columns already match by name (case-insensitive), no remap needed
-        boolean allMatch = actualColumns.size() >= expectedColumns.size();
-        if (allMatch) {
-            for (int i = 0; i < expectedColumns.size(); i++) {
-                if (i >= actualColumns.size()
-                        || !expectedColumns.get(i).equalsIgnoreCase(actualColumns.get(i))) {
-                    allMatch = false;
-                    break;
-                }
-            }
-        }
-        if (allMatch) {
-            return actualRows;
-        }
-
-        // Remap: for each actual row, create a new map keyed by expected column names
-        // with values taken from the actual row at the same column position
-        List<Map<String, Object>> remapped = new ArrayList<>();
-        for (Map<String, Object> actualRow : actualRows) {
-            Map<String, Object> newRow = new LinkedHashMap<>();
-            for (int i = 0; i < expectedColumns.size(); i++) {
-                String expectedCol = expectedColumns.get(i);
-                Object value;
-                if (i < actualColumns.size()) {
-                    value = getRowValueIgnoreCase(actualRow, actualColumns.get(i));
-                } else {
-                    value = null;
-                }
-                newRow.put(expectedCol, value);
-            }
-            remapped.add(newRow);
-        }
-        return remapped;
-    }
-
-    private boolean valuesEqualBySelectRule(Object actualValue, Object expectedValue, JsonNode modifiers) {
-        String actual = applySelectModifiers(normalizeSelectValue(actualValue), modifiers);
-        String expected = applySelectModifiers(normalizeSelectValue(expectedValue), modifiers);
-
-        if (isNullLikeValue(actual) && isNullLikeValue(expected)) {
-            return true;
-        }
-        if (actual == null || expected == null) {
-            return false;
-        }
-        if (actual.equalsIgnoreCase(expected)) {
-            return true;
-        }
-
-        try {
-            return new BigDecimal(actual).compareTo(new BigDecimal(expected)) == 0;
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private String normalizeSelectValue(Object value) {
-        if (value == null) {
-            return null;
-        }
-
-        String normalized = String.valueOf(value).trim();
-        if (normalized.isEmpty()) {
-            return "";
-        }
-
-        try {
-            return new BigDecimal(normalized).stripTrailingZeros().toPlainString();
-        } catch (Exception ignored) {
-            return normalized;
-        }
-    }
-
-    private String applySelectModifiers(String value, JsonNode modifiers) {
-        if (value == null) {
-            return null;
-        }
-        if (modifiers == null || !modifiers.isArray() || modifiers.isEmpty()) {
-            return value;
-        }
-
-        String current = value;
-        for (JsonNode modifierNode : modifiers) {
-            String modifier = modifierNode.asText("").trim().toUpperCase(Locale.ROOT);
-            if (modifier.isBlank()) {
-                continue;
-            }
-
-            switch (modifier) {
-                case "TO_LOWERCASE":
-                    current = current.toLowerCase(Locale.ROOT);
-                    break;
-                case "TRIM_WHITESPACE":
-                    current = current.trim();
-                    break;
-                case "REMOVE_ALL_WHITESPACE":
-                    current = current.replaceAll("\\s+", "");
-                    break;
-                case "REMOVE_DIACRITICS": {
-                    String normalized = Normalizer.normalize(current, Normalizer.Form.NFD);
-                    current = normalized.replaceAll("\\p{M}+", "");
-                    break;
-                }
-                case "REMOVE_SPECIAL_CHARS":
-                    current = current.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}\\s]", "");
-                    break;
-                case "CAST_TO_STRING":
-                    current = String.valueOf(current);
-                    break;
-                case "CAST_TO_FLOAT":
-                    current = canonicalizeSelectNumber(current, -1);
-                    break;
-                case "ROUND_TO_INT":
-                    current = canonicalizeSelectNumber(current, 0);
-                    break;
-                case "ROUND_2_DECIMALS":
-                    current = canonicalizeSelectNumber(current, 2);
-                    break;
-                case "SORT_ASC":
-                    current = sortSelectTokensAscending(current);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        return current;
-    }
-
-    private String canonicalizeSelectNumber(String value, int targetScale) {
-        if (value == null) {
-            return null;
-        }
-
-        try {
-            BigDecimal decimal = new BigDecimal(value.trim());
-            if (targetScale >= 0) {
-                decimal = decimal.setScale(targetScale, RoundingMode.HALF_UP);
-            }
-            return decimal.stripTrailingZeros().toPlainString();
-        } catch (Exception ignored) {
-            return value;
-        }
-    }
-
-    private String sortSelectTokensAscending(String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String trimmed = value.trim();
-        if (trimmed.isBlank()) {
-            return trimmed;
-        }
-
-        boolean commaSeparated = trimmed.contains(",");
-        String[] rawTokens = commaSeparated
-                ? trimmed.split("\\s*,\\s*")
-                : trimmed.split("\\s+");
-
-        if (rawTokens.length <= 1) {
-            return trimmed;
-        }
-
-        List<String> tokens = new ArrayList<>();
-        for (String token : rawTokens) {
-            if (token == null) {
-                continue;
-            }
-            String normalizedToken = token.trim();
-            if (!normalizedToken.isEmpty()) {
-                tokens.add(normalizedToken);
-            }
-        }
-
-        if (tokens.size() <= 1) {
-            return trimmed;
-        }
-
-        tokens.sort(String.CASE_INSENSITIVE_ORDER);
-        return String.join(commaSeparated ? "," : " ", tokens);
-    }
-
-    private boolean isNullLikeValue(String value) {
-        if (value == null) {
-            return true;
-        }
-
-        String trimmed = value.trim();
-        return trimmed.isEmpty() || "NULL".equalsIgnoreCase(trimmed);
-    }
-
-    private record SelectRowPair(Map<String, Object> actualRow, Map<String, Object> expectedRow) {
-    }
-
-    private record SelectRuleDecision(String action, double penaltyPerViolation, boolean ignore, boolean failAll) {
-    }
-
-    private record SelectRuleApplication(
-            boolean violationPresent,
-            boolean ruleMatched,
-            boolean failAllTriggered,
-            BigDecimal deduction,
-            String message) {
-        static SelectRuleApplication noViolation() {
-            return new SelectRuleApplication(false, false, false, BigDecimal.ZERO, null);
-        }
-
-        static SelectRuleApplication unmatchedViolation() {
-            return new SelectRuleApplication(true, false, false, BigDecimal.ZERO, null);
-        }
-
-        static SelectRuleApplication matchedViolation(boolean failAllTriggered, BigDecimal deduction, String message) {
-            return new SelectRuleApplication(true, true, failAllTriggered, deduction, message);
-        }
     }
 
     private List<String> toRowValues(Map<String, Object> row, List<String> orderedColumns) {
@@ -2888,26 +2146,6 @@ public class RubricTestingUsecase {
             values.add(val == null ? null : String.valueOf(val));
         }
         return values;
-    }
-
-    private boolean sameColumnOrder(List<String> expectedColumns, List<String> actualColumns) {
-        if (expectedColumns == null || actualColumns == null) {
-            return false;
-        }
-        if (expectedColumns.size() != actualColumns.size()) {
-            return false;
-        }
-        for (int i = 0; i < expectedColumns.size(); i++) {
-            String expected = expectedColumns.get(i);
-            String actual = actualColumns.get(i);
-            if (expected == null && actual == null) {
-                continue;
-            }
-            if (expected == null || actual == null || !expected.equalsIgnoreCase(actual)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private RubricTestGradeResponse executeRubricGradingV2(

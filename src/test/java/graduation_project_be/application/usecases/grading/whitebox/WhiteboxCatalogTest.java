@@ -24,8 +24,8 @@ class WhiteboxCatalogTest {
     private final WhiteboxCatalog catalog = new WhiteboxCatalog();
 
     @Test
-    void exposes33SelectRules() {
-        assertEquals(33, catalog.entriesFor("SELECT_QUERY").size());
+    void exposes29SelectRules() {
+        assertEquals(29, catalog.entriesFor("SELECT_QUERY").size());
     }
 
     @Test

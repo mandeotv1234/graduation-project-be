@@ -86,7 +86,23 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 - Nếu có FOREIGN KEY thì setup_custom_script BẮT BUỘC insert theo thứ tự bảng cha -> bảng con
 - setup_custom_script phải tự tạo đủ dòng dữ liệu cha để KHÔNG phát sinh lỗi FK khi insert dữ liệu con
 - Không được giả định dữ liệu cha đã tồn tại sẵn nếu script không tự tạo
-- TRÁNH để test_cases hời hợt; hệ thống sẽ kiểm tra xem test case có thực sự bao phủ được các bẫy chưa. Phải đa dạng hóa data!
+- TRÁNH để test_cases hời hợt. Khi giáo viên bấm "Test rubric", hệ thống sẽ KIỂM TRA dữ liệu và cảnh báo nếu: đáp án chạy ra 0 dòng, hoặc (với truy vấn trả về tập dòng) ra dưới 2 dòng / có cột toàn NULL ở mọi dòng. RIÊNG truy vấn tổng hợp vô hướng (COUNT/SUM/AVG không GROUP BY) trả 1 dòng là hợp lệ, không bị cảnh báo. Phải đa dạng hóa data để vượt các kiểm tra này!
+
+=== YÊU CẦU DATA BẪY PHẢI THỰC SỰ PHÂN BIỆT ĐƯỢC (BẮT BUỘC) ===
+Mục tiêu: data của mỗi test case phải làm cho bài SAI ra kết quả KHÁC đáp án. Data không phân biệt được thì test case vô dụng.
+Yêu cầu CHUNG cho MỌI test case:
+- Đáp án chạy trên data KHÔNG được rỗng; với truy vấn trả về tập dòng nên ra ÍT NHẤT 2 dòng (không chỉ 1 dòng tầm thường). RIÊNG truy vấn tổng hợp vô hướng (COUNT/SUM/AVG không GROUP BY) trả 1 dòng là đúng.
+- Với MỖI điều kiện trong WHERE/HAVING của đáp án: phải có ÍT NHẤT 1 dòng THỎA và 1 dòng KHÔNG thỏa điều kiện đó (để lộ lỗi thiếu/sai điều kiện).
+- Mỗi bẫy phải gắn với MỘT thành phần CỤ THỂ của đáp án (một JOIN / một điều kiện WHERE / một hàm tổng hợp); phân tích đáp án trước khi tạo data.
+Yêu cầu RIÊNG theo mutation_type:
+- WRONG_AGGREGATE / thiếu DISTINCT: thêm ÍT NHẤT 1 cặp dòng TRÙNG nhau ở cột được tính, để bài thiếu DISTINCT ra số khác đáp án.
+- NULL_HANDLING: thêm ÍT NHẤT 1 giá trị NULL ở cột được SUM/AVG/COUNT, để lộ bài quên ISNULL/COALESCE (SUM ra NULL thay vì 0).
+- WRONG_JOIN_TYPE: thêm ÍT NHẤT 1 dòng bảng cha KHÔNG có dòng con tương ứng (dangling), để INNER JOIN và LEFT JOIN ra kết quả khác nhau.
+- MISSING_JOIN_CONDITION: thêm 2 dòng trùng MỘT phần khóa join nhưng khác phần còn lại, để bài JOIN thiếu điều kiện ra dòng dư.
+- STRING_MATCHING: thêm 1 dòng khớp y hệt + 1 dòng "gần giống" (cùng tiền tố nhưng có đuôi thừa), để phân biệt '=' với LIKE.
+- MISSING_GROUP_BY / WRONG_HAVING_VS_WHERE: tạo ÍT NHẤT 2 nhóm, có nhóm THỎA và nhóm KHÔNG thỏa ngưỡng HAVING, để lộ lỗi đặt điều kiện sai chỗ.
+- MISSING_WHERE_FILTER: thêm dòng bị điều kiện WHERE loại bỏ (bài thiếu WHERE sẽ ra dòng dư).
+- Nếu một yêu cầu shape ở trên KHÔNG áp dụng cho câu này (đáp án không có JOIN/GROUP BY/...), bỏ qua bẫy tương ứng — KHÔNG bịa cấu trúc không có trong đáp án.
 
 === QUY TẮC QUAN TRỌNG ===
 - Đây là rubric TRỪ ĐIỂM cho câu hỏi SELECT_QUERY.

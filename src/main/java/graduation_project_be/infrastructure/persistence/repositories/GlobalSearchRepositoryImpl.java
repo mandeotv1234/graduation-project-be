@@ -45,8 +45,10 @@ public class GlobalSearchRepositoryImpl implements GlobalSearchRepository {
         String examQuery = """
             SELECT e.id, e.title, e.class_id
             FROM exams e
+            JOIN classes c ON c.id = e.class_id
             JOIN teacher_classes tc ON tc.class_id = e.class_id
             WHERE tc.teacher_id = ?
+              AND c.deleted_at IS NULL
               AND (e.title ILIKE ? OR ? ILIKE '%' || e.title || '%')
             LIMIT 5
             """;
@@ -64,8 +66,10 @@ public class GlobalSearchRepositoryImpl implements GlobalSearchRepository {
             SELECT DISTINCT u.id, u.full_name, u.email as student_code
             FROM users u
             JOIN class_enrollments ce ON ce.student_id = u.id
+            JOIN classes c ON c.id = ce.class_id
             JOIN teacher_classes tc ON tc.class_id = ce.class_id
             WHERE tc.teacher_id = ?
+              AND c.deleted_at IS NULL
               AND (u.full_name ILIKE ? OR ? ILIKE '%' || u.full_name || '%' 
                    OR u.email ILIKE ? OR ? ILIKE '%' || u.email || '%')
             LIMIT 5

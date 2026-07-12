@@ -1,7 +1,9 @@
 package graduation_project_be.application.port.repositories;
 
 import graduation_project_be.domain.models.ExamResult;
+import graduation_project_be.domain.models.enums.GradingStatus;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import graduation_project_be.domain.models.PaginatedResult;
@@ -17,6 +19,12 @@ public interface ExamResultRepository {
 
     Long countByExamIdAndStudentId(Long examId, Long studentId);
     List<ExamResult> findByExamId(Long examId);
+    List<ExamResult> findRecoverableGradingResults(
+            List<GradingStatus> inFlightStatuses,
+            List<GradingStatus> failedStatuses,
+            LocalDateTime inFlightSubmittedBefore,
+            LocalDateTime failedLastAttemptBefore,
+            int limit);
     List<ExamResult> findByStudentIdAndExamIdIn(Long studentId, List<Long> examIds);
     
     PaginatedResult<ExamResult> findPaginatedByStudentId(Long studentId, PaginationParams params);

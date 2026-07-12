@@ -6,6 +6,7 @@ import graduation_project_be.application.port.services.NotificationBufferService
 import graduation_project_be.domain.models.TeacherNotification;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -39,9 +40,18 @@ public class RedisNotificationBufferService implements NotificationBufferService
         Long currentSize = redisTemplate.opsForList().size(BUFFER_KEY);
         log.info("Notification buffered in Redis. Buffer size: {}/{}", currentSize, flushThreshold);
 
-        if (currentSize != null && currentSize > 0) {
+        if (currentSize != null && currentSize >= effectiveFlushThreshold()) {
             log.info("Flushing notification buffer to database to keep API reads consistent.");
             flush();
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${notification.buffer.flush-interval-ms:5000}")
+    public void flushPeriodically() {
+        try {
+            flush();
+        } catch (Exception e) {
+            log.error("Scheduled notification buffer flush failed", e);
         }
     }
 
@@ -82,6 +92,10 @@ public class RedisNotificationBufferService implements NotificationBufferService
         }
 
         return List.of();
+    }
+
+    private int effectiveFlushThreshold() {
+        return Math.max(1, flushThreshold);
     }
 
     @Override

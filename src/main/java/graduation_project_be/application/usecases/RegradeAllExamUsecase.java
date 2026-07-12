@@ -36,21 +36,21 @@ public class RegradeAllExamUsecase {
         examRepository.findById(examId)
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", examId));
 
-        // 2. Find all COMPLETED results for this exam
+        // 2. Find all terminal results for this exam
         List<ExamResult> allResults = examResultRepository.findByExamId(examId);
-        List<ExamResult> completedResults = allResults.stream()
-                .filter(r -> r.getStatus() == GradingStatus.COMPLETED)
+        List<ExamResult> regradableResults = allResults.stream()
+                .filter(r -> isRegradableStatus(r.getStatus()))
                 .toList();
 
-        if (completedResults.isEmpty()) {
-            throw new BadRequestException("No completed submissions to re-grade for exam " + examId);
+        if (regradableResults.isEmpty()) {
+            throw new BadRequestException("No completed or failed submissions to re-grade for exam " + examId);
         }
 
         // 3. Collect jobs to enqueue after commit
         List<GradingQueueService.GradingJob> jobs = new ArrayList<>();
         int skippedCount = 0;
 
-        for (ExamResult result : completedResults) {
+        for (ExamResult result : regradableResults) {
             // Reset all submissions for this result
             List<ExamSubmission> submissions = examSubmissionRepository
                     .findByExamIdAndStudentIdAndAttemptNumber(examId, result.getStudentId(), result.getAttemptNumber());
@@ -78,7 +78,7 @@ public class RegradeAllExamUsecase {
         }
 
         // Count non-COMPLETED results that were skipped
-        skippedCount = allResults.size() - completedResults.size();
+        skippedCount = allResults.size() - regradableResults.size();
 
         // 4. Enqueue all jobs AFTER DB commit
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -92,9 +92,15 @@ public class RegradeAllExamUsecase {
         });
 
         return new RegradeAllExamResponse(
-                completedResults.size(),
+                regradableResults.size(),
                 skippedCount,
-                "Re-grading " + completedResults.size() + " submissions"
+                "Re-grading " + regradableResults.size() + " submissions"
         );
+    }
+
+    private boolean isRegradableStatus(GradingStatus status) {
+        return status == GradingStatus.COMPLETED
+                || status == GradingStatus.FAILED
+                || status == GradingStatus.SYSTEM_ERROR;
     }
 }

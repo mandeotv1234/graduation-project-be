@@ -37,7 +37,7 @@ public class RegradeExamUsecase {
         if (!result.getExamId().equals(examId)) {
             throw new BadRequestException("Result does not belong to exam " + examId);
         }
-        if (result.getStatus() != GradingStatus.COMPLETED) {
+        if (!isRegradableStatus(result.getStatus())) {
             throw new BadRequestException("Cannot re-grade: result status is " + result.getStatus());
         }
 
@@ -87,5 +87,11 @@ public class RegradeExamUsecase {
         });
 
         return new RegradeExamResponse("Re-grading started", previousScores);
+    }
+
+    private boolean isRegradableStatus(GradingStatus status) {
+        return status == GradingStatus.COMPLETED
+                || status == GradingStatus.FAILED
+                || status == GradingStatus.SYSTEM_ERROR;
     }
 }

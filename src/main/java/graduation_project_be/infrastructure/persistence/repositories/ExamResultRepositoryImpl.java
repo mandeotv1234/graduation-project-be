@@ -2,11 +2,13 @@ package graduation_project_be.infrastructure.persistence.repositories;
 
 import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.domain.models.ExamResult;
+import graduation_project_be.domain.models.enums.GradingStatus;
 import graduation_project_be.infrastructure.persistence.entities.ExamResultEntity;
 import graduation_project_be.infrastructure.persistence.repositories.jpa.ExamResultJpaRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import graduation_project_be.domain.models.PaginatedResult;
@@ -54,6 +56,25 @@ public class ExamResultRepositoryImpl implements ExamResultRepository {
     @Override
     public List<ExamResult> findByExamId(Long examId) {
         return jpaRepository.findByExamId(examId).stream()
+                .map(ExamResultEntity::toModel)
+                .toList();
+    }
+
+    @Override
+    public List<ExamResult> findRecoverableGradingResults(
+            List<GradingStatus> inFlightStatuses,
+            List<GradingStatus> failedStatuses,
+            LocalDateTime inFlightSubmittedBefore,
+            LocalDateTime failedLastAttemptBefore,
+            int limit) {
+        Pageable pageable = PageRequest.of(0, Math.max(1, limit));
+        return jpaRepository.findRecoverableGradingResults(
+                        inFlightStatuses,
+                        failedStatuses,
+                        inFlightSubmittedBefore,
+                        failedLastAttemptBefore,
+                        pageable)
+                .stream()
                 .map(ExamResultEntity::toModel)
                 .toList();
     }

@@ -1,8 +1,12 @@
 package graduation_project_be.infrastructure.configurations;
 
+import graduation_project_be.application.port.repositories.ExamResultRepository;
 import graduation_project_be.application.port.services.GradingQueueService;
 import graduation_project_be.application.port.services.GradingQueueService.GradingJob;
 import graduation_project_be.application.usecases.GradeExamUsecase;
+import graduation_project_be.domain.models.ExamResult;
+import graduation_project_be.domain.models.enums.GradingStatus;
+import graduation_project_be.shared.utils.TimeUtils;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +18,8 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -48,6 +54,7 @@ public class GradingWorkerConfiguration {
     private final GradingQueueService gradingQueueService;
     private final GradeExamUsecase gradeExamUsecase;
     private final RedisTemplate<String, String> redisTemplate;
+    private final ExamResultRepository examResultRepository;
 
     @Value("${grading.worker.enabled:true}")
     private boolean workerEnabled;
@@ -60,6 +67,18 @@ public class GradingWorkerConfiguration {
 
     @Value("${grading.worker.stale-timeout-seconds:300}")
     private long staleTimeoutSeconds;
+
+    @Value("${grading.worker.result-recovery-enabled:true}")
+    private boolean resultRecoveryEnabled;
+
+    @Value("${grading.worker.result-recovery-timeout-seconds:300}")
+    private long resultRecoveryTimeoutSeconds;
+
+    @Value("${grading.worker.failed-result-recovery-timeout-seconds:300}")
+    private long failedResultRecoveryTimeoutSeconds;
+
+    @Value("${grading.worker.result-recovery-batch-size:50}")
+    private int resultRecoveryBatchSize;
 
     @Value("${grading.worker.auto-scale-enabled:false}")
     private boolean autoScaleEnabled;
@@ -113,6 +132,9 @@ public class GradingWorkerConfiguration {
 
         maxJobsPerCycle = Math.max(1, configuredMaxJobsPerCycle);
         staleTimeoutSeconds = Math.max(30, staleTimeoutSeconds);
+        resultRecoveryTimeoutSeconds = Math.max(30, resultRecoveryTimeoutSeconds);
+        failedResultRecoveryTimeoutSeconds = Math.max(30, failedResultRecoveryTimeoutSeconds);
+        resultRecoveryBatchSize = Math.max(1, resultRecoveryBatchSize);
         scaleUpQueueThreshold = Math.max(1, scaleUpQueueThreshold);
         scaleDownQueueThreshold = Math.max(0, Math.min(scaleDownQueueThreshold, scaleUpQueueThreshold - 1));
         scaleDownIdleCycles = Math.max(1, scaleDownIdleCycles);
@@ -329,6 +351,55 @@ public class GradingWorkerConfiguration {
             gradingQueueService.recoverStaleJobs(staleTimeoutSeconds);
         } catch (Exception e) {
             log.error("Error during stale grading job recovery", e);
+        }
+    }
+
+    /**
+     * Recovers DB results that no longer have a live Redis job. This covers cases
+     * where the transaction committed but enqueue failed, or old FAILED results need
+     * another attempt after transient MSSQL/catalog errors.
+     */
+    @Scheduled(fixedRateString = "${grading.worker.result-recovery-interval-ms:60000}")
+    public void recoverDbGradingResults() {
+        if (!workerEnabled || !resultRecoveryEnabled) {
+            return;
+        }
+
+        try {
+            LocalDateTime now = TimeUtils.now();
+            List<ExamResult> recoverableResults = examResultRepository.findRecoverableGradingResults(
+                    List.of(GradingStatus.PENDING, GradingStatus.GRADING),
+                    List.of(GradingStatus.FAILED),
+                    now.minusSeconds(resultRecoveryTimeoutSeconds),
+                    now.minusSeconds(failedResultRecoveryTimeoutSeconds),
+                    resultRecoveryBatchSize);
+
+            int enqueuedCount = 0;
+            int skippedExistingCount = 0;
+            for (ExamResult result : recoverableResults) {
+                GradingStatus previousStatus = result.getStatus();
+                boolean enqueued = gradingQueueService.enqueueRecovery(
+                        result.getExamId(), result.getStudentId(), result.getAttemptNumber());
+                if (!enqueued) {
+                    skippedExistingCount++;
+                    continue;
+                }
+
+                enqueuedCount++;
+                if (previousStatus != GradingStatus.PENDING) {
+                    result.setStatus(GradingStatus.PENDING);
+                    examResultRepository.save(result);
+                }
+            }
+
+            if (enqueuedCount > 0 || skippedExistingCount > 0) {
+                log.warn(
+                        "Recovered DB grading results: enqueued={}, skippedExisting={}, batchSize={}, pendingTimeoutSeconds={}, failedTimeoutSeconds={}",
+                        enqueuedCount, skippedExistingCount, recoverableResults.size(),
+                        resultRecoveryTimeoutSeconds, failedResultRecoveryTimeoutSeconds);
+            }
+        } catch (Exception e) {
+            log.error("Error during DB grading result recovery", e);
         }
     }
 }

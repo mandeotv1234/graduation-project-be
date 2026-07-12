@@ -5,6 +5,10 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE}
   liquibase:
     change-log: classpath:db/changelog/grad-changelog-master.yaml
+  data:
+    redis:
+      repositories:
+        enabled: false
 app:
   upload:
     pdf-dir: ${APP_UPLOAD_PDF_DIR:uploads/exams/pdf}

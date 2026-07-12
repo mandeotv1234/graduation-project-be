@@ -100,6 +100,24 @@ jobs:
             if docker ps -a --format '{{.Names}}' | grep -qx mssql-worker; then
               docker start mssql-worker >/dev/null 2>&1 || true
               docker network connect "$DOCKER_NETWORK" mssql-worker >/dev/null 2>&1 || true
+            else
+              MSSQL_PASSWORD="$(grep '^EXAM_DATASOURCE_PASSWORD=' "$ENV_FILE" | cut -d= -f2-)"
+              if [ -z "$MSSQL_PASSWORD" ]; then
+                echo "Missing EXAM_DATASOURCE_PASSWORD in $ENV_FILE; cannot create mssql-worker." >&2
+                exit 1
+              fi
+              docker run -d \
+                --name mssql-worker \
+                --restart always \
+                --network "$DOCKER_NETWORK" \
+                --log-driver json-file \
+                --log-opt max-size=20m \
+                --log-opt max-file=3 \
+                -e ACCEPT_EULA=Y \
+                -e MSSQL_SA_PASSWORD="$MSSQL_PASSWORD" \
+                -e MSSQL_PID=Developer \
+                -v mssql_worker_data:/var/opt/mssql \
+                mcr.microsoft.com/mssql/server:2022-latest
             fi
 
             docker rm -f backend-worker >/dev/null 2>&1 || true

@@ -84,6 +84,7 @@ jobs:
             APP_DIR=/root/app
             ENV_FILE="$APP_DIR/.env.worker"
             IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            DOCKER_NETWORK=grad-worker
 
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
@@ -95,11 +96,17 @@ jobs:
 
             echo "${{ secrets.DO_REGISTRY_TOKEN }}" | docker login registry.digitalocean.com -u "${{ secrets.DO_REGISTRY_TOKEN }}" --password-stdin
             docker pull "$IMAGE"
+            docker network create "$DOCKER_NETWORK" >/dev/null 2>&1 || true
+            if docker ps -a --format '{{.Names}}' | grep -qx mssql-worker; then
+              docker start mssql-worker >/dev/null 2>&1 || true
+              docker network connect "$DOCKER_NETWORK" mssql-worker >/dev/null 2>&1 || true
+            fi
 
             docker rm -f backend-worker >/dev/null 2>&1 || true
             docker run -d \
               --name backend-worker \
               --restart always \
+              --network "$DOCKER_NETWORK" \
               --env-file "$ENV_FILE" \
               -p 127.0.0.1:8080:8080 \
               -v backend_worker_uploads:/app/data \

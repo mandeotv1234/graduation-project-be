@@ -1,0 +1,4 @@
+interface:
+  display_name: "VM Health Check"
+  short_description: "Check VM RAM, disk, ports, and PM2 status"
+  default_prompt: "Use $vm-health-check to check the VM RAM, disk, ports, and service health."

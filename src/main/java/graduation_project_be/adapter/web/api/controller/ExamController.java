@@ -83,6 +83,7 @@ public class ExamController {
         private final TeacherExecuteSqlOnResultUsecase teacherExecuteSqlOnResultUsecase;
         private final TeacherResetResultSchemaUsecase teacherResetResultSchemaUsecase;
         private final DropAllExamSchemasUsecase dropAllExamSchemasUsecase;
+        private final PrepareExamSchemasUsecase prepareExamSchemasUsecase;
         private final WhiteboxCatalogUsecase whiteboxCatalogUsecase;
         private final WhiteboxValidateUsecase whiteboxValidateUsecase;
         private final GetExamPreviewUsecase getExamPreviewUsecase;
@@ -1029,6 +1030,22 @@ public class ExamController {
                         @PathVariable("examId") @Positive Long examId) {
                 dropAllExamSchemasUsecase.execute(new DropAllExamSchemasRequest(examId));
                 return ResponseEntity.ok(ResponseDto.of(null, "OK", "Đã xóa toàn bộ schema của bài thi"));
+        }
+
+        @PostMapping("/{examId}/schemas/prepare")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> prepareExamSchemas(
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody(required = false) PrepareExamSchemasRequestDto requestDto) {
+                PrepareExamSchemasRequest request = (requestDto != null
+                                ? requestDto
+                                : new PrepareExamSchemasRequestDto(false))
+                                .toRequest(examId);
+                PrepareExamSchemasResponse response = prepareExamSchemasUsecase.execute(request);
+                return ResponseEntity.ok(ResponseDto.of(
+                                PrepareExamSchemasResponseDto.fromResponse(response),
+                                "OK",
+                                "Đã chuẩn bị schema cho bài thi"));
         }
 
         // ===== PREVIEW ENDPOINTS =====

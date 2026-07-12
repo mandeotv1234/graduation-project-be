@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1207261515
+      author: manhuynh
+      comment: "GRAD-209: reset existing student passwords to default"
+      changes:
+        - update:
+            tableName: users
+            columns:
+              - column:
+                  name: password
+                  value: '$2a$10$/oj89qu3DgWb7DQYcnoKceWN1l8kfODnG01r/lbpquQ.p.esvH2AW'
+            where: "role = 'STUDENT'"

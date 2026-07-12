@@ -88,6 +88,7 @@ public class UpdateExamUsecase {
                 examSpecificationRepository,
                 exam.getSpecificationId(),
                 exam.getSettings());
+        ExamSettingsValidator.validateExamTimeWindow(exam.getStartTime(), exam.getEndTime());
 
         Exam savedExam = examRepository.save(exam);
         log.info("Exam updated successfully: {}", savedExam.getId());

@@ -43,6 +43,10 @@ public class MicrosoftLoginUsecase {
                 user = userRepository.save(user);
             } else {
                 user = userOptional.get();
+                if (shouldUpdateMicrosoftName(user, microsoftUserInfo.name())) {
+                    user.setFullName(microsoftUserInfo.name().trim());
+                    user = userRepository.save(user);
+                }
             }
 
             return tokenIssuer.issueToken(user);
@@ -50,5 +54,17 @@ public class MicrosoftLoginUsecase {
         } catch (Exception e) {
             throw new UnauthorizedException("Failed to authenticate with Microsoft: " + e.getMessage());
         }
+    }
+
+    private boolean shouldUpdateMicrosoftName(User user, String microsoftName) {
+        if (microsoftName == null || microsoftName.isBlank()) {
+            return false;
+        }
+        String currentName = user.getFullName();
+        if (currentName == null || currentName.isBlank()) {
+            return true;
+        }
+        String studentCode = user.getEmail() == null ? "" : user.getEmail().split("@")[0];
+        return currentName.equals(studentCode) || currentName.equals(user.getEmail());
     }
 }

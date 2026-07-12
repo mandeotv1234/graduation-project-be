@@ -1,6 +1,7 @@
 package graduation_project_be.application.usecases;
 
 import graduation_project_be.shared.utils.TimeUtils;
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.UserRepository;
@@ -16,7 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -61,20 +64,26 @@ public class UpdateClassUsecase {
         // 2. Add new enrollments
         List<ClassEnrollment> enrollments = new ArrayList<>();
 
-        for (UpdateClassRequest.StudentInfo studentInfo : request.students()) {
-            String email = studentInfo.studentId() + STUDENT_EMAIL_SUFFIX;
+        Map<String, UpdateClassRequest.StudentInfo> normalizedStudents = normalizeStudents(request.students());
+
+        for (Map.Entry<String, UpdateClassRequest.StudentInfo> entry : normalizedStudents.entrySet()) {
+            String studentCode = entry.getKey();
+            UpdateClassRequest.StudentInfo studentInfo = entry.getValue();
+            String email = studentCode + STUDENT_EMAIL_SUFFIX;
             
             Optional<User> existingUser = userRepository.findByEmail(email);
             User student;
             
             if (existingUser.isPresent()) {
                 student = existingUser.get();
-                student.setFullName(studentInfo.fullName());
-                userRepository.save(student);
+                if (studentInfo.fullName() != null && !studentInfo.fullName().isBlank()) {
+                    student.setFullName(studentInfo.fullName().trim());
+                    userRepository.save(student);
+                }
             } else {
                 student = User.builder()
                         .email(email)
-                        .fullName(studentInfo.fullName())
+                        .fullName(resolveDisplayName(studentInfo.fullName(), studentCode))
                         .password(passwordEncoder.encode(DEFAULT_STUDENT_PASSWORD))
                         .role(Role.STUDENT)
                         .isActive(true)
@@ -94,5 +103,32 @@ public class UpdateClassUsecase {
         classEnrollmentRepository.saveAll(enrollments);
 
         return CreateClassResponse.fromModel(savedClass);
+    }
+
+    private Map<String, UpdateClassRequest.StudentInfo> normalizeStudents(
+            List<UpdateClassRequest.StudentInfo> students) {
+        Map<String, UpdateClassRequest.StudentInfo> normalized = new LinkedHashMap<>();
+        if (students == null) {
+            return normalized;
+        }
+
+        for (UpdateClassRequest.StudentInfo studentInfo : students) {
+            if (studentInfo == null || studentInfo.studentId() == null || studentInfo.studentId().isBlank()) {
+                continue;
+            }
+            String studentCode = studentInfo.studentId().trim();
+            if (!studentCode.matches("\\d+")) {
+                throw new BadRequestException("MSSV chỉ được chứa chữ số: " + studentCode);
+            }
+            if (normalized.containsKey(studentCode)) {
+                throw new BadRequestException("Danh sách sinh viên có MSSV bị trùng: " + studentCode);
+            }
+            normalized.put(studentCode, studentInfo);
+        }
+        return normalized;
+    }
+
+    private String resolveDisplayName(String fullName, String studentCode) {
+        return fullName == null || fullName.isBlank() ? studentCode : fullName.trim();
     }
 }

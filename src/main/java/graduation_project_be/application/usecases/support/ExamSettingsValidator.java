@@ -5,6 +5,8 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.domain.models.ExamSettings;
 import graduation_project_be.domain.models.SpecDataset;
 
+import java.time.LocalDateTime;
+
 public final class ExamSettingsValidator {
 
     private ExamSettingsValidator() {
@@ -44,6 +46,15 @@ public final class ExamSettingsValidator {
         if (!validDataset) {
             throw new BadRequestException(
                     "Dataset đã chọn không thuộc đặc tả CSDL, đang tắt, hoặc không có data script.");
+        }
+    }
+
+    public static void validateExamTimeWindow(LocalDateTime startTime, LocalDateTime endTime) {
+        if (startTime == null || endTime == null) {
+            return;
+        }
+        if (!endTime.isAfter(startTime)) {
+            throw new BadRequestException("Thời gian kết thúc phải sau thời gian bắt đầu.");
         }
     }
 }

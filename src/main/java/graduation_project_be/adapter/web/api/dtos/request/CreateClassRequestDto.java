@@ -4,6 +4,7 @@ import graduation_project_be.application.usecases.request.CreateClassRequest;
 import lombok.Builder;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Builder
@@ -22,7 +23,7 @@ public record CreateClassRequestDto(
         return CreateClassRequest.builder()
                 .classCode(this.classCode)
                 .semester(this.semester)
-                .students(this.students.stream()
+                .students(Optional.ofNullable(this.students).orElse(List.of()).stream()
                         .map(s -> CreateClassRequest.StudentInfo.builder()
                                 .studentId(s.studentId())
                                 .fullName(s.fullName())

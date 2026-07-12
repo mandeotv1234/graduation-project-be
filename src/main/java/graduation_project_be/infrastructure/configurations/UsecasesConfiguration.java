@@ -181,15 +181,11 @@ public class UsecasesConfiguration {
             ExamRepository examRepository,
             ClassRepository classRepository,
             CurrentUserService currentUserService,
-            ClassEnrollmentRepository classEnrollmentRepository,
-            ExamSchemaService examSchemaService,
             ExamSpecificationRepository examSpecificationRepository) {
         return new CreateExamUsecase(
                 examRepository,
                 classRepository,
                 currentUserService,
-                classEnrollmentRepository,
-                examSchemaService,
                 examSpecificationRepository);
     }
 
@@ -868,19 +864,16 @@ public class UsecasesConfiguration {
             ExamTemplateRepository examTemplateRepository,
             ExamTemplateQuestionRepository examTemplateQuestionRepository,
             ClassRepository classRepository,
-            ClassEnrollmentRepository classEnrollmentRepository,
             CurrentUserService currentUserService,
-            ExamSpecificationRepository examSpecificationRepository,
-            ExamSchemaService examSchemaService) {
+            ExamSpecificationRepository examSpecificationRepository) {
         return new CloneExamTemplateUsecase(
                 examTemplateRepository,
                 examTemplateQuestionRepository,
                 classRepository,
-                classEnrollmentRepository, currentUserService,
+                currentUserService,
                 examSpecificationRepository,
                 examRepository,
-                examQuestionRepository,
-                examSchemaService);
+                examQuestionRepository);
     }
 
     @Bean
@@ -1190,6 +1183,27 @@ public class UsecasesConfiguration {
                 classRepository,
                 currentUserService,
                 examSchemaService);
+    }
+
+    @Bean
+    PrepareExamSchemasUsecase prepareExamSchemasUsecase(
+            ExamRepository examRepository,
+            ClassRepository classRepository,
+            ClassEnrollmentRepository classEnrollmentRepository,
+            ExamResultRepository examResultRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            ExamSessionService examSessionService) {
+        return new PrepareExamSchemasUsecase(
+                examRepository,
+                classRepository,
+                classEnrollmentRepository,
+                examResultRepository,
+                examSpecificationRepository,
+                currentUserService,
+                examSchemaService,
+                examSessionService);
     }
 
     // ===== BAN USECASES =====

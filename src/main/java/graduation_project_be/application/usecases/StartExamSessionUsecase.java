@@ -161,11 +161,8 @@ public class StartExamSessionUsecase {
             }
             boolean stillValid = Duration.between(now, candidateDeadline).getSeconds() > 0;
             if (stillValid) {
-                String schemaName = String.format(STUDENT_SCHEMA_FORMAT, request.examId(), studentId, nextAttempt);
-                boolean hasSchemaObjects = !examSchemaService.extractMetadata(schemaName).isEmpty();
-                boolean shouldInitializeDb = shouldInitializeDatabase(exam);
-
-                if (hasSchemaObjects || !shouldInitializeDb) {
+                String schemaName = buildStudentSchemaName(request.examId(), studentId, nextAttempt);
+                if (isSchemaReadyForStart(schemaName, exam)) {
                     examStartedAt = existingStartTime.get();
                 } else {
                     examStartedAt = now;
@@ -215,6 +212,12 @@ public class StartExamSessionUsecase {
     }
 
     private void initializeStudentSchemaForFreshStart(Long examId, Long studentId, Exam exam, int attemptNumber) {
+        String schemaName = buildStudentSchemaName(examId, studentId, attemptNumber);
+        if (isSchemaReadyForStart(schemaName, exam)) {
+            log.info("Schema [{}] already prepared before start-session, skipping reset/load", schemaName);
+            return;
+        }
+
         Long specificationId = exam.getSpecificationId();
         if (specificationId == null) {
             return;
@@ -229,9 +232,19 @@ public class StartExamSessionUsecase {
                 ? resolveSeedDatasetScript(specification, exam.getSettings().getSeedDatasetId())
                 : null;
 
-        String schemaName = String.format(STUDENT_SCHEMA_FORMAT, examId, studentId, attemptNumber);
         examSchemaService.resetSchema(schemaName, false);
         examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
+    }
+
+    private String buildStudentSchemaName(Long examId, Long studentId, int attemptNumber) {
+        return String.format(STUDENT_SCHEMA_FORMAT, examId, studentId, attemptNumber);
+    }
+
+    private boolean isSchemaReadyForStart(String schemaName, Exam exam) {
+        if (!shouldInitializeDatabase(exam)) {
+            return true;
+        }
+        return !examSchemaService.extractMetadata(schemaName).isEmpty();
     }
 
     private boolean shouldInitializeDatabase(Exam exam) {

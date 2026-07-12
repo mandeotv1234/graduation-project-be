@@ -15,6 +15,12 @@ grading:
     concurrency: ${GRADING_WORKER_CONCURRENCY:1}
     max-jobs-per-cycle: ${GRADING_MAX_JOBS_PER_CYCLE:3}
     stale-timeout-seconds: ${GRADING_STALE_TIMEOUT_SECONDS:300}
+    auto-scale-enabled: ${GRADING_WORKER_AUTO_SCALE_ENABLED:false}
+    min-concurrency: ${GRADING_WORKER_MIN_CONCURRENCY:0}
+    max-concurrency: ${GRADING_WORKER_MAX_CONCURRENCY:0}
+    scale-up-queue-threshold: ${GRADING_WORKER_SCALE_UP_QUEUE_THRESHOLD:10}
+    scale-down-queue-threshold: ${GRADING_WORKER_SCALE_DOWN_QUEUE_THRESHOLD:2}
+    scale-down-idle-cycles: ${GRADING_WORKER_SCALE_DOWN_IDLE_CYCLES:6}
 
 exam:
   auto-submit-worker:

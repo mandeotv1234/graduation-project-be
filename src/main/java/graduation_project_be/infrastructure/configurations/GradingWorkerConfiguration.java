@@ -9,10 +9,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -41,8 +43,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class GradingWorkerConfiguration {
 
+    private static final String AUTOSCALE_CONFIG_KEY = "grading_worker:autoscale:config";
+
     private final GradingQueueService gradingQueueService;
     private final GradeExamUsecase gradeExamUsecase;
+    private final RedisTemplate<String, String> redisTemplate;
 
     @Value("${grading.worker.enabled:true}")
     private boolean workerEnabled;
@@ -56,32 +61,82 @@ public class GradingWorkerConfiguration {
     @Value("${grading.worker.stale-timeout-seconds:300}")
     private long staleTimeoutSeconds;
 
+    @Value("${grading.worker.auto-scale-enabled:false}")
+    private boolean autoScaleEnabled;
+
+    @Value("${grading.worker.min-concurrency:0}")
+    private int configuredMinConcurrency;
+
+    @Value("${grading.worker.max-concurrency:0}")
+    private int configuredMaxConcurrency;
+
+    @Value("${grading.worker.scale-up-queue-threshold:10}")
+    private int scaleUpQueueThreshold;
+
+    @Value("${grading.worker.scale-down-queue-threshold:2}")
+    private int scaleDownQueueThreshold;
+
+    @Value("${grading.worker.scale-down-idle-cycles:6}")
+    private int scaleDownIdleCycles;
+
     private final AtomicInteger activeJobs = new AtomicInteger(0);
+    private final AtomicInteger currentConcurrency = new AtomicInteger(1);
     private final AtomicInteger workerThreadCounter = new AtomicInteger(0);
     private ExecutorService executorService;
-    private int concurrency;
+    private int minConcurrency;
+    private int maxConcurrency;
+    private int defaultMinConcurrency;
+    private int defaultMaxConcurrency;
+    private int defaultScaleUpQueueThreshold;
+    private int defaultScaleDownQueueThreshold;
+    private int defaultScaleDownIdleCycles;
+    private int maxConcurrencyLimit;
     private int maxJobsPerCycle;
+    private int belowScaleDownThresholdCycles;
+    private String lastAutoscaleConfigSignature = "";
 
     @PostConstruct
     void initializeWorkerPool() {
-        concurrency = Math.max(1, configuredConcurrency);
+        int baseConcurrency = Math.max(1, configuredConcurrency);
+        minConcurrency = configuredMinConcurrency > 0 ? configuredMinConcurrency : baseConcurrency;
+        maxConcurrency = configuredMaxConcurrency > 0 ? configuredMaxConcurrency : baseConcurrency;
+        if (!autoScaleEnabled) {
+            minConcurrency = baseConcurrency;
+            maxConcurrency = baseConcurrency;
+        }
+        minConcurrency = Math.max(1, minConcurrency);
+        maxConcurrency = Math.max(minConcurrency, maxConcurrency);
+        maxConcurrencyLimit = maxConcurrency;
+        defaultMinConcurrency = minConcurrency;
+        defaultMaxConcurrency = maxConcurrency;
+        currentConcurrency.set(Math.min(Math.max(baseConcurrency, minConcurrency), maxConcurrency));
+
         maxJobsPerCycle = Math.max(1, configuredMaxJobsPerCycle);
         staleTimeoutSeconds = Math.max(30, staleTimeoutSeconds);
+        scaleUpQueueThreshold = Math.max(1, scaleUpQueueThreshold);
+        scaleDownQueueThreshold = Math.max(0, Math.min(scaleDownQueueThreshold, scaleUpQueueThreshold - 1));
+        scaleDownIdleCycles = Math.max(1, scaleDownIdleCycles);
+        defaultScaleUpQueueThreshold = scaleUpQueueThreshold;
+        defaultScaleDownQueueThreshold = scaleDownQueueThreshold;
+        defaultScaleDownIdleCycles = scaleDownIdleCycles;
 
         if (!workerEnabled) {
             log.info("Grading worker disabled");
             return;
         }
 
-        executorService = Executors.newFixedThreadPool(concurrency, task -> {
+        executorService = Executors.newFixedThreadPool(maxConcurrency, task -> {
             Thread thread = new Thread(task);
             thread.setName("grading-worker-" + workerThreadCounter.incrementAndGet());
             thread.setDaemon(false);
             return thread;
         });
 
-        log.info("Grading worker initialized: enabled={}, concurrency={}, maxJobsPerCycle={}, staleTimeoutSeconds={}",
-                workerEnabled, concurrency, maxJobsPerCycle, staleTimeoutSeconds);
+        log.info(
+                "Grading worker initialized: enabled={}, autoScale={}, concurrency={}, minConcurrency={}, maxConcurrency={}, maxJobsPerCycle={}, scaleUpQueueThreshold={}, scaleDownQueueThreshold={}, scaleDownIdleCycles={}, staleTimeoutSeconds={}",
+                workerEnabled, autoScaleEnabled, currentConcurrency.get(), minConcurrency, maxConcurrency,
+                maxJobsPerCycle, scaleUpQueueThreshold, scaleDownQueueThreshold, scaleDownIdleCycles,
+                staleTimeoutSeconds);
     }
 
     @PreDestroy
@@ -110,6 +165,10 @@ public class GradingWorkerConfiguration {
             return;
         }
 
+        long queueSize = gradingQueueService.size();
+        adjustConcurrency(queueSize);
+
+        int concurrency = currentConcurrency.get();
         int availableSlots = concurrency - activeJobs.get();
         if (availableSlots <= 0) {
             log.debug("Grading worker at capacity: activeJobs={}, concurrency={}", activeJobs.get(), concurrency);
@@ -139,8 +198,94 @@ public class GradingWorkerConfiguration {
 
         if (dispatched > 0) {
             long remaining = gradingQueueService.size();
-            log.info("Grading cycle dispatched: {} jobs, activeJobs={}, {} remaining in queue",
-                    dispatched, activeJobs.get(), remaining);
+            log.info("Grading cycle dispatched: {} jobs, activeJobs={}, concurrency={}, {} remaining in queue",
+                    dispatched, activeJobs.get(), currentConcurrency.get(), remaining);
+        }
+    }
+
+    private void adjustConcurrency(long queueSize) {
+        if (!autoScaleEnabled) {
+            return;
+        }
+
+        refreshAutoscaleConfigFromRedis();
+
+        int current = currentConcurrency.get();
+        if (queueSize >= scaleUpQueueThreshold && current < maxConcurrency) {
+            int next = current + 1;
+            if (currentConcurrency.compareAndSet(current, next)) {
+                belowScaleDownThresholdCycles = 0;
+                log.info("Grading worker scaled up: queueSize={}, activeJobs={}, concurrency {} -> {}",
+                        queueSize, activeJobs.get(), current, next);
+            }
+            return;
+        }
+
+        if (queueSize <= scaleDownQueueThreshold && current > minConcurrency) {
+            belowScaleDownThresholdCycles++;
+            boolean hasRoomToScaleDown = activeJobs.get() <= current - 1;
+            if (belowScaleDownThresholdCycles >= scaleDownIdleCycles && hasRoomToScaleDown) {
+                int next = current - 1;
+                if (currentConcurrency.compareAndSet(current, next)) {
+                    belowScaleDownThresholdCycles = 0;
+                    log.info("Grading worker scaled down: queueSize={}, activeJobs={}, concurrency {} -> {}",
+                            queueSize, activeJobs.get(), current, next);
+                }
+            }
+            return;
+        }
+
+        belowScaleDownThresholdCycles = 0;
+    }
+
+    private void refreshAutoscaleConfigFromRedis() {
+        try {
+            Map<Object, Object> config = redisTemplate.opsForHash().entries(AUTOSCALE_CONFIG_KEY);
+            int nextMinConcurrency = parseInt(config.get("minConcurrency"), defaultMinConcurrency);
+            int nextMaxConcurrency = parseInt(config.get("maxConcurrency"), defaultMaxConcurrency);
+            int nextScaleUpQueueThreshold = parseInt(config.get("scaleUpQueueThreshold"),
+                    defaultScaleUpQueueThreshold);
+            int nextScaleDownQueueThreshold = parseInt(config.get("scaleDownQueueThreshold"),
+                    defaultScaleDownQueueThreshold);
+            int nextScaleDownIdleCycles = parseInt(config.get("scaleDownIdleCycles"),
+                    defaultScaleDownIdleCycles);
+
+            nextMinConcurrency = Math.min(Math.max(1, nextMinConcurrency), maxConcurrencyLimit);
+            nextMaxConcurrency = Math.min(Math.max(nextMinConcurrency, nextMaxConcurrency), maxConcurrencyLimit);
+            nextScaleUpQueueThreshold = Math.max(1, nextScaleUpQueueThreshold);
+            nextScaleDownQueueThreshold = Math.max(0,
+                    Math.min(nextScaleDownQueueThreshold, nextScaleUpQueueThreshold - 1));
+            nextScaleDownIdleCycles = Math.max(1, nextScaleDownIdleCycles);
+
+            String signature = nextMinConcurrency + ":" + nextMaxConcurrency + ":" + nextScaleUpQueueThreshold
+                    + ":" + nextScaleDownQueueThreshold + ":" + nextScaleDownIdleCycles;
+            if (!signature.equals(lastAutoscaleConfigSignature)) {
+                log.info(
+                        "Grading worker autoscale config: redisKey={}, minConcurrency={}, maxConcurrency={}, scaleUpQueueThreshold={}, scaleDownQueueThreshold={}, scaleDownIdleCycles={}",
+                        AUTOSCALE_CONFIG_KEY, nextMinConcurrency, nextMaxConcurrency,
+                        nextScaleUpQueueThreshold, nextScaleDownQueueThreshold, nextScaleDownIdleCycles);
+                lastAutoscaleConfigSignature = signature;
+            }
+
+            minConcurrency = nextMinConcurrency;
+            maxConcurrency = nextMaxConcurrency;
+            scaleUpQueueThreshold = nextScaleUpQueueThreshold;
+            scaleDownQueueThreshold = nextScaleDownQueueThreshold;
+            scaleDownIdleCycles = nextScaleDownIdleCycles;
+            currentConcurrency.updateAndGet(value -> Math.min(Math.max(value, minConcurrency), maxConcurrency));
+        } catch (Exception e) {
+            log.warn("Could not refresh grading autoscale config from Redis key {}", AUTOSCALE_CONFIG_KEY, e);
+        }
+    }
+
+    private int parseInt(Object value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 

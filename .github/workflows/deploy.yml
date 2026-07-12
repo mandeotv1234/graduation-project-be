@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - feature/GRAD-215-Improve-scale-grading-exam
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

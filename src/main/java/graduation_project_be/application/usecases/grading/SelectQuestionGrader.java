@@ -456,8 +456,10 @@ public class SelectQuestionGrader {
         SelectResultScorer.ScoringResult result =
                 SelectResultScorer.score(edits, selectRules, caseMaxPenalty, support);
         StringBuilder caseIssues = new StringBuilder();
+        // No per-rule trace items here: the TEST_CASE item emitted by the case loop already
+        // carries the rule detail in its message, and a second RUBRIC_RULE line for the same
+        // violation reads as a double deduction.
         for (SelectResultScorer.AppliedEdit applied : result.applied()) {
-            addSelectEditTrace(caseId, caseName, applied, caseMaxPenalty, "SELECT test case rubric");
             if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
                 appendSelectIssue(caseIssues, describeAppliedEdit(applied));
             }
@@ -1150,7 +1152,11 @@ public class SelectQuestionGrader {
 
         String ruleLabel = selectRuleLabel(applied.target(), applied.condition());
         boolean deducted = applied.failAllTriggered() || applied.deduction().compareTo(BigDecimal.ZERO) > 0;
-        BigDecimal deductedPoints = applied.failAllTriggered() ? maxPoints : applied.deduction();
+        // Display the capped number: the scorer caps the total at the budget, so a raw per-rule
+        // deduction above maxPoints was never actually subtracted (same convention as INSERT).
+        BigDecimal deductedPoints = applied.failAllTriggered()
+                ? maxPoints
+                : applied.deduction().min(maxPoints);
         GradingTraceCollector.add(new GradingTraceItem(
                 GradingTraceItem.KIND_RUBRIC_RULE,
                 deducted ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_WARN,

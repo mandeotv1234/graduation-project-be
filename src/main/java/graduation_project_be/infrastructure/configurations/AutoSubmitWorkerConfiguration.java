@@ -11,6 +11,7 @@ import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamDraft;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,6 +36,9 @@ public class AutoSubmitWorkerConfiguration {
     private final ExamSessionService examSessionService;
     private final SubmitExamUsecase submitExamUsecase;
 
+    @Value("${exam.auto-submit-worker.enabled:true}")
+    private boolean autoSubmitWorkerEnabled;
+
     /**
      * Chạy định kỳ mỗi 60 giây (60000ms).
      * Mục đích: Quét tất cả các bản nháp đang tồn tại. Nếu phát hiện version `ExamSession` của user
@@ -44,6 +48,10 @@ public class AutoSubmitWorkerConfiguration {
      */
     @Scheduled(fixedRate = 60000)
     public void sweepExpiredExamsAndAutoSubmit() {
+        if (!autoSubmitWorkerEnabled) {
+            return;
+        }
+
         try {
             // Lấy toàn bộ bản nháp đang tồn tại. Số lượng bản nháp sẽ luôn bằng chính xác
             // số sinh viên đang mở bài thi và làm (nên quét list này sẽ rất tối ưu).

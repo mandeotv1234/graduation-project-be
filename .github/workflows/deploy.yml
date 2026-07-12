@@ -71,3 +71,41 @@ jobs:
             $DC rm -f backend
             $DC up -d --no-deps backend
             $DC ps
+
+      - name: Deploy worker to Droplet VM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.WORKER_SERVER_HOST }}
+          username: root
+          key: ${{ secrets.WORKER_SERVER_SSH_KEY }}
+          script: |
+            set -e
+            APP_DIR=/root/app
+            ENV_FILE="$APP_DIR/.env.worker"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "Missing $ENV_FILE on VM2. Create worker-only env file before deploying." >&2
+              exit 1
+            fi
+
+            echo "${{ secrets.DO_REGISTRY_TOKEN }}" | docker login registry.digitalocean.com -u "${{ secrets.DO_REGISTRY_TOKEN }}" --password-stdin
+            docker pull "$IMAGE"
+
+            docker rm -f backend-worker >/dev/null 2>&1 || true
+            docker run -d \
+              --name backend-worker \
+              --restart always \
+              --env-file "$ENV_FILE" \
+              -p 127.0.0.1:8080:8080 \
+              -v backend_worker_uploads:/app/data \
+              --log-driver json-file \
+              --log-opt max-size=10m \
+              --log-opt max-file=3 \
+              "$IMAGE"
+
+            docker ps --filter "name=backend-worker"
+            docker logs --tail 80 backend-worker

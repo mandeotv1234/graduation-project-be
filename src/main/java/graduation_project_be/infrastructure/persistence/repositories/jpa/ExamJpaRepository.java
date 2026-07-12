@@ -18,6 +18,7 @@ public interface ExamJpaRepository extends JpaRepository<ExamEntity, Long> {
     boolean existsBySpecificationId(Long specificationId);
 
     @Query("SELECT e FROM ExamEntity e WHERE e.isPublished = true AND e.classId IN " +
-            "(SELECT ce.classId FROM ClassEnrollmentEntity ce WHERE ce.studentId = :studentId)")
+            "(SELECT ce.classId FROM ClassEnrollmentEntity ce WHERE ce.studentId = :studentId) " +
+            "AND EXISTS (SELECT q.id FROM ExamQuestionEntity q WHERE q.examId = e.id)")
     List<ExamEntity> findPublishedExamsByStudentId(@Param("studentId") Long studentId);
 }

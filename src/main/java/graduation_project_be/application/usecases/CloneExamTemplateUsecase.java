@@ -3,7 +3,6 @@ package graduation_project_be.application.usecases;
 import graduation_project_be.shared.utils.TimeUtils;
 import graduation_project_be.application.exceptions.ResourceNotFoundException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
-import graduation_project_be.application.port.repositories.ClassEnrollmentRepository;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamRepository;
@@ -11,9 +10,7 @@ import graduation_project_be.application.port.repositories.ExamSpecificationRepo
 import graduation_project_be.application.port.repositories.ExamTemplateQuestionRepository;
 import graduation_project_be.application.port.repositories.ExamTemplateRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
-import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.usecases.response.CloneExamTemplateResponse;
-import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSettings;
@@ -32,12 +29,10 @@ public class CloneExamTemplateUsecase {
     private final ExamTemplateRepository examTemplateRepository;
     private final ExamTemplateQuestionRepository examTemplateQuestionRepository;
     private final ClassRepository classRepository;
-    private final ClassEnrollmentRepository classEnrollmentRepository;
     private final CurrentUserService currentUserService;
     private final ExamSpecificationRepository examSpecificationRepository;
     private final ExamRepository examRepository;
     private final ExamQuestionRepository examQuestionRepository;
-    private final ExamSchemaService examSchemaService;
 
     @Transactional
     public CloneExamTemplateResponse execute(Long templateId, Long classId) {
@@ -86,11 +81,6 @@ public class CloneExamTemplateUsecase {
                 .toList();
 
         examQuestionRepository.saveAll(newQuestions);
-
-        List<ClassEnrollment> enrollments = classEnrollmentRepository.findByClassId(classId);
-        for (ClassEnrollment enrollment : enrollments) {
-            examSchemaService.createExamSchemaForStudent(savedExam.getId(), enrollment.getStudentId());
-        }
 
         return new CloneExamTemplateResponse(savedExam.getId(), savedExam.getTitle(), newQuestions.size());
     }

@@ -17,6 +17,8 @@ import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.StartExamSessionRequest;
 import graduation_project_be.domain.models.ClassStudentBan;
 import graduation_project_be.domain.models.Exam;
+import graduation_project_be.domain.models.ExamSettings;
+import graduation_project_be.domain.models.TableMetadata;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,9 +27,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -259,5 +267,48 @@ class StartExamSessionUsecaseTest {
         // Verify that ban check is performed after enrollment check passes
         assertThatThrownBy(() -> startExamSessionUsecase.execute(request))
                 .isInstanceOf(BannedFromExamException.class);
+    }
+
+    @Test
+    void execute_should_not_reload_schema_when_attempt_schema_was_prepared() {
+        Long studentId = 1L;
+        Long classId = 10L;
+        Long examId = 100L;
+
+        StartExamSessionRequest request = new StartExamSessionRequest(examId, "192.168.1.1", "Mozilla/5.0");
+        Exam exam = Exam.builder()
+                .id(examId)
+                .classId(classId)
+                .specificationId(50L)
+                .isPublished(true)
+                .startTime(LocalDateTime.now().minusMinutes(10))
+                .endTime(LocalDateTime.now().plusHours(2))
+                .durationMinutes(60)
+                .maxAttempts(3)
+                .settings(ExamSettings.builder()
+                        .isLoadDdl(true)
+                        .seedDatasetId(7L)
+                        .build())
+                .build();
+
+        when(currentUserService.getCurrentUserId()).thenReturn(studentId);
+        when(examRepository.findByIdAndIsPublished(examId, true)).thenReturn(Optional.of(exam));
+        when(classEnrollmentRepository.existsByClassIdAndStudentId(classId, studentId)).thenReturn(true);
+        when(classStudentBanRepository.findActiveByClassIdAndStudentId(classId, studentId))
+                .thenReturn(Optional.empty());
+        when(examSessionService.getExamStartTime(examId, studentId)).thenReturn(Optional.empty());
+        when(examSessionService.tryStartSession(examId, studentId, "192.168.1.1", "Mozilla/5.0"))
+                .thenReturn(true);
+        when(examResultRepository.countByExamIdAndStudentId(examId, studentId)).thenReturn(0L);
+        when(examSchemaService.extractMetadata("exam_100_student_1_att_1"))
+                .thenReturn(List.of(TableMetadata.builder().tableName("Students").build()));
+
+        var response = startExamSessionUsecase.execute(request);
+
+        assertThat(response.sessionStarted()).isTrue();
+        verify(examSchemaService, never()).resetSchema(anyString(), anyBoolean());
+        verify(examSchemaService, never()).loadTemplateIntoSchema(
+                anyString(), nullable(String.class), nullable(String.class));
+        verify(examSessionService).saveExamStartTime(examId, studentId, response.examStartedAt());
     }
 }

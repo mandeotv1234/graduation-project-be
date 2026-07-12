@@ -36,7 +36,15 @@ public interface GradingQueueService {
      * Check processing area for stale jobs (e.g., worker crashed) and move them
      * back to main queue.
      */
-    void recoverStaleJobs();
+    default void recoverStaleJobs() {
+        recoverStaleJobs(300);
+    }
+
+    /**
+     * Check processing area for jobs older than the configured timeout and move them
+     * back to main queue.
+     */
+    void recoverStaleJobs(long staleTimeoutSeconds);
 
     /**
      * Get the current queue size.

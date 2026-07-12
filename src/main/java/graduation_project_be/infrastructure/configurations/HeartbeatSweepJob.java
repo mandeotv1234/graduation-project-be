@@ -10,6 +10,7 @@ import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSettings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -33,8 +34,15 @@ public class HeartbeatSweepJob {
     private final ExamRepository examRepository;
     private final ReportViolationUsecase reportViolationUsecase;
 
+    @Value("${exam.heartbeat-sweep.enabled:true}")
+    private boolean heartbeatSweepEnabled;
+
     @Scheduled(fixedDelay = 10000)
     public void sweep() {
+        if (!heartbeatSweepEnabled) {
+            return;
+        }
+
         try {
             List<HeartbeatKey> keys = heartbeatService.scanActive();
             if (keys.isEmpty()) return;

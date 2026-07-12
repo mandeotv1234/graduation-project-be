@@ -99,8 +99,9 @@ public class RedisGradingQueueService implements GradingQueueService {
     }
 
     @Override
-    public void recoverStaleJobs() {
-        long staleThresholdMs = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5);
+    public void recoverStaleJobs(long staleTimeoutSeconds) {
+        long safeTimeoutSeconds = Math.max(30, staleTimeoutSeconds);
+        long staleThresholdMs = System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(safeTimeoutSeconds);
         @SuppressWarnings("rawtypes")
         DefaultRedisScript<List> script = new DefaultRedisScript<>(RECOVER_SCRIPT, List.class);
         

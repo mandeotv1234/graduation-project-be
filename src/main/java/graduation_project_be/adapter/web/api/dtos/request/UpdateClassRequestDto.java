@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Builder;
 
 import java.util.List;
+import java.util.Optional;
 
 @Builder
 public record UpdateClassRequestDto(
@@ -21,7 +22,6 @@ public record UpdateClassRequestDto(
         @NotBlank(message = "Student ID is required")
         String studentId,
 
-        @NotBlank(message = "Full name is required")
         String fullName
     ) {}
 
@@ -30,7 +30,7 @@ public record UpdateClassRequestDto(
                 .classId(classId)
                 .classCode(classCode)
                 .semester(semester)
-                .students(students.stream()
+                .students(Optional.ofNullable(students).orElse(List.of()).stream()
                         .map(s -> UpdateClassRequest.StudentInfo.builder()
                                 .studentId(s.studentId())
                                 .fullName(s.fullName())

@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
@@ -22,6 +23,7 @@ import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResul
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxViolation;
 import graduation_project_be.application.usecases.request.GenerateGradingRubricRequest;
 import graduation_project_be.application.usecases.request.RefineRubricTestCasesRequest;
+import graduation_project_be.application.usecases.request.RubricAgentRunRequest;
 import graduation_project_be.application.usecases.request.ExecuteSelectQueryRequest;
 import graduation_project_be.application.usecases.request.TestGradeCreateTableRequest;
 import graduation_project_be.application.usecases.request.TestGradeInsertRequest;
@@ -33,6 +35,7 @@ import graduation_project_be.application.usecases.response.BuildInsertTablesResp
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
 import graduation_project_be.application.usecases.response.ExecuteSelectTestCaseResponse;
 import graduation_project_be.application.usecases.response.RefineRubricTestCasesResponse;
+import graduation_project_be.application.usecases.response.RubricAgentRunResponse;
 import graduation_project_be.application.usecases.response.RubricTestGradeResponse;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
@@ -146,6 +149,1031 @@ public class RubricTestingUsecase {
             log.error("Không thể phân tích rubric AI đã chỉnh: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    public RubricAgentRunResponse runRubricQaAgent(RubricAgentRunRequest request) {
+        if (request.currentRubricJson() == null || request.currentRubricJson().isBlank()) {
+            throw new BadRequestException("Current rubric is required");
+        }
+
+        final int maxIterations = 3;
+        List<RubricAgentRunResponse.RubricAgentStep> steps = new ArrayList<>();
+        List<String> plan = buildRubricAgentPlan(request);
+        List<String> changeSummary = new ArrayList<>();
+        List<String> fixes = new ArrayList<>();
+        List<String> testCaseChanges = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+
+        steps.add(agentStep(
+                "PLANNING",
+                "PASS",
+                "Agent lập kế hoạch: " + String.join(" -> ", plan) + ". Tối đa " + maxIterations + " vòng sửa."));
+
+        JsonNode currentRubric;
+        try {
+            currentRubric = objectMapper.readTree(request.currentRubricJson());
+        } catch (Exception e) {
+            steps.add(agentStep("VALIDATE_RUBRIC_JSON", "FAIL", "Rubric không phải JSON hợp lệ: " + e.getMessage()));
+            throw new BadRequestException("Rubric JSON không hợp lệ: " + e.getMessage());
+        }
+
+        JsonNode originalRubric = currentRubric.deepCopy();
+        JsonNode finalRubric = currentRubric;
+        List<RubricAgentRunResponse.RubricAgentFinding> finalFindings = List.of();
+        RuntimeRubricQa lastRuntimeQa = null;
+        int completedIterations = 0;
+        boolean changed = false;
+        boolean patchedInLastIteration = false;
+
+        for (int iteration = 1; iteration <= maxIterations; iteration++) {
+            completedIterations = iteration;
+            patchedInLastIteration = false;
+            steps.add(agentStep(
+                    "AGENT_ITERATION",
+                    "PASS",
+                    "Bắt đầu vòng agent " + iteration + "/" + maxIterations + "."));
+
+            RubricAgentObservation observation = observeRubricForAgent(
+                    currentRubric,
+                    request,
+                    iteration,
+                    steps,
+                    changeSummary,
+                    warnings);
+            currentRubric = observation.rubric();
+            finalRubric = currentRubric;
+            finalFindings = observation.findings();
+            lastRuntimeQa = observation.runtimeQa();
+            changed = changed || observation.normalizedChanged();
+
+            if (!hasRepairableFindings(finalFindings)) {
+                steps.add(agentStep("READY", "PASS", "Rubric đã qua QA sau vòng " + iteration + "."));
+                break;
+            }
+
+            try {
+                String repairInstruction = buildRubricAgentRepairInstruction(request, finalFindings, lastRuntimeQa);
+                String beforePatchJson = objectMapper.writeValueAsString(currentRubric);
+                RefineRubricTestCasesResponse repaired = refineRubricTestCases(new RefineRubricTestCasesRequest(
+                        request.correctQuery(),
+                        request.questionContent(),
+                        request.totalPoints(),
+                        request.questionType(),
+                        request.schemaContext(),
+                        request.contextQueries(),
+                        beforePatchJson,
+                        repairInstruction,
+                        "IMPROVE_COVERAGE",
+                        ""));
+
+                if (repaired == null || repaired.rubric() == null || repaired.rubric().isMissingNode()) {
+                    steps.add(agentStep("PATCH_RUBRIC", "FAIL",
+                            "Vòng " + iteration + ": AI không trả về rubric đã sửa."));
+                    warnings.add("AI repair không trả về rubric hợp lệ; giữ rubric hiện tại.");
+                    break;
+                } else {
+                    JsonNode repairedRubric = normalizeRubricEnvelopeForAgent(
+                            repaired.rubric(),
+                            request,
+                            changeSummary);
+                    List<String> caseChanges = describeRubricCaseChanges(currentRubric, repairedRubric, request);
+                    testCaseChanges.addAll(caseChanges);
+                    fixes.addAll(repaired.changeSummary());
+                    changed = true;
+                    patchedInLastIteration = true;
+                    currentRubric = repairedRubric;
+                    finalRubric = currentRubric;
+                    changeSummary.addAll(repaired.changeSummary());
+                    warnings.addAll(repaired.warnings());
+                    steps.add(agentStep("PATCH_RUBRIC", "PASS",
+                            "Vòng " + iteration + ": AI đã patch rubric. Agent sẽ chạy lại tool để verify."));
+                }
+            } catch (Exception e) {
+                log.warn("Rubric QA auto-repair failed: {}", e.getMessage(), e);
+                steps.add(agentStep("PATCH_RUBRIC", "FAIL",
+                        "Vòng " + iteration + ": không thể tự sửa rubric: " + e.getMessage()));
+                warnings.add("Không thể tự sửa rubric: " + e.getMessage());
+                break;
+            }
+
+            if (iteration == maxIterations && patchedInLastIteration) {
+                steps.add(agentStep(
+                        "FINAL_VERIFY",
+                        "WARN",
+                        "Đã dùng hết " + maxIterations + " vòng patch; chạy verify cuối không patch thêm."));
+                RubricAgentObservation finalObservation = observeRubricForAgent(
+                        currentRubric,
+                        request,
+                        iteration + 1,
+                        steps,
+                        changeSummary,
+                        warnings);
+                finalRubric = finalObservation.rubric();
+                finalFindings = finalObservation.findings();
+                lastRuntimeQa = finalObservation.runtimeQa();
+                changed = changed || finalObservation.normalizedChanged();
+            }
+        }
+
+        if (changeSummary.isEmpty() && changed) {
+            changeSummary.add("Đã chuẩn hóa envelope rubric để đúng schema chấm.");
+        }
+        if (fixes.isEmpty() && changed && !originalRubric.equals(finalRubric)) {
+            fixes.add("Agent đã cập nhật rubric sau khi chạy QA tool.");
+        }
+
+        List<String> finalWarnings = new ArrayList<>(warnings);
+        finalFindings.stream()
+                .filter(finding -> "WARNING".equalsIgnoreCase(finding.severity()))
+                .map(RubricAgentRunResponse.RubricAgentFinding::message)
+                .forEach(finalWarnings::add);
+
+        return new RubricAgentRunResponse(
+                finalRubric,
+                steps,
+                finalFindings,
+                distinctStrings(plan),
+                distinctStrings(changeSummary),
+                distinctStrings(fixes),
+                distinctStrings(testCaseChanges),
+                distinctStrings(finalWarnings),
+                completedIterations,
+                changed,
+                calculateRubricAgentConfidence(steps, finalFindings));
+    }
+
+    private RubricAgentObservation observeRubricForAgent(
+            JsonNode rubric,
+            RubricAgentRunRequest request,
+            int iteration,
+            List<RubricAgentRunResponse.RubricAgentStep> steps,
+            List<String> changeSummary,
+            List<String> warnings) {
+        JsonNode parsedRubric;
+        try {
+            parsedRubric = objectMapper.readTree(objectMapper.writeValueAsString(rubric));
+            steps.add(agentStep("VALIDATE_RUBRIC_JSON", "PASS",
+                    "Vòng " + iteration + ": rubric là JSON hợp lệ."));
+        } catch (Exception e) {
+            List<RubricAgentRunResponse.RubricAgentFinding> findings = List.of(agentFinding(
+                    "ERROR",
+                    "RUBRIC_JSON_INVALID",
+                    "Vòng " + iteration + ": rubric không phải JSON hợp lệ: " + e.getMessage()));
+            steps.add(agentStep("VALIDATE_RUBRIC_JSON", "FAIL",
+                    "Vòng " + iteration + ": rubric không phải JSON hợp lệ."));
+            return new RubricAgentObservation(rubric, findings, null, false);
+        }
+
+        JsonNode normalizedRubric = normalizeRubricEnvelopeForAgent(parsedRubric, request, changeSummary);
+        boolean normalizedChanged = !parsedRubric.equals(normalizedRubric);
+
+        DerivedExpectedValuesQa derived = deriveExpectedValuesForAgent(normalizedRubric, request);
+        steps.add(derived.step());
+        warnings.addAll(derived.warnings());
+
+        RuntimeRubricQa runtimeQa = runReferenceGradeForAgent(normalizedRubric, request);
+        steps.add(runtimeQa.step());
+        warnings.addAll(runtimeQa.warnings());
+
+        List<RubricAgentRunResponse.RubricAgentFinding> coverageFindings =
+                analyzeRubricForAgent(normalizedRubric, request);
+        steps.add(summarizeFindingsStep("ANALYZE_MUTATION_COVERAGE", coverageFindings));
+
+        List<RubricAgentRunResponse.RubricAgentFinding> findings = new ArrayList<>();
+        findings.addAll(derived.findings());
+        findings.addAll(runtimeQa.findings());
+        findings.addAll(coverageFindings);
+        findings = compactAgentFindings(findings);
+
+        return new RubricAgentObservation(normalizedRubric, findings, runtimeQa, normalizedChanged);
+    }
+
+    private List<String> buildRubricAgentPlan(RubricAgentRunRequest request) {
+        List<String> plan = new ArrayList<>();
+        plan.add("VALIDATE_RUBRIC_JSON");
+        plan.add("DERIVE_EXPECTED_VALUES");
+        plan.add("RUN_TEST_GRADE");
+        plan.add("ANALYZE_MUTATION_COVERAGE");
+        plan.add("PATCH_RUBRIC khi có issue");
+        plan.add("VERIFY lại tối đa 3 vòng");
+        if (request.teacherInstruction() != null && !request.teacherInstruction().isBlank()) {
+            plan.add("Ưu tiên ghi chú giáo viên: " + request.teacherInstruction().trim());
+        }
+        return plan;
+    }
+
+    private boolean hasRepairableFindings(List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        return findings != null && findings.stream()
+                .anyMatch(finding -> "ERROR".equalsIgnoreCase(finding.severity())
+                        || "WARNING".equalsIgnoreCase(finding.severity()));
+    }
+
+    private DerivedExpectedValuesQa deriveExpectedValuesForAgent(JsonNode rubric, RubricAgentRunRequest request) {
+        List<RubricAgentRunResponse.RubricAgentFinding> findings = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        String questionType = normalizeAgentQuestionType(request.questionType());
+        JsonNode payload = resolveAgentPayload(rubric);
+
+        switch (questionType) {
+            case "CREATE_TABLE" -> deriveCreateTableExpectedValues(payload, request, findings);
+            case "INSERT_DATA" -> deriveInsertDataExpectedValues(payload, request, findings);
+            case "SELECT_QUERY" -> deriveSelectExpectedValues(payload, request, findings, warnings);
+            case "FUNCTION", "STORED_PROCEDURE", "PROCEDURE", "ROUTINE" ->
+                    deriveRoutineExpectedValues(payload, findings);
+            case "TRIGGER" -> deriveTriggerExpectedValues(payload, findings);
+            default -> warnings.add("DERIVE_EXPECTED_VALUES chưa có rule chuyên biệt cho " + questionType + ".");
+        }
+
+        String status;
+        String message;
+        long errors = findings.stream().filter(f -> "ERROR".equalsIgnoreCase(f.severity())).count();
+        long warnCount = findings.stream().filter(f -> "WARNING".equalsIgnoreCase(f.severity())).count();
+        if (errors > 0) {
+            status = "FAIL";
+            message = "Không derive được expected values đầy đủ: " + errors + " lỗi, " + warnCount + " cảnh báo.";
+        } else if (warnCount > 0) {
+            status = "WARN";
+            message = "Derive expected values có " + warnCount + " cảnh báo cần sửa hoặc rà soát.";
+        } else {
+            status = "PASS";
+            message = "Đã derive/đối chiếu expected values từ rubric và đáp án chuẩn.";
+        }
+
+        return new DerivedExpectedValuesQa(
+                agentStep("DERIVE_EXPECTED_VALUES", status, message),
+                findings,
+                warnings);
+    }
+
+    private void deriveCreateTableExpectedValues(
+            JsonNode payload,
+            RubricAgentRunRequest request,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        Set<String> expectedTablesFromSql = extractCreatedTableNames(request.correctQuery());
+        JsonNode rubricTables = firstArray(payload.path("tables"), payload.path("expected_tables"));
+        Set<String> rubricTablesByName = new LinkedHashSet<>();
+        if (rubricTables.isArray()) {
+            rubricTables.forEach(table -> {
+                String name = firstText(table, "expected_name", "table_name", "name");
+                if (!name.isBlank()) {
+                    rubricTablesByName.add(name.toLowerCase(Locale.ROOT));
+                }
+            });
+        }
+
+        if (!expectedTablesFromSql.isEmpty()) {
+            for (String tableName : expectedTablesFromSql) {
+                if (!rubricTablesByName.contains(tableName.toLowerCase(Locale.ROOT))) {
+                    findings.add(agentFinding("ERROR", "DERIVE_CREATE_TABLE_MISSING",
+                            "Đáp án tạo bảng " + tableName + " nhưng rubric chưa có bảng tương ứng."));
+                }
+            }
+        }
+    }
+
+    private void deriveInsertDataExpectedValues(
+            JsonNode payload,
+            RubricAgentRunRequest request,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        Set<String> insertedTables = extractInsertedTableNames(request.correctQuery());
+        JsonNode rubricTables = payload.path("tables");
+        Set<String> rubricTablesByName = new LinkedHashSet<>();
+        if (rubricTables.isArray()) {
+            rubricTables.forEach(table -> {
+                String name = firstText(table, "table_name", "expected_name", "name");
+                if (!name.isBlank()) {
+                    rubricTablesByName.add(name.toLowerCase(Locale.ROOT));
+                }
+            });
+        }
+
+        for (String tableName : insertedTables) {
+            if (!rubricTablesByName.contains(tableName.toLowerCase(Locale.ROOT))) {
+                findings.add(agentFinding("WARNING", "DERIVE_INSERT_TABLE_MISSING",
+                        "Đáp án INSERT vào " + tableName + " nhưng rubric chưa có expected_data cho bảng này."));
+            }
+        }
+    }
+
+    private void deriveSelectExpectedValues(
+            JsonNode payload,
+            RubricAgentRunRequest request,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings,
+            List<String> warnings) {
+        JsonNode testCases = payload.path("test_cases");
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            warnings.add("SELECT không có test_cases[] nên expected values sẽ fallback theo đáp án mẫu/runtime.");
+            return;
+        }
+        if (request.correctQuery() == null || request.correctQuery().isBlank()) {
+            findings.add(agentFinding("ERROR", "DERIVE_SELECT_CORRECT_QUERY_MISSING",
+                    "Không thể derive expected_result SELECT vì thiếu correctQuery."));
+            return;
+        }
+        for (JsonNode testCase : testCases) {
+            String caseId = testCase.path("case_id").asText("");
+            String setup = testCase.path("setup_custom_script").asText("");
+            JsonNode expectedResult = testCase.path("expected_result");
+            if (setup.isBlank()) {
+                findings.add(agentFinding("WARNING", "DERIVE_SELECT_SETUP_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu setup_custom_script để derive expected_result ổn định."));
+            }
+            if (expectedResult.isMissingNode() || expectedResult.isNull()) {
+                warnings.add("Test case " + displayName(caseId)
+                        + " chưa lưu expected_result; runtime sẽ derive bằng correctQuery khi chấm thử.");
+            }
+        }
+    }
+
+    private void deriveRoutineExpectedValues(
+            JsonNode payload,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode testCases = payload.path("test_cases");
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            findings.add(agentFinding("ERROR", "DERIVE_ROUTINE_CASES_MISSING",
+                    "Không có test_cases[] để derive expected output cho routine."));
+            return;
+        }
+        for (JsonNode testCase : testCases) {
+            String caseId = testCase.path("case_id").asText("");
+            if (testCase.path("validation_query").asText("").isBlank()
+                    && testCase.path("invocation_query").asText("").isBlank()) {
+                findings.add(agentFinding("ERROR", "DERIVE_ROUTINE_VALIDATION_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu validation_query/invocation_query."));
+            }
+        }
+    }
+
+    private void deriveTriggerExpectedValues(
+            JsonNode payload,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode testCases = payload.path("test_cases");
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            findings.add(agentFinding("ERROR", "DERIVE_TRIGGER_CASES_MISSING",
+                    "Không có test_cases[] để derive side-effect expected cho trigger."));
+            return;
+        }
+        for (JsonNode testCase : testCases) {
+            String caseId = testCase.path("case_id").asText("");
+            if (testCase.path("invocation_query").asText("").isBlank()) {
+                findings.add(agentFinding("ERROR", "DERIVE_TRIGGER_INVOCATION_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu invocation_query."));
+            }
+            if (testCase.path("validation_query").asText("").isBlank()) {
+                findings.add(agentFinding("WARNING", "DERIVE_TRIGGER_VALIDATION_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu validation_query để xác minh side effect."));
+            }
+        }
+    }
+
+    private List<String> describeRubricCaseChanges(
+            JsonNode before,
+            JsonNode after,
+            RubricAgentRunRequest request) {
+        List<String> changes = new ArrayList<>();
+        String questionType = normalizeAgentQuestionType(request.questionType());
+        JsonNode beforePayload = resolveAgentPayload(before);
+        JsonNode afterPayload = resolveAgentPayload(after);
+
+        int beforeCaseCount = countArray(beforePayload.path("test_cases"));
+        int afterCaseCount = countArray(afterPayload.path("test_cases"));
+        if (beforeCaseCount != afterCaseCount) {
+            changes.add("Số test case đổi từ " + beforeCaseCount + " thành " + afterCaseCount + ".");
+        }
+
+        int beforeTableCount = countArray(firstArray(beforePayload.path("tables"), before.path("tables")));
+        int afterTableCount = countArray(firstArray(afterPayload.path("tables"), after.path("tables")));
+        if (beforeTableCount != afterTableCount) {
+            changes.add("Số bảng/dataset rubric đổi từ " + beforeTableCount + " thành " + afterTableCount + ".");
+        }
+
+        int beforeRuleCount = countArray(firstArray(beforePayload.path("grading_rules"), before.path("grading_rules")));
+        int afterRuleCount = countArray(firstArray(afterPayload.path("grading_rules"), after.path("grading_rules")));
+        if (beforeRuleCount != afterRuleCount) {
+            changes.add("Số grading rule đổi từ " + beforeRuleCount + " thành " + afterRuleCount + ".");
+        }
+
+        if (("FUNCTION".equals(questionType) || "STORED_PROCEDURE".equals(questionType) || "TRIGGER".equals(questionType))
+                && beforeCaseCount == afterCaseCount
+                && !beforePayload.path("test_cases").equals(afterPayload.path("test_cases"))) {
+            changes.add("Nội dung test_cases đã được chỉnh nhưng số lượng không đổi.");
+        }
+        if (changes.isEmpty() && !before.equals(after)) {
+            changes.add("Rubric JSON đã được chỉnh nhưng không phát hiện thay đổi số lượng testcase/rule.");
+        }
+        return changes;
+    }
+
+    private int countArray(JsonNode node) {
+        return node != null && node.isArray() ? node.size() : 0;
+    }
+
+    private List<RubricAgentRunResponse.RubricAgentFinding> compactAgentFindings(
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        if (findings == null || findings.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, RubricAgentRunResponse.RubricAgentFinding> compacted = new LinkedHashMap<>();
+        for (RubricAgentRunResponse.RubricAgentFinding finding : findings) {
+            if (finding == null) {
+                continue;
+            }
+            String key = finding.severity() + "|" + finding.code() + "|" + finding.message();
+            compacted.putIfAbsent(key, finding);
+        }
+        return new ArrayList<>(compacted.values());
+    }
+
+    private JsonNode normalizeRubricEnvelopeForAgent(
+            JsonNode rubric,
+            RubricAgentRunRequest request,
+            List<String> changeSummary) {
+        if (rubric == null || !rubric.isObject()) {
+            throw new BadRequestException("Rubric phải là JSON object.");
+        }
+
+        String questionType = normalizeAgentQuestionType(request.questionType());
+        ObjectNode root = ((ObjectNode) rubric).deepCopy();
+        boolean changed = false;
+
+        if (!root.hasNonNull("question_category") || root.path("question_category").asText("").isBlank()) {
+            root.put("question_category", questionType);
+            changed = true;
+        }
+        if (!root.hasNonNull("total_points") || !root.path("total_points").isNumber()) {
+            root.put("total_points", request.totalPoints());
+            changed = true;
+        }
+
+        JsonNode payload = root.path("grading_payload");
+        if (!payload.isObject()) {
+            ObjectNode wrappedPayload = root.deepCopy();
+            wrappedPayload.remove("question_id");
+            wrappedPayload.remove("question_category");
+            wrappedPayload.remove("total_points");
+
+            ObjectNode wrapper = objectMapper.createObjectNode();
+            wrapper.put("question_category", questionType);
+            wrapper.put("total_points", request.totalPoints());
+            wrapper.set("grading_payload", wrappedPayload);
+            root = wrapper;
+            changed = true;
+        }
+
+        if (changed) {
+            changeSummary.add("Đã chuẩn hóa rubric về dạng có question_category, total_points và grading_payload.");
+        }
+        return root;
+    }
+
+    private List<RubricAgentRunResponse.RubricAgentFinding> analyzeRubricForAgent(
+            JsonNode rubric,
+            RubricAgentRunRequest request) {
+        List<RubricAgentRunResponse.RubricAgentFinding> findings = new ArrayList<>();
+        String expectedType = normalizeAgentQuestionType(request.questionType());
+
+        String actualType = rubric.path("question_category").asText("");
+        if (!expectedType.equalsIgnoreCase(actualType)) {
+            findings.add(agentFinding(
+                    "WARNING",
+                    "CATEGORY_MISMATCH",
+                    "question_category hiện là " + actualType + " nhưng câu hỏi đang là " + expectedType + "."));
+        }
+
+        double rubricPoints = rubric.path("total_points").asDouble(Double.NaN);
+        if (!Double.isFinite(rubricPoints)) {
+            findings.add(agentFinding("ERROR", "TOTAL_POINTS_MISSING", "Rubric thiếu total_points dạng số."));
+        } else if (Math.abs(rubricPoints - request.totalPoints()) > 0.01) {
+            findings.add(agentFinding(
+                    "WARNING",
+                    "TOTAL_POINTS_MISMATCH",
+                    "total_points trong rubric lệch với điểm câu hỏi (" + rubricPoints + " / "
+                            + request.totalPoints() + ")."));
+        }
+
+        JsonNode payload = resolveAgentPayload(rubric);
+        if (payload == null || !payload.isObject()) {
+            findings.add(agentFinding("ERROR", "PAYLOAD_MISSING", "Rubric thiếu grading_payload object."));
+            return findings;
+        }
+
+        switch (expectedType) {
+            case "CREATE_TABLE" -> analyzeCreateTableRubric(payload, request, findings);
+            case "INSERT_DATA" -> analyzeInsertDataRubric(payload, rubric, findings);
+            case "SELECT_QUERY" -> analyzeSelectRubric(payload, rubric, findings);
+            case "FUNCTION", "STORED_PROCEDURE", "PROCEDURE", "ROUTINE" ->
+                    analyzeRoutineRubric(payload, findings);
+            case "TRIGGER" -> analyzeTriggerRubric(payload, findings);
+            default -> findings.add(agentFinding(
+                    "WARNING",
+                    "UNKNOWN_QUESTION_TYPE",
+                    "Agent chưa có rule QA chuyên biệt cho loại câu hỏi " + expectedType + "."));
+        }
+
+        if (findings.isEmpty()) {
+            findings.add(agentFinding("INFO", "QA_PASS", "Rubric đạt các kiểm tra cấu trúc cơ bản."));
+        }
+        return findings;
+    }
+
+    private void analyzeCreateTableRubric(
+            JsonNode payload,
+            RubricAgentRunRequest request,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode tables = firstArray(payload.path("tables"), payload.path("expected_tables"));
+        if (tables.isMissingNode() || !tables.isArray() || tables.isEmpty()) {
+            findings.add(agentFinding("ERROR", "CREATE_TABLE_EMPTY_TABLES",
+                    "CREATE_TABLE rubric chưa có danh sách bảng kỳ vọng."));
+            return;
+        }
+
+        boolean hasPrimaryKey = false;
+        boolean hasForeignKey = false;
+        for (JsonNode table : tables) {
+            String tableName = firstText(table, "expected_name", "table_name", "name");
+            if (tableName.isBlank()) {
+                findings.add(agentFinding("ERROR", "CREATE_TABLE_NAME_MISSING",
+                        "Có bảng trong rubric chưa có expected_name."));
+            }
+            JsonNode columns = table.path("columns");
+            if (!columns.isArray() || columns.isEmpty()) {
+                findings.add(agentFinding("ERROR", "CREATE_TABLE_COLUMNS_MISSING",
+                        "Bảng " + displayName(tableName) + " chưa có columns[]."));
+            } else {
+                for (JsonNode column : columns) {
+                    if (column.path("name").asText("").isBlank()) {
+                        findings.add(agentFinding("ERROR", "CREATE_TABLE_COLUMN_NAME_MISSING",
+                                "Bảng " + displayName(tableName) + " có cột thiếu name."));
+                    }
+                    if (column.path("expected_type").asText("").isBlank()) {
+                        findings.add(agentFinding("WARNING", "CREATE_TABLE_COLUMN_TYPE_MISSING",
+                                "Cột " + displayName(column.path("name").asText("")) + " thiếu expected_type."));
+                    }
+                }
+            }
+            JsonNode constraints = table.path("constraints");
+            if (constraints.isArray()) {
+                for (JsonNode constraint : constraints) {
+                    String type = constraint.path("type").asText("");
+                    hasPrimaryKey = hasPrimaryKey || "PRIMARY_KEY".equalsIgnoreCase(type);
+                    hasForeignKey = hasForeignKey || "FOREIGN_KEY".equalsIgnoreCase(type);
+                }
+            }
+        }
+
+        String correctSql = request.correctQuery() == null ? "" : request.correctQuery().toUpperCase(Locale.ROOT);
+        if (correctSql.contains("PRIMARY KEY") && !hasPrimaryKey) {
+            findings.add(agentFinding("WARNING", "CREATE_TABLE_PK_NOT_COVERED",
+                    "SQL đáp án có PRIMARY KEY nhưng rubric chưa thấy constraint PRIMARY_KEY."));
+        }
+        if ((correctSql.contains("FOREIGN KEY") || correctSql.contains("REFERENCES")) && !hasForeignKey) {
+            findings.add(agentFinding("WARNING", "CREATE_TABLE_FK_NOT_COVERED",
+                    "SQL đáp án có FOREIGN KEY/REFERENCES nhưng rubric chưa thấy constraint FOREIGN_KEY."));
+        }
+    }
+
+    private void analyzeInsertDataRubric(
+            JsonNode payload,
+            JsonNode rubric,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode tables = firstArray(payload.path("tables"), rubric.path("tables"));
+        JsonNode gradingRules = firstArray(payload.path("grading_rules"), rubric.path("grading_rules"));
+
+        if ((tables.isMissingNode() || !tables.isArray() || tables.isEmpty())
+                && (gradingRules.isMissingNode() || !gradingRules.isArray() || gradingRules.isEmpty())) {
+            findings.add(agentFinding("ERROR", "INSERT_DATA_EMPTY_RUBRIC",
+                    "INSERT_DATA rubric cần có tables[] hoặc grading_rules[]."));
+            return;
+        }
+
+        if (gradingRules.isArray()) {
+            for (JsonNode rule : gradingRules) {
+                if (rule.path("rule_name").asText("").isBlank()) {
+                    findings.add(agentFinding("WARNING", "INSERT_DATA_RULE_NAME_MISSING",
+                            "Có grading rule thiếu rule_name."));
+                }
+            }
+        }
+
+        if (tables.isArray()) {
+            for (JsonNode table : tables) {
+                String tableName = firstText(table, "table_name", "expected_name", "name");
+                if (tableName.isBlank()) {
+                    findings.add(agentFinding("ERROR", "INSERT_DATA_TABLE_NAME_MISSING",
+                            "Có bảng INSERT_DATA thiếu table_name."));
+                }
+                JsonNode expectedData = table.path("expected_data");
+                if (!expectedData.isArray() || expectedData.isEmpty()) {
+                    findings.add(agentFinding("WARNING", "INSERT_DATA_EXPECTED_DATA_MISSING",
+                            "Bảng " + displayName(tableName) + " chưa có expected_data[]."));
+                }
+                JsonNode columnsConfig = table.path("columns_config");
+                if (!columnsConfig.isArray() || columnsConfig.isEmpty()) {
+                    findings.add(agentFinding("WARNING", "INSERT_DATA_COLUMNS_CONFIG_MISSING",
+                            "Bảng " + displayName(tableName) + " chưa có columns_config[]."));
+                }
+            }
+        }
+    }
+
+    private void analyzeSelectRubric(
+            JsonNode payload,
+            JsonNode rubric,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode testCases = firstArray(payload.path("test_cases"), rubric.path("test_cases"));
+        JsonNode gradingRules = firstArray(payload.path("grading_rules"), rubric.path("grading_rules"));
+
+        if (gradingRules.isMissingNode() || !gradingRules.isArray() || gradingRules.isEmpty()) {
+            findings.add(agentFinding("WARNING", "SELECT_RULES_MISSING",
+                    "SELECT rubric chưa có grading_rules[] để trừ điểm chi tiết."));
+        }
+        if (testCases.isMissingNode() || !testCases.isArray() || testCases.isEmpty()) {
+            findings.add(agentFinding("WARNING", "SELECT_TEST_CASES_MISSING",
+                    "SELECT rubric chưa có test_cases[]; runtime sẽ fallback so sánh đáp án mẫu."));
+            return;
+        }
+        if (testCases.size() < 3) {
+            findings.add(agentFinding("WARNING", "SELECT_LOW_COVERAGE",
+                    "SELECT rubric chỉ có " + testCases.size() + " test case, nên có ít nhất 3 case để bao phủ bẫy."));
+        }
+        for (JsonNode testCase : testCases) {
+            String caseId = testCase.path("case_id").asText("");
+            if (caseId.isBlank()) {
+                findings.add(agentFinding("ERROR", "SELECT_CASE_ID_MISSING",
+                        "Có SELECT test case thiếu case_id."));
+            }
+            if (testCase.path("mutation_type").asText("").isBlank()) {
+                findings.add(agentFinding("WARNING", "SELECT_MUTATION_TYPE_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu mutation_type."));
+            }
+            if (testCase.path("setup_custom_script").asText("").isBlank()) {
+                findings.add(agentFinding("WARNING", "SELECT_SETUP_SCRIPT_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu setup_custom_script."));
+            }
+        }
+    }
+
+    private void analyzeRoutineRubric(
+            JsonNode payload,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode routines = payload.path("routines");
+        if (!routines.isArray() || routines.isEmpty()) {
+            findings.add(agentFinding("ERROR", "ROUTINE_METADATA_MISSING",
+                    "Rubric FUNCTION/STORED_PROCEDURE thiếu routines[]."));
+        } else {
+            for (JsonNode routine : routines) {
+                if (routine.path("expected_name").asText("").isBlank()) {
+                    findings.add(agentFinding("ERROR", "ROUTINE_NAME_MISSING",
+                            "Có routine thiếu expected_name."));
+                }
+                if (routine.path("expected_type").asText("").isBlank()) {
+                    findings.add(agentFinding("WARNING", "ROUTINE_TYPE_MISSING",
+                            "Routine " + displayName(routine.path("expected_name").asText(""))
+                                    + " thiếu expected_type."));
+                }
+            }
+        }
+
+        JsonNode testCases = payload.path("test_cases");
+        analyzeWeightedTestCases(testCases, "ROUTINE", findings);
+    }
+
+    private void analyzeTriggerRubric(
+            JsonNode payload,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        JsonNode triggers = payload.path("triggers");
+        if (!triggers.isArray() || triggers.isEmpty()) {
+            findings.add(agentFinding("ERROR", "TRIGGER_METADATA_MISSING", "TRIGGER rubric thiếu triggers[]."));
+        } else {
+            for (JsonNode trigger : triggers) {
+                String name = trigger.path("expected_name").asText("");
+                if (name.isBlank()) {
+                    findings.add(agentFinding("ERROR", "TRIGGER_NAME_MISSING",
+                            "Có trigger thiếu expected_name."));
+                }
+                if (trigger.path("expected_table_name").asText("").isBlank()) {
+                    findings.add(agentFinding("WARNING", "TRIGGER_TABLE_MISSING",
+                            "Trigger " + displayName(name) + " thiếu expected_table_name."));
+                }
+                boolean hasEvent = trigger.path("is_insert").asBoolean(false)
+                        || trigger.path("is_update").asBoolean(false)
+                        || trigger.path("is_delete").asBoolean(false);
+                if (!hasEvent) {
+                    findings.add(agentFinding("ERROR", "TRIGGER_EVENT_MISSING",
+                            "Trigger " + displayName(name) + " chưa bật INSERT/UPDATE/DELETE."));
+                }
+            }
+        }
+
+        JsonNode testCases = payload.path("test_cases");
+        analyzeWeightedTestCases(testCases, "TRIGGER", findings);
+    }
+
+    private void analyzeWeightedTestCases(
+            JsonNode testCases,
+            String prefix,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            findings.add(agentFinding("ERROR", prefix + "_TEST_CASES_MISSING",
+                    prefix + " rubric thiếu test_cases[]."));
+            return;
+        }
+
+        double weightSum = 0.0;
+        for (JsonNode testCase : testCases) {
+            String caseId = testCase.path("case_id").asText("");
+            if (caseId.isBlank()) {
+                findings.add(agentFinding("ERROR", prefix + "_CASE_ID_MISSING",
+                        "Có " + prefix + " test case thiếu case_id."));
+            }
+            if (testCase.path("setup_script").asText("").isBlank()) {
+                findings.add(agentFinding("WARNING", prefix + "_SETUP_SCRIPT_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu setup_script."));
+            }
+            if (testCase.path("validation_query").asText("").isBlank()) {
+                findings.add(agentFinding("WARNING", prefix + "_VALIDATION_QUERY_MISSING",
+                        "Test case " + displayName(caseId) + " thiếu validation_query."));
+            }
+            weightSum += testCase.path("score_weight").asDouble(0.0);
+        }
+        if (Math.abs(weightSum - 1.0) > 0.05) {
+            findings.add(agentFinding("WARNING", prefix + "_WEIGHT_SUM_MISMATCH",
+                    "Tổng score_weight hiện là " + roundForMessage(weightSum) + ", nên xấp xỉ 1.0."));
+        }
+    }
+
+    private RuntimeRubricQa runReferenceGradeForAgent(JsonNode rubric, RubricAgentRunRequest request) {
+        List<RubricAgentRunResponse.RubricAgentFinding> findings = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        String correctQuery = request.correctQuery() == null ? "" : request.correctQuery().trim();
+        String questionType = normalizeAgentQuestionType(request.questionType());
+
+        if (correctQuery.isBlank()) {
+            String message = "Thiếu SQL đáp án nên bỏ qua chấm thử bằng đáp án chuẩn.";
+            warnings.add(message);
+            return new RuntimeRubricQa(
+                    agentStep("RUN_TEST_GRADE", "SKIPPED", message),
+                    findings,
+                    warnings);
+        }
+
+        if (!"CREATE_TABLE".equals(questionType) && request.examId() == null) {
+            String message = "Thiếu examId nên bỏ qua chấm thử runtime cho " + questionType + ".";
+            warnings.add(message);
+            return new RuntimeRubricQa(
+                    agentStep("RUN_TEST_GRADE", "SKIPPED", message),
+                    findings,
+                    warnings);
+        }
+
+        try {
+            String rubricJson = objectMapper.writeValueAsString(rubric);
+            RubricTestGradeResponse result = switch (questionType) {
+                case "CREATE_TABLE" -> testGradeCreateTable(new TestGradeCreateTableRequest(
+                        correctQuery,
+                        correctQuery,
+                        rubricJson,
+                        request.totalPoints()));
+                case "INSERT_DATA" -> testGradeInsert(new TestGradeInsertRequest(
+                        request.examId(),
+                        correctQuery,
+                        correctQuery,
+                        rubricJson,
+                        request.totalPoints()));
+                case "SELECT_QUERY" -> testGradeSelect(new TestGradeSelectRequest(
+                        request.examId(),
+                        correctQuery,
+                        correctQuery,
+                        rubricJson,
+                        request.totalPoints()));
+                case "FUNCTION", "STORED_PROCEDURE", "PROCEDURE", "ROUTINE" ->
+                        testGradeRoutine(new TestGradeRoutineRequest(
+                                request.examId(),
+                                correctQuery,
+                                correctQuery,
+                                rubricJson,
+                                request.totalPoints()));
+                case "TRIGGER" -> testGradeTrigger(new TestGradeTriggerRequest(
+                        request.examId(),
+                        correctQuery,
+                        correctQuery,
+                        rubricJson,
+                        request.totalPoints()));
+                default -> null;
+            };
+
+            if (result == null) {
+                String message = "Không có runner chấm thử cho loại câu hỏi " + questionType + ".";
+                warnings.add(message);
+                return new RuntimeRubricQa(agentStep("RUN_TEST_GRADE", "SKIPPED", message), findings, warnings);
+            }
+
+            double expected = request.totalPoints();
+            boolean fullScore = result.allPassed() && Math.abs(result.earnedPoints() - expected) <= 0.05;
+            if (fullScore) {
+                return new RuntimeRubricQa(
+                        agentStep("RUN_TEST_GRADE", "PASS", "SQL đáp án chuẩn đạt điểm tối đa khi chấm thử."),
+                        findings,
+                        warnings);
+            }
+
+            String detail = summarizeGradeDetails(result.details());
+            String message = "SQL đáp án chuẩn chưa đạt điểm tối đa khi chấm thử: "
+                    + roundForMessage(result.earnedPoints()) + "/" + roundForMessage(expected)
+                    + (detail.isBlank() ? "" : ". " + detail);
+            findings.add(agentFinding("ERROR", "REFERENCE_GRADE_FAILED", message));
+            return new RuntimeRubricQa(agentStep("RUN_TEST_GRADE", "FAIL", message), findings, warnings);
+        } catch (Exception e) {
+            String message = "Chấm thử runtime thất bại: " + e.getMessage();
+            findings.add(agentFinding("WARNING", "REFERENCE_GRADE_ERROR", message));
+            warnings.add(message);
+            return new RuntimeRubricQa(agentStep("RUN_TEST_GRADE", "WARN", message), findings, warnings);
+        }
+    }
+
+    private String buildRubricAgentRepairInstruction(
+            RubricAgentRunRequest request,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings,
+            RuntimeRubricQa runtimeQa) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Hãy đóng vai Rubric QA & Auto-Repair Agent. ")
+                .append("Sửa rubric hiện tại để rubric hợp lệ, bao phủ tốt hơn và SQL đáp án chuẩn đạt điểm tối đa khi chấm thử. ")
+                .append("Không tạo rubric mới từ đầu nếu không cần; giữ các field không liên quan.\n\n");
+
+        if (request.teacherInstruction() != null && !request.teacherInstruction().isBlank()) {
+            sb.append("Ghi chú thêm của giáo viên:\n")
+                    .append(request.teacherInstruction().trim())
+                    .append("\n\n");
+        }
+
+        sb.append("Các vấn đề QA phát hiện:\n");
+        for (RubricAgentRunResponse.RubricAgentFinding finding : findings) {
+            if ("INFO".equalsIgnoreCase(finding.severity())) {
+                continue;
+            }
+            sb.append("- [")
+                    .append(finding.severity())
+                    .append("] ")
+                    .append(finding.code())
+                    .append(": ")
+                    .append(finding.message())
+                    .append("\n");
+        }
+
+        if (runtimeQa != null && runtimeQa.step() != null) {
+            sb.append("\nKết quả RUN_TEST_GRADE:\n- ")
+                    .append(runtimeQa.step().status())
+                    .append(": ")
+                    .append(runtimeQa.step().message())
+                    .append("\n");
+        }
+
+        sb.append("\nYêu cầu trả về full rubric JSON trong field rubric, kèm changeSummary và warnings.");
+        return sb.toString();
+    }
+
+    private RubricAgentRunResponse.RubricAgentStep summarizeFindingsStep(
+            String tool,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        long errors = findings.stream().filter(f -> "ERROR".equalsIgnoreCase(f.severity())).count();
+        long warnings = findings.stream().filter(f -> "WARNING".equalsIgnoreCase(f.severity())).count();
+        if (errors > 0) {
+            return agentStep(tool, "FAIL", "Phát hiện " + errors + " lỗi và " + warnings + " cảnh báo.");
+        }
+        if (warnings > 0) {
+            return agentStep(tool, "WARN", "Phát hiện " + warnings + " cảnh báo cần giáo viên rà soát.");
+        }
+        return agentStep(tool, "PASS", "Không phát hiện vấn đề cấu trúc đáng kể.");
+    }
+
+    private RubricAgentRunResponse.RubricAgentStep agentStep(String tool, String status, String message) {
+        return new RubricAgentRunResponse.RubricAgentStep(tool, status, message);
+    }
+
+    private RubricAgentRunResponse.RubricAgentFinding agentFinding(
+            String severity,
+            String code,
+            String message) {
+        return new RubricAgentRunResponse.RubricAgentFinding(severity, code, message);
+    }
+
+    private JsonNode resolveAgentPayload(JsonNode rubric) {
+        JsonNode payload = rubric.path("grading_payload");
+        if (payload != null && payload.isObject()) {
+            return payload;
+        }
+        return rubric;
+    }
+
+    private JsonNode firstArray(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node != null && node.isArray()) {
+                return node;
+            }
+        }
+        return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+    }
+
+    private String firstText(JsonNode node, String... fieldNames) {
+        if (node == null || !node.isObject()) {
+            return "";
+        }
+        for (String fieldName : fieldNames) {
+            String text = node.path(fieldName).asText("");
+            if (!text.isBlank()) {
+                return text.trim();
+            }
+        }
+        return "";
+    }
+
+    private String normalizeAgentQuestionType(String questionType) {
+        if (questionType == null || questionType.isBlank()) {
+            return "CREATE_TABLE";
+        }
+        String normalized = questionType.trim().toUpperCase(Locale.ROOT);
+        if ("PROCEDURE".equals(normalized)) {
+            return "STORED_PROCEDURE";
+        }
+        return normalized;
+    }
+
+    private String displayName(String value) {
+        return value == null || value.isBlank() ? "(chưa đặt tên)" : value;
+    }
+
+    private String roundForMessage(double value) {
+        if (!Double.isFinite(value)) {
+            return "NaN";
+        }
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    }
+
+    private String summarizeGradeDetails(List<Map<String, Object>> details) {
+        if (details == null || details.isEmpty()) {
+            return "";
+        }
+        return details.stream()
+                .map(detail -> detail == null ? "" : Objects.toString(detail.get("message"), ""))
+                .filter(message -> !message.isBlank())
+                .limit(3)
+                .reduce((left, right) -> left + " | " + right)
+                .orElse("");
+    }
+
+    private List<String> distinctStrings(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private double calculateRubricAgentConfidence(
+            List<RubricAgentRunResponse.RubricAgentStep> steps,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings) {
+        double confidence = 0.95;
+        for (RubricAgentRunResponse.RubricAgentFinding finding : findings) {
+            if ("ERROR".equalsIgnoreCase(finding.severity())) {
+                confidence -= 0.18;
+            } else if ("WARNING".equalsIgnoreCase(finding.severity())) {
+                confidence -= 0.07;
+            }
+        }
+        for (RubricAgentRunResponse.RubricAgentStep step : steps) {
+            if ("FAIL".equalsIgnoreCase(step.status())) {
+                confidence -= 0.08;
+            } else if ("SKIPPED".equalsIgnoreCase(step.status())) {
+                confidence -= 0.04;
+            }
+        }
+        return Math.max(0.20, Math.min(0.98, BigDecimal.valueOf(confidence)
+                .setScale(2, RoundingMode.HALF_UP)
+                .doubleValue()));
+    }
+
+    private record RubricAgentObservation(
+            JsonNode rubric,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings,
+            RuntimeRubricQa runtimeQa,
+            boolean normalizedChanged) {
+    }
+
+    private record DerivedExpectedValuesQa(
+            RubricAgentRunResponse.RubricAgentStep step,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings,
+            List<String> warnings) {
+    }
+
+    private record RuntimeRubricQa(
+            RubricAgentRunResponse.RubricAgentStep step,
+            List<RubricAgentRunResponse.RubricAgentFinding> findings,
+            List<String> warnings) {
     }
 
     private String buildPriorQuestionContext(List<GenerateGradingRubricRequest.ContextQuery> contextQueries) {

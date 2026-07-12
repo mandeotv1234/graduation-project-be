@@ -17,6 +17,7 @@ import graduation_project_be.application.usecases.grading.SelectDatasetAdequacyL
 import graduation_project_be.application.usecases.grading.SelectQuestionGrader;
 import graduation_project_be.application.usecases.grading.SelectResultDiff;
 import graduation_project_be.application.usecases.grading.SelectResultScorer;
+import graduation_project_be.application.usecases.grading.SelectRubricPenaltyNormalizer;
 import graduation_project_be.application.usecases.grading.SelectTrapDiscriminationChecker;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxEngine;
 import graduation_project_be.application.usecases.grading.whitebox.WhiteboxResult;
@@ -111,6 +112,11 @@ public class RubricTestingUsecase {
                 priorQuestionContext,
                 request.schemaContext());
 
+        if ("SELECT_QUERY".equalsIgnoreCase(request.questionType())) {
+            rubricJson = SelectRubricPenaltyNormalizer.normalize(
+                    rubricJson, request.totalPoints(), objectMapper);
+        }
+
         return rubricJson;
     }
 
@@ -141,6 +147,9 @@ public class RubricTestingUsecase {
         try {
             JsonNode root = objectMapper.readTree(refinedJson);
             JsonNode rubric = root.has("rubric") ? root.get("rubric") : root;
+            if ("SELECT_QUERY".equalsIgnoreCase(request.questionType())) {
+                SelectRubricPenaltyNormalizer.normalize(rubric, request.totalPoints());
+            }
             return new RefineRubricTestCasesResponse(
                     rubric,
                     readStringArray(root, "changeSummary", "change_summary"),

@@ -53,13 +53,14 @@ public class SelectQuestionGrader {
 
         try {
             JsonNode rubric = objectMapper.readTree(question.getGradingRubric());
+            SelectRubricPenaltyNormalizer.normalize(rubric, totalPoints.doubleValue());
             JsonNode payload = rubric.path("grading_payload");
             JsonNode testCases = payload.path("test_cases");
             if (!testCases.isArray() || testCases.size() == 0) {
                 return gradeSelectAcrossDatasets(specification, baseSchemaName, question, studentQuery);
             }
 
-            JsonNode selectRules = resolveSelectGradingRules(question);
+            JsonNode selectRules = resolveSelectGradingRules(rubric);
             boolean strictOrdering = support.readBooleanSetting(
                     payload.path("global_grading_rules").path("strict_ordering"),
                     false);
@@ -385,8 +386,13 @@ public class SelectQuestionGrader {
 
         SelectResultScorer.ScoringResult result =
                 SelectResultScorer.score(edits, selectRules, maxTotalPoints, support);
+        addSelectScoringTrace(
+                null,
+                "Cấu trúc cột SELECT",
+                result,
+                maxTotalPoints,
+                "SELECT structural rubric");
         for (SelectResultScorer.AppliedEdit applied : result.applied()) {
-            addSelectEditTrace(null, "Cấu trúc cột SELECT", applied, maxTotalPoints, "SELECT structural rubric");
             if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
                 appendSelectIssue(issues, "[Cấu trúc cột] " + describeAppliedEdit(applied));
             }
@@ -962,8 +968,13 @@ public class SelectQuestionGrader {
                     SelectResultScorer.score(edits, gradingRules, datasetMaxPoints, support);
 
             StringBuilder issueBuilder = new StringBuilder();
+            addSelectScoringTrace(
+                    null,
+                    "Kết quả SELECT",
+                    result,
+                    datasetMaxPoints,
+                    "SELECT result rubric");
             for (SelectResultScorer.AppliedEdit applied : result.applied()) {
-                addSelectEditTrace(null, "Kết quả SELECT", applied, datasetMaxPoints, "SELECT result rubric");
                 if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
                     appendSelectIssue(issueBuilder, describeAppliedEdit(applied));
                 }
@@ -1055,9 +1066,13 @@ public class SelectQuestionGrader {
                     SelectResultScorer.score(edits, gradingRules, datasetMaxPoints, support);
 
             StringBuilder issueBuilder = new StringBuilder();
+            addSelectScoringTrace(
+                    null,
+                    datasetLabel,
+                    result,
+                    datasetMaxPoints,
+                    "SELECT dataset rubric: " + datasetLabel);
             for (SelectResultScorer.AppliedEdit applied : result.applied()) {
-                addSelectEditTrace(null, datasetLabel, applied, datasetMaxPoints,
-                        "SELECT dataset rubric: " + datasetLabel);
                 if (applied.deduction().compareTo(BigDecimal.ZERO) > 0 || applied.failAllTriggered()) {
                     appendSelectIssue(issueBuilder, describeAppliedEdit(applied));
                 }
@@ -1088,20 +1103,28 @@ public class SelectQuestionGrader {
 
         try {
             JsonNode rubric = objectMapper.readTree(question.getGradingRubric());
-            JsonNode payload = rubric.path("grading_payload");
-
-            JsonNode[] candidates = new JsonNode[] {
-                    payload.path("grading_rules"),
-                    rubric.path("grading_rules")
-            };
-
-            for (JsonNode candidate : candidates) {
-                if (candidate != null && candidate.isArray()) {
-                    return candidate;
-                }
-            }
+            BigDecimal points = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
+            SelectRubricPenaltyNormalizer.normalize(rubric, points.doubleValue());
+            return resolveSelectGradingRules(rubric);
         } catch (Exception e) {
             log.warn("Không thể phân tích grading_rules cho câu SELECT {}: {}", question.getId(), e.getMessage());
+        }
+
+        return objectMapper.createArrayNode();
+    }
+
+    private JsonNode resolveSelectGradingRules(JsonNode rubric) {
+        JsonNode payload = rubric.path("grading_payload");
+
+        JsonNode[] candidates = new JsonNode[] {
+                payload.path("grading_rules"),
+                rubric.path("grading_rules")
+        };
+
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && candidate.isArray()) {
+                return candidate;
+            }
         }
 
         return objectMapper.createArrayNode();
@@ -1132,44 +1155,40 @@ public class SelectQuestionGrader {
         return new ArrayList<>(rows.get(0).keySet());
     }
 
-    private String selectRuleLabel(String target, String condition) {
-        return target.toUpperCase(Locale.ROOT) + "/" + condition.toUpperCase(Locale.ROOT);
-    }
-
     private String describeAppliedEdit(SelectResultScorer.AppliedEdit applied) {
         return SelectResultScorer.describe(applied);
     }
 
-    private void addSelectEditTrace(
+    private void addSelectScoringTrace(
             String caseId,
             String caseName,
-            SelectResultScorer.AppliedEdit applied,
+            SelectResultScorer.ScoringResult result,
             BigDecimal maxPoints,
             String configSummary) {
-        if (!GradingTraceCollector.isActive() || applied == null) {
+        if (!GradingTraceCollector.isActive() || result == null || result.applied().isEmpty()) {
             return;
         }
 
-        String ruleLabel = selectRuleLabel(applied.target(), applied.condition());
-        boolean deducted = applied.failAllTriggered() || applied.deduction().compareTo(BigDecimal.ZERO) > 0;
-        // Display the capped number: the scorer caps the total at the budget, so a raw per-rule
-        // deduction above maxPoints was never actually subtracted (same convention as INSERT).
-        BigDecimal deductedPoints = applied.failAllTriggered()
-                ? maxPoints
-                : applied.deduction().min(maxPoints);
+        BigDecimal safeMaxPoints = maxPoints == null ? BigDecimal.ZERO : maxPoints.max(BigDecimal.ZERO);
+        String message = result.applied().stream()
+                .map(this::describeAppliedEdit)
+                .collect(Collectors.joining(" "));
+        BigDecimal deductedPoints = result.totalDeduction().min(safeMaxPoints).max(BigDecimal.ZERO);
         GradingTraceCollector.add(new GradingTraceItem(
                 GradingTraceItem.KIND_RUBRIC_RULE,
-                deducted ? GradingTraceItem.STATUS_FAIL : GradingTraceItem.STATUS_WARN,
-                "Rule " + ruleLabel,
-                describeAppliedEdit(applied),
+                deductedPoints.compareTo(BigDecimal.ZERO) > 0 || result.failAllTriggered()
+                        ? GradingTraceItem.STATUS_FAIL
+                        : GradingTraceItem.STATUS_WARN,
+                "Rule SELECT",
+                message,
                 caseId,
                 caseName,
-                applied.target(),
-                applied.condition(),
-                applied.action(),
-                applied.configuredPenalty(),
                 null,
-                maxPoints,
+                null,
+                result.failAllTriggered() ? "FAIL_ALL" : null,
+                null,
+                null,
+                safeMaxPoints,
                 deductedPoints.compareTo(BigDecimal.ZERO) > 0 ? deductedPoints : null,
                 null,
                 null,

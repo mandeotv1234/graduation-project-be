@@ -1923,6 +1923,7 @@ public class RubricTestingUsecase {
 
         try {
             JsonNode rubric = objectMapper.readTree(gradingRubric);
+            SelectRubricPenaltyNormalizer.normalize(rubric, totalPoints);
             JsonNode payload = rubric.path("grading_payload");
             JsonNode selectRules = resolveSelectGradingRules(rubric, payload);
             JsonNode testCases = payload.path("test_cases");

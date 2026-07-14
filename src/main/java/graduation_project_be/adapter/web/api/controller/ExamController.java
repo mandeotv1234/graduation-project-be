@@ -463,8 +463,13 @@ public class ExamController {
         @PostMapping("/{examId}/regrade-all")
         @PreAuthorize("hasRole('TEACHER')")
         public ResponseEntity<ResponseDto> regradeAllExamResults(
-                        @PathVariable("examId") @Positive Long examId) {
-                RegradeAllExamResponse response = regradeAllExamUsecase.execute(examId);
+                        @PathVariable("examId") @Positive Long examId,
+                        @RequestBody(required = false) @Valid RegradeAllExamRequestDto requestDto) {
+                RegradeAllExamResponse response = regradeAllExamUsecase.execute(
+                                (requestDto != null
+                                                ? requestDto
+                                                : new RegradeAllExamRequestDto(null, null))
+                                                .toRequest(examId));
                 return ResponseEntity.accepted().body(ResponseDto.of(
                                 RegradeAllExamResponseDto.fromResponse(response),
                                 "ACCEPTED", response.message()));

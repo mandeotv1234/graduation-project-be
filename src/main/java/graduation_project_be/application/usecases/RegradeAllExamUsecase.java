@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -81,6 +82,7 @@ public class RegradeAllExamUsecase {
                 submission.setIsCorrect(null);
                 submission.setErrorMessage(null);
                 submission.setExecutionTimeMs(null);
+                submission.setGradingTraceJson(null);
                 submission.setGradingType(GradingType.AUTO);
                 submission.setGradedBy(null);
                 submission.setGradedAt(null);
@@ -90,7 +92,10 @@ public class RegradeAllExamUsecase {
 
             // Reset result
             result.setStatus(GradingStatus.PENDING);
+            result.setTotalScore(BigDecimal.ZERO);
+            result.setCorrectCount(0);
             result.setGradingType(GradingType.AUTO);
+            result.setLastGradedAt(null);
             examResultRepository.save(result);
 
             jobs.add(new GradingQueueService.GradingJob(

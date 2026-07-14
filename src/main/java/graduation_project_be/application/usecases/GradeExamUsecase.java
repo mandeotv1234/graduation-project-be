@@ -713,8 +713,19 @@ public class GradeExamUsecase {
                     ? ""
                     : current.getMessage().toLowerCase(Locale.ROOT);
             if (className.contains("CannotAcquireLockException")
+                    || className.contains("CannotCreateTransactionException")
+                    || className.contains("CannotGetJdbcConnectionException")
+                    || className.contains("DataAccessResourceFailureException")
+                    || className.contains("TransientDataAccess")
+                    || className.contains("SQLTransient")
                     || message.contains("deadlocked")
                     || message.contains("deadlock victim")
+                    || message.contains("connection is not available")
+                    || message.contains("could not obtain jdbc connection")
+                    || message.contains("unable to acquire jdbc connection")
+                    || message.contains("transport-level error")
+                    || message.contains("connection reset")
+                    || message.contains("connection is closed")
                     || message.contains("rerun the transaction")
                     || message.contains("lock request time out")) {
                 return true;

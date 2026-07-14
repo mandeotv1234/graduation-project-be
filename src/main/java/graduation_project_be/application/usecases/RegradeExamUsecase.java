@@ -62,6 +62,7 @@ public class RegradeExamUsecase {
             submission.setIsCorrect(null);
             submission.setErrorMessage(null);
             submission.setExecutionTimeMs(null);
+            submission.setGradingTraceJson(null);
             submission.setGradingType(GradingType.AUTO);
             submission.setGradedBy(null);
             submission.setGradedAt(null);
@@ -71,7 +72,10 @@ public class RegradeExamUsecase {
 
         // 4. Reset result to PENDING
         result.setStatus(GradingStatus.PENDING);
+        result.setTotalScore(BigDecimal.ZERO);
+        result.setCorrectCount(0);
         result.setGradingType(GradingType.AUTO);
+        result.setLastGradedAt(null);
         examResultRepository.save(result);
 
         // 5. Enqueue grading job AFTER DB commit to avoid stale data if rollback

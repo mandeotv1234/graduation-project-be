@@ -33,9 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * When a job is found, it invokes GradeExamUsecase to perform the actual
  * grading.
  *
- * Concurrency is naturally limited to 1 worker per poll cycle.
- * For higher concurrency, increase the number of jobs processed per cycle
- * (see MAX_JOBS_PER_CYCLE) or use a thread pool.
+ * Concurrency is bounded by the configured worker pool and can be adjusted
+ * inside that limit from Redis when auto-scale is enabled.
  *
  * This approach is deliberately simple for a graduation project:
  * - No external message broker required
@@ -65,7 +64,7 @@ public class GradingWorkerConfiguration {
     @Value("${grading.worker.max-jobs-per-cycle:3}")
     private int configuredMaxJobsPerCycle;
 
-    @Value("${grading.worker.stale-timeout-seconds:300}")
+    @Value("${grading.worker.stale-timeout-seconds:1800}")
     private long staleTimeoutSeconds;
 
     @Value("${grading.worker.result-recovery-enabled:true}")

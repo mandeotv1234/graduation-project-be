@@ -13,6 +13,7 @@ import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import graduation_project_be.domain.models.enums.RegradeAllScope;
 import graduation_project_be.domain.models.enums.SubmissionStatus;
+import graduation_project_be.shared.utils.TimeUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +22,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,14 +55,17 @@ class RegradeAllExamUsecaseTest {
 
     @Test
     void execute_latestAttemptScope_regradesOnlyLatestAttemptPerStudent() {
+        ExamResult firstStudentLatestResult = result(1L, 2, GradingStatus.COMPLETED);
+        ExamSubmission firstStudentLatestSubmission = submission(1L, 2);
+
         when(examRepository.findById(EXAM_ID)).thenReturn(Optional.of(exam(3)));
         when(examResultRepository.findByExamId(EXAM_ID)).thenReturn(List.of(
                 result(1L, 1, GradingStatus.COMPLETED),
-                result(1L, 2, GradingStatus.COMPLETED),
+                firstStudentLatestResult,
                 result(2L, 1, GradingStatus.FAILED),
                 result(2L, 2, GradingStatus.GRADING)));
         when(examSubmissionRepository.findByExamIdAndStudentIdAndAttemptNumber(EXAM_ID, 1L, 2))
-                .thenReturn(List.of(submission(1L, 2)));
+                .thenReturn(List.of(firstStudentLatestSubmission));
 
         TransactionSynchronizationManager.initSynchronization();
         try {
@@ -85,6 +90,14 @@ class RegradeAllExamUsecaseTest {
         verify(examSubmissionRepository, never()).findByExamIdAndStudentIdAndAttemptNumber(EXAM_ID, 2L, 1);
         verify(examSubmissionRepository, never()).findByExamIdAndStudentIdAndAttemptNumber(EXAM_ID, 2L, 2);
         verify(gradingQueueService).enqueue(EXAM_ID, 1L, 2);
+
+        assertThat(firstStudentLatestResult.getStatus()).isEqualTo(GradingStatus.PENDING);
+        assertThat(firstStudentLatestResult.getTotalScore()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(firstStudentLatestResult.getCorrectCount()).isZero();
+        assertThat(firstStudentLatestResult.getLastGradedAt()).isNull();
+        assertThat(firstStudentLatestSubmission.getStatus()).isEqualTo(SubmissionStatus.PENDING);
+        assertThat(firstStudentLatestSubmission.getScoreEarned()).isNull();
+        assertThat(firstStudentLatestSubmission.getGradingTraceJson()).isNull();
     }
 
     @Test
@@ -111,7 +124,10 @@ class RegradeAllExamUsecaseTest {
                 .examId(EXAM_ID)
                 .studentId(studentId)
                 .attemptNumber(attemptNumber)
+                .totalScore(new BigDecimal("8.50"))
+                .correctCount(2)
                 .status(status)
+                .lastGradedAt(TimeUtils.now())
                 .build();
     }
 
@@ -121,6 +137,8 @@ class RegradeAllExamUsecaseTest {
                 .studentId(studentId)
                 .attemptNumber(attemptNumber)
                 .status(SubmissionStatus.GRADED)
+                .scoreEarned(new BigDecimal("4.25"))
+                .gradingTraceJson("{\"old\":true}")
                 .build();
     }
 }

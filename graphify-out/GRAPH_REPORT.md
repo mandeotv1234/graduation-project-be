@@ -1,16 +1,16 @@
-# Graph Report - graduation-project-be  (2026-07-14)
+# Graph Report - graduation-project-be  (2026-07-15)
 
 ## Corpus Check
-- 706 files · ~246,358 words
+- 707 files · ~246,602 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6597 nodes · 16071 edges · 566 communities (493 shown, 73 thin omitted)
-- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 2144 edges (avg confidence: 0.8)
+- 6603 nodes · 16085 edges · 571 communities (488 shown, 83 thin omitted)
+- Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 2148 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `d7fd1ca3`
+- Built from commit: `967e7b9a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -448,10 +448,15 @@
 - [[_COMMUNITY_Community 549|Community 549]]
 - [[_COMMUNITY_Community 550|Community 550]]
 - [[_COMMUNITY_Community 551|Community 551]]
+- [[_COMMUNITY_Community 552|Community 552]]
+- [[_COMMUNITY_Community 553|Community 553]]
+- [[_COMMUNITY_Community 554|Community 554]]
 - [[_COMMUNITY_Community 555|Community 555]]
 - [[_COMMUNITY_Community 556|Community 556]]
+- [[_COMMUNITY_Community 557|Community 557]]
 - [[_COMMUNITY_Community 558|Community 558]]
 - [[_COMMUNITY_Community 559|Community 559]]
+- [[_COMMUNITY_Community 560|Community 560]]
 - [[_COMMUNITY_Community 568|Community 568]]
 - [[_COMMUNITY_Community 569|Community 569]]
 - [[_COMMUNITY_Community 570|Community 570]]
@@ -482,18 +487,18 @@
   src/main/java/graduation_project_be/adapter/web/api/dtos/response/UpdateUserRoleResponseDto.java → src/main/java/graduation_project_be/application/usecases/ExecuteSqlUsecase.java
 - `fromResponse()` --calls--> `Role`  [INFERRED]
   src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetCurrentUserResponseDto.java → src/main/java/graduation_project_be/application/usecases/ExecuteSqlUsecase.java
-- `analyze()` --calls--> `parseFailed()`  [INFERRED]
-  src/main/java/graduation_project_be/infrastructure/services/JSqlParserSelectQueryStructureAnalyzer.java → src/main/java/graduation_project_be/application/usecases/grading/QueryStructureFacts.java
+- `fromModel()` --calls--> `Role`  [INFERRED]
+  src/main/java/graduation_project_be/application/usecases/response/GetCurrentUserResponse.java → src/main/java/graduation_project_be/application/usecases/ExecuteSqlUsecase.java
 
-## Communities (566 total, 73 thin omitted)
+## Communities (571 total, 83 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.12
 Nodes (7): GeminiServiceImpl, BadRequestException, Exception, RoutineRubricIssue, String, StringBuilder, Throwable
 
 ### Community 1 - "Community 1"
-Cohesion: 0.16
-Nodes (7): List, Map, ParsedCreateTable, ParsedForeignKey, RoutineForeignKey, RoutineSetupInsert, Set
+Cohesion: 0.20
+Nodes (5): JsonNode, List, Map, ParsedCreateTable, ParsedForeignKey
 
 ### Community 2 - "Community 2"
 Cohesion: 0.16
@@ -508,16 +513,16 @@ Cohesion: 0.07
 Nodes (73): content, description, headers, content, description, content, description, content (+65 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.11
-Nodes (20): ExamQuestionEntity, ExamQuestionRepository, ExportExamPdfResponse, ExamQuestionJpaRepository, ExamQuestionRepositoryImpl, ExportExamPdfRequest, List, SpecEntity (+12 more)
+Cohesion: 0.22
+Nodes (10): ExamQuestionEntity, ExamQuestionJpaRepository, ExamQuestionRepositoryImpl, ExamQuestion, List, Long, Optional, Override (+2 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.07
-Nodes (32): HeartbeatSweepJob, HeartbeatSweepJobTest, HeartbeatService, RecordHeartbeatUsecase, RedisHeartbeatService, Exam, List, Long (+24 more)
+Nodes (34): HeartbeatSweepJob, HeartbeatSweepJobTest, HeartbeatService, RecordHeartbeatUsecase, RedisHeartbeatService, Exam, List, Long (+26 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.09
-Nodes (25): BigDecimal, WhiteboxSettings, BigDecimal, JsonNode, String, Test, BigDecimal, JsonNode (+17 more)
+Cohesion: 0.13
+Nodes (18): WhiteboxSettings, BigDecimal, JsonNode, String, Test, BigDecimal, List, String (+10 more)
 
 ### Community 8 - "Community 8"
 Cohesion: 0.06
@@ -532,8 +537,8 @@ Cohesion: 0.07
 Nodes (20): E, fromResult(), toDouble(), BigDecimal, Class, JsonNode, List, String (+12 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.21
-Nodes (10): DerivationResult, DerivationException, ExpectedValueDeriver, List, Long, SqlExecutionResult, String, TestCase (+2 more)
+Cohesion: 0.08
+Nodes (20): DerivationResult, ApplicationException, FileParsingException, InvalidBusinessRuleException, InvalidProgressException, RuntimeException, DerivationException, ExpectedValueDeriver (+12 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.13
@@ -545,31 +550,31 @@ Nodes (17): CreateRuleAdjustment, CreateRuleDecision, CreateTableRubricGradeResu
 
 ### Community 14 - "Community 14"
 Cohesion: 0.08
-Nodes (18): DownloadExamPdfResponse, GetCurrentUserRequest, ResourceNotFoundException, Long, Long, GetCurrentUserResponse, GetTeacherExamDetailRequest, GetTeacherExamDetailResponse (+10 more)
+Nodes (18): GetCurrentUserRequest, ResourceNotFoundException, GetCurrentUserResponse, Long, Transactional, Long, Transactional, Long (+10 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.10
 Nodes (17): FromItem, SelectQueryStructureAnalyzerTest, PlainSelect, Acc, addFromItemAlias(), analyze(), declaredAliases(), hasCorrelatedSubquery() (+9 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.04
-Nodes (48): ClassRepository, CurrentUserService, DropAllExamSchemasRequest, CurrentUserServiceImpl, Long, String, Long, Long (+40 more)
+Cohesion: 0.03
+Nodes (58): ClassRepository, CurrentUserService, DownloadExamPdfResponse, DropAllExamSchemasRequest, ExamRepository, CurrentUserServiceImpl, Long, String (+50 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.29
-Nodes (11): CloneExamTemplateRequestDto, LibraryController, ShareExamAsTemplateRequestDto, GetMapping, Long, PatchMapping, PostMapping, PreAuthorize (+3 more)
+Cohesion: 0.08
+Nodes (33): CloneExamTemplateRequestDto, LibraryController, RulePresetController, Response, ShareExamAsTemplateRequestDto, GetMapping, Long, PatchMapping (+25 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.06
-Nodes (37): ExamResultFeedbackEntity, ExamResultFeedbackRepository, ExamResultFeedbackJpaRepository, QuestionContext, ExamResultFeedbackRepositoryImpl, BigDecimal, Exam, ExamResult (+29 more)
+Cohesion: 0.08
+Nodes (29): ExamResultFeedbackEntity, ExamResultFeedbackRepository, ExamResultFeedbackJpaRepository, QuestionContext, ExamResultFeedbackRepositoryImpl, BigDecimal, Exam, ExamResult (+21 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.19
-Nodes (7): List, Map, ParsedCreateTable, ParsedForeignKey, RoutineForeignKey, RoutineSetupInsert, Set
+Cohesion: 0.28
+Nodes (10): SelectResultDiff, toRequest(), CreateClassRequest, GradingSupport, JsonNode, List, Map, Object (+2 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.29
-Nodes (8): RubricToTestCaseTransformer, BigDecimal, JsonNode, List, Long, String, TestCase, VerificationType
+Cohesion: 0.06
+Nodes (38): BuildInsertTablesResponseDto, TestCaseEntity, SelectQuestionGraderTest, InsertColumnConfig, InsertColumnConfigDto, InsertTableConfig, InsertTableConfigDto, TestCaseJpaRepository (+30 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.05
@@ -580,56 +585,56 @@ Cohesion: 0.09
 Nodes (27): ClassEntity, fromString(), getFieldName(), ClassJpaRepository, TeacherClassJpaRepository, ClassRepositoryImpl, SortField, String (+19 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.10
-Nodes (7): ClaudeServiceImpl, Exception, PdfExtractionResult, RoutineRubricIssue, String, StringBuilder, Throwable
+Cohesion: 0.06
+Nodes (25): ClaudeVmClient, ClaudeServiceImpl, ArrayNode, ExamSchemaService, Exception, GeneratedQuestion, JsonNode, List (+17 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.12
-Nodes (23): AccessDeniedException, AutoSubmitWorkerConfiguration, ErrorResponse, GlobalExceptionHandler, ExceptionHandler, FileParsingException, HttpMessageNotReadableException, InvalidBusinessRuleException (+15 more)
+Cohesion: 0.19
+Nodes (17): AccessDeniedException, ErrorResponse, GlobalExceptionHandler, ExceptionHandler, FileParsingException, HttpMessageNotReadableException, InvalidBusinessRuleException, InvalidFormatException (+9 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.13
-Nodes (20): CheckId, ColumnConfig, ColumnConfigDto, ExecuteSelectTestCaseResponseDto, SelectDatasetAdequacyLinter, SelectDatasetAdequacyLinterTest, fromResponse(), SafeVarargs (+12 more)
+Cohesion: 0.18
+Nodes (15): CheckId, SelectDatasetAdequacyLinter, SelectDatasetAdequacyLinterTest, SafeVarargs, Finding, List, Map, Object (+7 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.11
-Nodes (13): GradingSupport, BigDecimal, ExamQuestion, ExamSubmission, JsonNode, List, LocalDateTime, Object (+5 more)
+Nodes (14): GradingSupport, BigDecimal, ExamQuestion, ExamSubmission, JsonNode, List, LocalDateTime, Map (+6 more)
 
 ### Community 27 - "Community 27"
 Cohesion: 0.08
 Nodes (37): SpecificationController, CreateSpecificationRequestDto, CreateSpecificationUsecase, CreateSpecificationV2RequestDto, ExamSpecificationResponseDto, GenerateSchemaFromDdlRequestDto, GenerateSpecEntityDescriptionResponseDto, GenerateSpecEntityDescriptionUsecase (+29 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.05
-Nodes (30): ClassEntity, ExamSpecificationEntity, TeacherClassEntity, TeacherNotificationEntity, toRequest(), toRequest(), toRequest(), toRequest() (+22 more)
+Cohesion: 0.06
+Nodes (24): CreateClassResponseDto, ClassEnrollmentEntity, ExamQuestionEntity, ExamSettingsJson, ExamSpecificationEntity, ExamViolationEntity, toRequest(), toRequest() (+16 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.05
 Nodes (37): 10. General Coding Standards, 1. Overall Architecture (Clean Architecture), 2.1 Adapter Layer (`adapter.web.api`), 2.2 Application Layer (`application`), 2.3 Domain Layer (`domain`), 2.4 Infrastructure Layer (`infrastructure`), 2. Layer Details, 3. General Rules (+29 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.30
-Nodes (9): RulePresetRepositoryImpl, List, Long, Optional, Override, QuestionType, RulePreset, String (+1 more)
+Cohesion: 0.11
+Nodes (22): JpaRulePresetRepository, RulePresetRepository, RulePresetRepositoryImpl, RulePresetEntity, List, Long, Optional, QuestionType (+14 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.09
 Nodes (26): ClearPreviewSchemaUsecase, UsecasesConfiguration, CreateExamQuestionUsecase, CreateExamUsecase, DeleteExamQuestionUsecase, DownloadExamPdfUsecase, DropAllExamSchemasUsecase, ExtractQuestionsFromPdfUsecase (+18 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.15
-Nodes (15): ExamSchemaService, ResultSet, MsSqlExamSchemaService, JdbcTemplate, List, Long, Map, Object (+7 more)
+Cohesion: 0.16
+Nodes (14): ResultSet, MsSqlExamSchemaService, JdbcTemplate, List, Long, Map, Object, Override (+6 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.08
-Nodes (28): ExamSessionService, PreparationStatus, SchemaTemplate, RedisExamSessionService, Exam, ExamSpecification, Integer, List (+20 more)
+Cohesion: 0.07
+Nodes (31): SpecEntityEntity, ExamSessionService, PreparationStatus, SchemaTemplate, RedisExamSessionService, Exam, ExamSpecification, Integer (+23 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.06
-Nodes (30): AttributeSnapshotJson, DatasetSnapshotJson, EntitySnapshotJson, ExamTemplateSpecificationSnapshotJson, SpecDatasetEntity, ExamTemplateSpecificationSnapshot, CreateTableQuestionGrader, AttributeSnapshot (+22 more)
+Cohesion: 0.17
+Nodes (9): toRequest(), toRequest(), toRequest(), toRequest(), CreateSpecificationRequest, CreateSpecificationRequest, Long, SaveExamSpecificationRequest (+1 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.11
-Nodes (17): ClassEnrollmentRepository, ClassEnrollmentRepositoryImpl, ExamQuestionResponse, List, Long, ExamSpecificationResponse, Long, ExamTimeResponse (+9 more)
+Cohesion: 0.12
+Nodes (17): ClassEnrollmentRepository, ClassEnrollmentRepositoryImpl, ExamTimeResponse, Long, GetStudentExamDetailRequest, GetStudentExamResponse, GetStudentsInClassRequest, GetStudentsInClassResponse (+9 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.22
@@ -640,23 +645,19 @@ Cohesion: 0.05
 Nodes (53): fail(), partial(), pass(), RoutineQuestionGrader, TriggerQuestionGrader, GradingNotificationService, WebSocketGradingNotificationService, Exam (+45 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.17
-Nodes (18): CreateScoringResult, objectKey(), CreateWeightedEditScorer, failAll(), ignore(), percentage(), points(), withFallback() (+10 more)
+Cohesion: 0.23
+Nodes (14): CreateScoringResult, CreateWeightedEditScorer, failAll(), ignore(), percentage(), points(), withFallback(), RuleDecision (+6 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.47
-Nodes (3): SpecEntityEntity, ExamSpecificationEntity, SpecEntity
-
-### Community 41 - "Community 41"
-Cohesion: 0.14
-Nodes (5): Exception, RoutineRubricIssue, String, StringBuilder, Throwable
+Cohesion: 0.24
+Nodes (10): GetStudentProgressInClassRequest, BigDecimal, Exam, ExamProgressItem, ExamResult, GetStudentProgressInClassResponse, List, LocalDateTime (+2 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.19
 Nodes (19): ClassController, of(), ok(), ResponseDto(), BannedStudentResponseDto, DeleteMapping, GetClassesResponseDto, GetMapping (+11 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (11): SelectExamBootstrap, ExamQuestionResponse, ExecuteSelectQueryRequest, ExecuteSelectTestCaseResponse, Long, Set, String, Throwable (+3 more)
 
 ### Community 44 - "Community 44"
@@ -676,8 +677,8 @@ Cohesion: 0.15
 Nodes (15): ClassStudentBanEntity, ClassStudentBanRepository, ClassStudentBanJpaRepository, ClassStudentBanRepositoryImpl, List, StudentExamListResponse, ClassStudentBan, List (+7 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.14
-Nodes (6): ClaudeVmClient, ArrayNode, ExamSchemaService, JsonNode, ObjectNode, PostConstruct
+Cohesion: 0.24
+Nodes (7): SelectResultDiffNonOverlapTest, List, Map, Object, SelectResultEdit, String, Test
 
 ### Community 49 - "Community 49"
 Cohesion: 0.07
@@ -688,20 +689,20 @@ Cohesion: 0.11
 Nodes (15): ExamSubmission, GetExamResultDetailResponse, GetMyResultDetailRequest, GradingTrace, Long, Map, String, GradingTraceItem (+7 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.17
+Cohesion: 0.15
 Nodes (6): WhiteboxResult, Map, Object, SelectRowPair, empty(), isEmpty()
 
 ### Community 52 - "Community 52"
-Cohesion: 0.09
-Nodes (22): isType(), CreateSchemaGraphComparator, CreateSchemaNames, GetStudentProgressInClassRequest, BigDecimal, Exam, ExamProgressItem, ExamResult (+14 more)
+Cohesion: 0.05
+Nodes (42): BuildCreateTablesResponseDto, ColumnDto, CreateColumnConfig, CreateColumnConfigDto, CreateConstraintConfig, CreateConstraintConfigDto, isType(), CreateSchemaGraphComparator (+34 more)
 
 ### Community 53 - "Community 53"
-Cohesion: 0.16
-Nodes (11): InsertDataQuestionGrader, Map, Double, ExamQuestion, ExamSubmission, Integer, JsonNode, List (+3 more)
+Cohesion: 0.18
+Nodes (10): InsertDataQuestionGrader, Double, ExamQuestion, ExamSubmission, Integer, JsonNode, List, Map (+2 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.16
-Nodes (14): fromResponse(), getPage(), getSize(), getTotal(), getTotalPages(), PaginationMeta, PaginationMetaDto, GetClassesRequest (+6 more)
+Cohesion: 0.21
+Nodes (10): fromResponse(), getPage(), getSize(), getTotal(), getTotalPages(), PaginationMeta, PaginationMetaDto, BeforeEach (+2 more)
 
 ### Community 55 - "Community 55"
 Cohesion: 0.18
@@ -728,8 +729,8 @@ Cohesion: 0.20
 Nodes (11): List, Map, String, WhiteboxCatalogEntry, WhiteboxFeature, WhiteboxFeatureKind, WhiteboxParamSpec, WhiteboxPolicy (+3 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.11
-Nodes (14): ContextQuery, RefineRubricTestCasesResponse, AppliedEdit, BigDecimal, BuildCreateTablesResponse, BuildInsertTablesResponse, GenerateGradingRubricRequest, RefineRubricTestCasesRequest (+6 more)
+Cohesion: 0.08
+Nodes (18): ContextQuery, RefineRubricTestCasesResponse, RubricAgentRunResponse, AppliedEdit, BigDecimal, BuildCreateTablesResponse, BuildInsertTablesResponse, GenerateGradingRubricRequest (+10 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.14
@@ -752,12 +753,12 @@ Cohesion: 0.13
 Nodes (22): CreateTableQuestionGrader, GetExamMutationAnalyticsUsecase, GetExamQuestionsUsecase, GetExamResultDetailUsecase, GetMyResultDetailUsecase, GradingSupport, InsertDataQuestionGrader, OverrideSubmissionScoreUsecase (+14 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 0.13
-Nodes (13): UserEntity, User, toRequest(), fromModel(), fromResponse(), Role, Long, UpdateUserRoleRequest (+5 more)
+Cohesion: 0.22
+Nodes (7): UserEntity, User, fromResponse(), Role, GetUsersResponse, GetUsersResponseDto, User
 
 ### Community 68 - "Community 68"
-Cohesion: 0.16
-Nodes (13): BigDecimal, JsonNode, List, SelectQueryStructureAnalyzer, String, WhiteboxCatalog, WhiteboxResult, WhiteboxRule (+5 more)
+Cohesion: 0.14
+Nodes (16): parseFailed(), textScanOnly(), QueryStructureFacts, BigDecimal, JsonNode, List, SelectQueryStructureAnalyzer, String (+8 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.19
@@ -768,16 +769,16 @@ Cohesion: 0.15
 Nodes (15): SpecEntityJpaRepository, SpecEntityRepositoryImpl, SpecEntityRepository, Long, Modifying, Optional, Query, SpecEntityEntity (+7 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 0.17
-Nodes (3): CodexServiceImpl, ArrayNode, ObjectNode
+Cohesion: 0.11
+Nodes (8): GeneratedQuestion, Override, PdfExtractionResult, RoutineRubricIssue, SpecAttribute, String, StudentFeedbackContext, StudentFeedbackDraft
 
 ### Community 72 - "Community 72"
-Cohesion: 0.08
-Nodes (25): properties, nullable, type, type, type, format, type, errorMessage (+17 more)
+Cohesion: 0.10
+Nodes (20): nullable, type, type, type, format, type, description, type (+12 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.09
-Nodes (23): description, type, description, type, properties, description, type, description (+15 more)
+Cohesion: 0.10
+Nodes (20): description, type, description, type, properties, description, type, description (+12 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.13
@@ -812,12 +813,12 @@ Cohesion: 0.15
 Nodes (14): ExamDraftRepository, ExamDraftRepositoryImpl, GetExamDraftResponse, Long, Optional, SaveExamDraftRequest, SaveExamDraftResponse, ExamDraft (+6 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.27
-Nodes (9): CreateExamQuestionsRequest, CreateExamQuestionsResponse, ExamQuestion, ExamSpecification, Long, QuestionType, String, Transactional (+1 more)
+Cohesion: 0.17
+Nodes (14): fromModels(), isFullySuccessful(), CreateExamQuestionsRequest, CreateExamQuestionsResponse, ExamQuestion, ExamSpecification, Long, QuestionType (+6 more)
 
 ### Community 84 - "Community 84"
 Cohesion: 0.13
-Nodes (17): UserRepositoryImpl, GetClassTeachersResponse, List, Long, GetStudentsInClassRequest, GetStudentsInClassResponse, PaginationResponse, List (+9 more)
+Nodes (17): UserRepositoryImpl, BannedStudentResponse, Long, PaginationResponse, GetClassTeachersResponse, List, Long, List (+9 more)
 
 ### Community 85 - "Community 85"
 Cohesion: 0.26
@@ -840,16 +841,16 @@ Cohesion: 0.18
 Nodes (9): AIService, GeneratedQuestion, JsonNode, List, PdfExtractionResult, SpecAttribute, String, StudentFeedbackContext (+1 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.22
-Nodes (5): CharSequence, Override, Map, ParsedCreateTable, TimedCharSequence
+Cohesion: 0.31
+Nodes (7): BeforeEach, Boolean, Exam, HeartbeatState, RecordHeartbeatRequest, Test, RecordHeartbeatUsecaseTest
 
 ### Community 91 - "Community 91"
-Cohesion: 0.12
-Nodes (15): HttpResponse, Resource, OpenAiServiceImpl, GeneratedQuestion, HttpClient, JsonNode, List, ObjectNode (+7 more)
+Cohesion: 0.16
+Nodes (10): OpenAiServiceImpl, GeneratedQuestion, JsonNode, List, ObjectNode, Override, PdfExtractionResult, String (+2 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.17
-Nodes (9): RefreshTokenHasher, Sha256RefreshTokenHasher, LogoutRequest, RefreshTokenRequest, RefreshTokenResponse, Override, String, LogoutUsecase (+1 more)
+Cohesion: 0.15
+Nodes (11): RedisRefreshTokenRepository, RefreshTokenHasher, RefreshTokenRepository, Sha256RefreshTokenHasher, LogoutRequest, Override, RedisTemplate, String (+3 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.13
@@ -860,8 +861,8 @@ Cohesion: 0.28
 Nodes (7): UserRepository, List, Long, Optional, PaginatedResult, String, User
 
 ### Community 95 - "Community 95"
-Cohesion: 0.19
-Nodes (12): ExamRepository, ExamRepositoryImpl, CreateExamResponse, List, Long, Boolean, Exam, List (+4 more)
+Cohesion: 0.32
+Nodes (7): ExamRepositoryImpl, Boolean, Exam, List, Long, Optional, Override
 
 ### Community 96 - "Community 96"
 Cohesion: 0.26
@@ -872,16 +873,16 @@ Cohesion: 0.23
 Nodes (9): CreateSchemaGraphBuilder, Boolean, ConstraintNode, CreateSchemaGraph, JsonNode, List, String, TableMetadata (+1 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.08
-Nodes (12): RoutineTestCaseGrade, StringBuilder, Double, ExamSchemaService, GradeDecision, RoutineMetadata, SelectRuleDecision, SqlExecutionResult (+4 more)
+Cohesion: 0.12
+Nodes (7): RoutineTestCaseGrade, StringBuilder, Double, ExamSchemaService, SqlExecutionResult, StringBuilder, RubricTestingUsecase
 
 ### Community 99 - "Community 99"
 Cohesion: 0.18
 Nodes (13): List, Map, Pattern, String, WhiteboxCatalogEntry, WhiteboxEvaluation, WhiteboxFeature, WhiteboxFeatureKind (+5 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.29
-Nodes (6): LoginRequest, LoginResponse, LoginResponse, User, LoginUsecase, TokenIssuer
+Cohesion: 0.60
+Nodes (3): LoginRequest, LoginResponse, LoginUsecase
 
 ### Community 101 - "Community 101"
 Cohesion: 0.25
@@ -896,8 +897,8 @@ Cohesion: 0.33
 Nodes (5): ExamTemplateRepository, ExamTemplate, List, Long, Optional
 
 ### Community 104 - "Community 104"
-Cohesion: 0.32
-Nodes (9): Exam, List, LocalDateTime, Long, String, SubmitExamRequest, SubmitExamResponse, Transactional (+1 more)
+Cohesion: 0.27
+Nodes (8): StudentFeedbackAiSupport, JsonNode, List, ObjectMapper, String, StudentFeedbackContext, StudentFeedbackDraft, StudentQuestionFeedbackDraft
 
 ### Community 105 - "Community 105"
 Cohesion: 0.27
@@ -928,16 +929,16 @@ Cohesion: 0.15
 Nodes (12): 👥 Contributors, 💾 Database Migration (Liquibase), Example: Add "Register User" Feature, Graduation Project Backend, 📄 License, 🎯 Project Overview, 📂 Project Structure, 📖 References (+4 more)
 
 ### Community 113 - "Community 113"
-Cohesion: 0.22
-Nodes (8): GoogleAuthService, GoogleAuthServiceImpl, GoogleLoginRequest, LoginResponse, GoogleUserInfo, Override, String, GoogleLoginUsecase
+Cohesion: 0.16
+Nodes (11): GoogleAuthService, GoogleAuthServiceImpl, GoogleLoginRequest, LoginResponse, LoginResponse, User, GoogleUserInfo, Override (+3 more)
 
 ### Community 114 - "Community 114"
 Cohesion: 0.21
 Nodes (12): fromModel(), toAttributeResponse(), toDatasetResponse(), toEntityResponse(), SpecAttributeResponse, SpecDatasetResponse, SpecEntityResponse, ExamSpecification (+4 more)
 
 ### Community 115 - "Community 115"
-Cohesion: 0.05
-Nodes (41): AIService, ClaudeServiceImpl, CodexServiceImpl, ConfigurationProperties, DataSourceConfiguration, DataSource, DataSourceProperties, OpenAiServiceImpl (+33 more)
+Cohesion: 0.16
+Nodes (13): Predicate, FallbackAIServiceImpl, Function, GeneratedQuestion, JsonNode, List, Override, PdfExtractionResult (+5 more)
 
 ### Community 116 - "Community 116"
 Cohesion: 0.10
@@ -952,8 +953,8 @@ Cohesion: 0.17
 Nodes (12): description, items, type, $ref, answers, questionResults, items, type (+4 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.13
-Nodes (15): required, type, schemas, required, type, type, description, enum (+7 more)
+Cohesion: 0.17
+Nodes (12): schemas, required, type, type, description, enum, type, CreateExamQuestionRequestDto (+4 more)
 
 ### Community 120 - "Community 120"
 Cohesion: 0.17
@@ -964,8 +965,8 @@ Cohesion: 0.23
 Nodes (9): UserController, GetCurrentUserResponseDto, GetCurrentUserUsecase, fromResponse(), GetMapping, PreAuthorize, ResponseDto, ResponseEntity (+1 more)
 
 ### Community 122 - "Community 122"
-Cohesion: 0.17
-Nodes (9): DerivedExpectedValuesQa, RubricAgentFinding, RubricAgentObservation, RubricAgentRunResponse, RubricAgentStep, RuntimeRubricQa, JsonNode, List (+1 more)
+Cohesion: 0.18
+Nodes (8): DerivedExpectedValuesQa, RubricAgentFinding, RubricAgentObservation, RubricAgentStep, RuntimeRubricQa, JsonNode, List, RubricAgentRunRequest
 
 ### Community 123 - "Community 123"
 Cohesion: 0.22
@@ -980,32 +981,32 @@ Cohesion: 0.18
 Nodes (11): AttemptPoint, AttemptPointDto, GetStudentFeedbackResponseDto, ProgressSummaryDto, QuestionFeedbackDto, fromResponse(), GetStudentFeedbackResponse, ProgressSummary (+3 more)
 
 ### Community 126 - "Community 126"
-Cohesion: 0.36
-Nodes (4): ColumnListCheck, Pattern, String, InsertDataWhiteboxPatterns
+Cohesion: 0.16
+Nodes (9): CharSequence, ColumnListCheck, Long, Override, Pattern, String, GetExamStatisticsUsecase, TimedCharSequence (+1 more)
 
 ### Community 127 - "Community 127"
 Cohesion: 0.24
 Nodes (9): FeedbackController, fromResponse(), PostMapping, PreAuthorize, ResponseDto, ResponseEntity, SubmitFeedbackResponse, SubmitFeedbackRequestDto (+1 more)
 
 ### Community 128 - "Community 128"
-Cohesion: 0.20
-Nodes (13): RulePresetController, CreateRequest, DeleteMapping, GetMapping, Long, PostMapping, PreAuthorize, PutMapping (+5 more)
+Cohesion: 0.25
+Nodes (8): BeforeEach, Exam, ExamResult, ExamSubmission, GradingStatus, Long, Test, RegradeAllExamUsecaseTest
 
 ### Community 129 - "Community 129"
 Cohesion: 0.12
 Nodes (16): SearchController, GlobalSearchRepository, GlobalSearchRequest, GlobalSearchRepositoryImpl, GetMapping, PreAuthorize, ResponseDto, ResponseEntity (+8 more)
 
 ### Community 130 - "Community 130"
-Cohesion: 0.24
-Nodes (5): RulePresetEntity, PrePersist, PreUpdate, RulePreset, String
+Cohesion: 0.38
+Nodes (8): ConfigurationProperties, DataSourceConfiguration, DataSource, DataSourceProperties, Primary, Bean, DataSource, JdbcTemplate
 
 ### Community 131 - "Community 131"
 Cohesion: 0.17
 Nodes (11): AGENTS.md - graduation-project-be, AI and SQL Grading Context, API, Auth, and Responses, Architecture, Backend Rules, Commands, Editing Guidance, graphify (+3 more)
 
 ### Community 132 - "Community 132"
-Cohesion: 0.31
-Nodes (7): ForeignKeyMetadata, JsonNode, List, String, TableMetadata, Test, CreateTableRubricEvaluatorTest
+Cohesion: 0.20
+Nodes (4): Exception, Set, StringBuilder, Throwable
 
 ### Community 133 - "Community 133"
 Cohesion: 0.18
@@ -1024,8 +1025,8 @@ Cohesion: 0.31
 Nodes (3): RedisHeartbeatServiceTest, BeforeEach, Test
 
 ### Community 137 - "Community 137"
-Cohesion: 0.11
-Nodes (10): ApplicationException, FileParsingException, InvalidBusinessRuleException, InvalidProgressException, RuntimeException, String, String, String (+2 more)
+Cohesion: 0.33
+Nodes (5): BigDecimal, JsonNode, String, Test, CreateTableWhiteboxEvaluatorsTest
 
 ### Community 138 - "Community 138"
 Cohesion: 0.35
@@ -1040,28 +1041,28 @@ Cohesion: 0.27
 Nodes (6): HeartbeatService, HeartbeatKey, HeartbeatState, List, Long, Optional
 
 ### Community 141 - "Community 141"
-Cohesion: 0.20
-Nodes (10): TestCaseJpaRepository, TestCaseRepositoryImpl, List, Long, List, Long, Override, TestCase (+2 more)
+Cohesion: 0.38
+Nodes (6): CreateTableQuestionGrader, ExamQuestion, ExamSubmission, Set, String, TableMetadata
 
 ### Community 142 - "Community 142"
-Cohesion: 0.36
-Nodes (5): CreateExamQuestionRequest, ExamQuestionResponse, Long, String, CreateExamQuestionUsecase
+Cohesion: 0.18
+Nodes (11): properties, required, type, questionId, studentQuery, description, format, type (+3 more)
 
 ### Community 143 - "Community 143"
 Cohesion: 0.20
 Nodes (9): 1. `generateSqlAnswer(questionContent, questionType, schemaContext)`, 2. `generateGradingRubric(correctQuery, questionContent, totalPoints, questionType, priorQuestionContext, schemaContext)`, 3. `generateSpecificationSchema(specificationDescription, currentSchemaJson)`, 4. `generateEntityDescription(entityName, displayName, attributes, schemaContext)`, 5. `extractQuestionsFromPdf(pdfBytes, schemaContext)`, AI Entry Points, Backend Parser Constraints, Graduation Project BE AI Context (+1 more)
 
 ### Community 144 - "Community 144"
-Cohesion: 0.10
-Nodes (17): ExamResultRepository, GradeExamUsecase, GetExamStatisticsResponse, Long, GetStudentExamDetailRequest, GetStudentExamResponse, GetStudentResultsRequest, PaginatedResult (+9 more)
+Cohesion: 0.09
+Nodes (20): ExamQuestionRepository, CreateExamQuestionRequest, ExamQuestionResponse, Long, String, ExamQuestionResponse, List, Long (+12 more)
 
 ### Community 145 - "Community 145"
 Cohesion: 0.31
 Nodes (7): InputStream, PdfRenderService, OpenHtmlPdfRenderServiceImpl, Map, Object, Override, String
 
 ### Community 146 - "Community 146"
-Cohesion: 0.13
-Nodes (20): ExamResultEntity, ExamResultJpaRepository, ExamResultRepositoryImpl, ExamResult, GradingStatus, List, LocalDateTime, Long (+12 more)
+Cohesion: 0.08
+Nodes (32): ExamResultEntity, ExamResultRepository, GetExamResultsRequest, ExamResultJpaRepository, ExamResultRepositoryImpl, GetExamResultsResponse, List, Long (+24 more)
 
 ### Community 147 - "Community 147"
 Cohesion: 0.36
@@ -1087,10 +1088,6 @@ Nodes (5): DeviceConflictNotificationService, ExamDeviceConflict, List, Long, St
 Cohesion: 0.33
 Nodes (6): ExtractQuestionsFromPdfRequest, Exam, ExtractQuestionsFromPdfResponse, Long, String, ExtractQuestionsFromPdfUsecase
 
-### Community 153 - "Community 153"
-Cohesion: 0.31
-Nodes (4): CreateSchemaGraphEngineTest, ColumnMetadata, String, Test
-
 ### Community 154 - "Community 154"
 Cohesion: 0.38
 Nodes (5): ClassStudentBanRepository, ClassStudentBan, List, Long, Optional
@@ -1100,8 +1097,8 @@ Cohesion: 0.38
 Nodes (6): GradingNotificationService, BigDecimal, List, LocalDateTime, Long, String
 
 ### Community 156 - "Community 156"
-Cohesion: 0.25
-Nodes (9): Response, CreateRequest, List, Long, QuestionType, RulePreset, String, UpdateRequest (+1 more)
+Cohesion: 0.22
+Nodes (5): HttpResponse, Resource, HttpClient, PostConstruct, SpecAttribute
 
 ### Community 157 - "Community 157"
 Cohesion: 0.29
@@ -1128,8 +1125,8 @@ Cohesion: 0.31
 Nodes (6): JacksonObjectMapperService, Object, Override, String, T, TypeReference
 
 ### Community 163 - "Community 163"
-Cohesion: 0.17
-Nodes (11): BuildInsertTablesResponseDto, TestCaseEntity, InsertColumnConfig, InsertColumnConfigDto, InsertTableConfig, InsertTableConfigDto, MatchType, TestCase (+3 more)
+Cohesion: 0.24
+Nodes (7): AttributeSnapshot, DatasetSnapshot, EntitySnapshot, ExamTemplateSpecificationSnapshot, ExamSpecification, LocalDateTime, Long
 
 ### Community 164 - "Community 164"
 Cohesion: 0.28
@@ -1164,8 +1161,8 @@ Cohesion: 0.21
 Nodes (9): FeedbackRepository, FeedbackRepositoryImpl, SubmitFeedbackRequest, SubmitFeedbackResponse, Feedback, Long, Override, PaginatedResult (+1 more)
 
 ### Community 172 - "Community 172"
-Cohesion: 0.06
-Nodes (48): GetExamResultsRequest, SelectGradingNonOverlapRegressionTest, SelectResultDiff, SelectResultDiffNonOverlapTest, QuestionResultDto, QuestionResultItem, toRequest(), fromModel() (+40 more)
+Cohesion: 0.11
+Nodes (26): Decision, SelectGradingNonOverlapRegressionTest, failAll(), ignore(), percentage(), perViolation(), points(), SelectResultScorer (+18 more)
 
 ### Community 173 - "Community 173"
 Cohesion: 0.29
@@ -1180,8 +1177,8 @@ Cohesion: 0.25
 Nodes (8): Class Exam Endpoints, 📝 Exam & Grading System APIs, 🔹 `GET /api/classes/{classId}/exams` — Get Class Exams (TEACHER), 🔹 `GET /api/schema-templates` — Get All Templates (TEACHER), Overview, 🔹 `POST /api/schema-templates` — Create Template (TEACHER), Question Types (Enum: `QuestionType`), Schema Template Endpoints
 
 ### Community 176 - "Community 176"
-Cohesion: 0.20
-Nodes (5): GeneratedQuestion, HttpClient, Override, PdfExtractionResult, SpecAttribute
+Cohesion: 0.16
+Nodes (6): HttpClient, GeneratedQuestion, HttpClient, Override, PdfExtractionResult, SpecAttribute
 
 ### Community 177 - "Community 177"
 Cohesion: 0.36
@@ -1196,8 +1193,8 @@ Cohesion: 0.25
 Nodes (8): ExamProgressItemDto, GetStudentProgressInClassResponseDto, fromResponse(), ExamProgressItem, GetStudentProgressInClassResponse, StudentInfo, StudentInfo, StudentInfoDto
 
 ### Community 180 - "Community 180"
-Cohesion: 0.25
-Nodes (9): SelectQuestionGraderTest, BeforeEach, ExamQuestion, List, Map, Object, SqlExecutionResult, String (+1 more)
+Cohesion: 0.36
+Nodes (5): PdfStorageService, PdfStorageServiceImpl, MultipartFile, Override, String
 
 ### Community 182 - "Community 182"
 Cohesion: 0.39
@@ -1212,8 +1209,8 @@ Cohesion: 0.39
 Nodes (7): toRequest(), toRubricJson(), Long, Object, ObjectMapper, String, TestGradeTriggerRequest
 
 ### Community 185 - "Community 185"
-Cohesion: 0.29
-Nodes (7): PreviousScores, PreviousScoresDto, QuestionSnapshot, QuestionSnapshotDto, RegradeExamResponseDto, fromResponse(), RegradeExamResponse
+Cohesion: 0.18
+Nodes (10): PreviousScores, PreviousScoresDto, QuestionSnapshot, QuestionSnapshotDto, RegradeExamResponseDto, fromResponse(), RegradeExamResponse, BeforeEach (+2 more)
 
 ### Community 186 - "Community 186"
 Cohesion: 0.36
@@ -1227,6 +1224,10 @@ Nodes (4): DeviceConflictStore, ExamDeviceConflict, Optional, String
 Cohesion: 0.32
 Nodes (5): D, ObjectMapperService, Object, String, TypeReference
 
+### Community 189 - "Community 189"
+Cohesion: 0.32
+Nodes (5): AttributeSnapshotJson, DatasetSnapshotJson, EntitySnapshotJson, ExamTemplateSpecificationSnapshotJson, ExamTemplateSpecificationSnapshot
+
 ### Community 190 - "Community 190"
 Cohesion: 0.42
 Nodes (3): Pattern, String, RoutineWhiteboxPatterns
@@ -1236,8 +1237,8 @@ Cohesion: 0.53
 Nodes (5): ExamSpecificationJpaRepository, ExamSpecificationEntity, Long, Optional, Query
 
 ### Community 192 - "Community 192"
-Cohesion: 0.22
-Nodes (9): BuildCreateTablesResponseDto, CreateColumnConfig, CreateColumnConfigDto, CreateConstraintConfig, CreateConstraintConfigDto, CreateTableConfig, CreateTableConfigDto, fromResponse() (+1 more)
+Cohesion: 0.43
+Nodes (5): ExportExamPdfResponse, ExportExamPdfRequest, List, SpecEntity, ExportExamPdfUsecase
 
 ### Community 193 - "Community 193"
 Cohesion: 0.39
@@ -1279,13 +1280,13 @@ Nodes (3): NotificationBufferService, List, TeacherNotification
 Cohesion: 0.43
 Nodes (4): ViolationNotificationService, List, Long, String
 
-### Community 205 - "Community 205"
-Cohesion: 0.26
-Nodes (7): GradingQueueService, toRedisValue(), RedisGradingQueueService, String, GradingJob, Long, Override
+### Community 204 - "Community 204"
+Cohesion: 0.29
+Nodes (7): QuestionResultDto, QuestionResultItem, fromResponse(), SubmitExamResponse, SubmissionDetail, SubmissionDetailDto, SubmitExamResponseDto
 
-### Community 206 - "Community 206"
+### Community 205 - "Community 205"
 Cohesion: 0.22
-Nodes (15): Decision, failAll(), ignore(), percentage(), perViolation(), points(), SelectResultScorer, BigDecimal (+7 more)
+Nodes (8): GradingQueueService, toRedisValue(), withIncrementedRetry(), RedisGradingQueueService, String, GradingJob, Long, Override
 
 ### Community 207 - "Community 207"
 Cohesion: 0.48
@@ -1304,7 +1305,7 @@ Cohesion: 0.48
 Nodes (6): toRequest(), toRubricJson(), Object, ObjectMapper, RefineRubricTestCasesRequest, String
 
 ### Community 211 - "Community 211"
-Cohesion: 0.39
+Cohesion: 0.38
 Nodes (4): List, String, WhiteboxRule, WhiteboxParams
 
 ### Community 212 - "Community 212"
@@ -1312,8 +1313,8 @@ Cohesion: 0.40
 Nodes (4): PaginatedResult, PaginationMeta, List, T
 
 ### Community 213 - "Community 213"
-Cohesion: 0.29
-Nodes (7): ColumnDto, InitializePreviewSchemaResponseDto, fromResponse(), Column, InitializePreviewSchemaResponse, Table, TableDto
+Cohesion: 0.40
+Nodes (4): AIService, JsonNode, String, GenerateSpecificationSchemaUsecase
 
 ### Community 214 - "Community 214"
 Cohesion: 0.53
@@ -1328,12 +1329,12 @@ Cohesion: 0.33
 Nodes (6): 1️⃣ Application Startup Flow, 2️⃣ Login Flow (Authentication), 3️⃣ Refresh Token Flow (Token Rotation), 4️⃣ Logout Flow (Token Revocation), 5️⃣ Authenticated Request Flow (with JWT), 🔄 Application Flow
 
 ### Community 217 - "Community 217"
-Cohesion: 0.17
-Nodes (6): GradingWorkerConfiguration, PreDestroy, GradingJob, Object, PostConstruct, Scheduled
+Cohesion: 0.18
+Nodes (7): GradingWorkerConfiguration, GradeExamUsecase, PreDestroy, GradingJob, Object, PostConstruct, Scheduled
 
 ### Community 218 - "Community 218"
-Cohesion: 0.14
-Nodes (11): of(), of(), MessageResponseDto, String, MetaResponseDto, PaginationMetaDto, LocalDateTime, BeforeEach (+3 more)
+Cohesion: 0.06
+Nodes (23): AutoSubmitWorkerConfiguration, RulePresetEntity, PrePersist, PreUpdate, of(), of(), MessageResponseDto, String (+15 more)
 
 ### Community 219 - "Community 219"
 Cohesion: 0.40
@@ -1360,8 +1361,8 @@ Cohesion: 0.43
 Nodes (4): ClearExamSchemaRequest, Exam, Long, ClearExamSchemaUsecase
 
 ### Community 226 - "Community 226"
-Cohesion: 0.38
-Nodes (5): RedisRefreshTokenRepository, RefreshTokenRepository, Override, RedisTemplate, String
+Cohesion: 0.40
+Nodes (5): ColumnConfig, ColumnConfigDto, ExecuteSelectTestCaseResponseDto, fromResponse(), ExecuteSelectTestCaseResponse
 
 ### Community 227 - "Community 227"
 Cohesion: 0.48
@@ -1388,12 +1389,12 @@ Cohesion: 0.60
 Nodes (3): AsyncConfiguration, Bean, ExecutorService
 
 ### Community 233 - "Community 233"
-Cohesion: 0.22
-Nodes (10): AdminFeedbackController, GetFeedbacksRequest, GetFeedbacksUsecase, GetFeedbacksResponseDto, GetMapping, PaginationResponseDto, ResponseEntity, GetFeedbacksResponse (+2 more)
+Cohesion: 0.39
+Nodes (6): AdminFeedbackController, GetFeedbacksUsecase, GetFeedbacksResponseDto, GetMapping, PaginationResponseDto, ResponseEntity
 
 ### Community 234 - "Community 234"
-Cohesion: 0.24
-Nodes (5): List, ParsedForeignKey, RoutineForeignKey, RoutineSetupInsert, Set
+Cohesion: 0.20
+Nodes (7): List, Map, ParsedCreateTable, ParsedForeignKey, RoutineForeignKey, RoutineSetupInsert, Set
 
 ### Community 235 - "Community 235"
 Cohesion: 0.43
@@ -1408,24 +1409,24 @@ Cohesion: 0.53
 Nodes (4): GetUsersRequest, GetUsersResponse, PaginationResponse, GetUsersUsecase
 
 ### Community 238 - "Community 238"
-Cohesion: 0.27
-Nodes (7): MicrosoftAuthService, MicrosoftAuthServiceImpl, LoginResponse, MicrosoftLoginRequest, String, User, MicrosoftLoginUsecase
+Cohesion: 0.18
+Nodes (10): MicrosoftAuthService, MicrosoftAuthServiceImpl, LoginResponse, MicrosoftLoginRequest, String, User, MicrosoftUserInfo, Override (+2 more)
 
 ### Community 239 - "Community 239"
 Cohesion: 0.43
 Nodes (4): ExamResultFeedbackRepository, ExamResultFeedback, Long, Optional
 
 ### Community 240 - "Community 240"
-Cohesion: 0.36
-Nodes (5): ExecutionContext, ExecuteSqlRequest, Long, String, ExecuteSqlUsecase
+Cohesion: 0.29
+Nodes (7): ExecutionContext, Exam, ExecuteSqlRequest, ExecuteSqlResponse, Long, String, ExecuteSqlUsecase
 
 ### Community 242 - "Community 242"
-Cohesion: 0.16
-Nodes (14): AdminUserController, GetUsersUsecase, fromResponse(), GetMapping, GetUsersResponseDto, Long, PaginationResponseDto, PatchMapping (+6 more)
+Cohesion: 0.21
+Nodes (11): AdminUserController, GetUsersUsecase, GetMapping, GetUsersResponseDto, Long, PaginationResponseDto, PatchMapping, ResponseDto (+3 more)
 
 ### Community 243 - "Community 243"
-Cohesion: 0.26
-Nodes (4): ExamQuestion, RubricTestGradeResponse, TestGradeCreateTableRequest, TestGradeSelectRequest
+Cohesion: 0.17
+Nodes (6): ExamQuestion, GradeDecision, RoutineMetadata, RubricTestGradeResponse, TestGradeCreateTableRequest, TestGradeSelectRequest
 
 ### Community 245 - "Community 245"
 Cohesion: 0.60
@@ -1456,8 +1457,8 @@ Cohesion: 0.50
 Nodes (3): SelectQueryStructureAnalyzer, QueryStructureFacts, String
 
 ### Community 253 - "Community 253"
-Cohesion: 0.31
-Nodes (7): RulePresetRepository, List, Long, Optional, QuestionType, RulePreset, String
+Cohesion: 0.47
+Nodes (3): SpecDatasetEntity, ExamSpecificationEntity, SpecDataset
 
 ### Community 254 - "Community 254"
 Cohesion: 0.50
@@ -1488,8 +1489,8 @@ Cohesion: 0.40
 Nodes (3): GoogleAuthService, GoogleUserInfo, String
 
 ### Community 262 - "Community 262"
-Cohesion: 0.47
-Nodes (4): BannedStudentResponse, Long, PaginationResponse, GetClassBansUsecase
+Cohesion: 0.53
+Nodes (4): GetFeedbacksRequest, GetFeedbacksResponse, PaginationResponse, GetFeedbacksUsecase
 
 ### Community 263 - "Community 263"
 Cohesion: 0.30
@@ -1516,12 +1517,12 @@ Cohesion: 0.47
 Nodes (3): GradingTraceItem, List, GradingTraceCollector
 
 ### Community 271 - "Community 271"
-Cohesion: 0.24
-Nodes (4): GradingQueueService, withIncrementedRetry(), GradingJob, Long
+Cohesion: 0.29
+Nodes (3): GradingQueueService, GradingJob, Long
 
 ### Community 272 - "Community 272"
-Cohesion: 0.67
-Nodes (3): CreateClassResponseDto, fromResponse(), CreateClassResponse
+Cohesion: 0.53
+Nodes (4): GetClassesRequest, GetClassesResponse, PaginationResponse, GetClassesUsecase
 
 ### Community 273 - "Community 273"
 Cohesion: 0.67
@@ -1755,10 +1756,6 @@ Nodes (3): fromModel(), ExamQuestion, ExamQuestionResponse
 Cohesion: 0.67
 Nodes (3): fromModel(), ExamViolation, ExamViolationResponse
 
-### Community 337 - "Community 337"
-Cohesion: 0.24
-Nodes (4): GeneratedQuestion, Override, StudentFeedbackContext, StudentFeedbackDraft
-
 ### Community 338 - "Community 338"
 Cohesion: 0.67
 Nodes (3): fromModel(), Exam, GetTeacherExamDetailResponse
@@ -1772,8 +1769,8 @@ Cohesion: 0.67
 Nodes (3): fromModel(), ExamViolation, ReportViolationResponse
 
 ### Community 341 - "Community 341"
-Cohesion: 0.13
-Nodes (5): ArrayNode, ExamSchemaService, JsonNode, ObjectNode, PostConstruct
+Cohesion: 0.14
+Nodes (4): ArrayNode, ExamSchemaService, ObjectNode, PostConstruct
 
 ### Community 342 - "Community 342"
 Cohesion: 0.67
@@ -1799,10 +1796,6 @@ Nodes (3): fromModel(), Exam, UpdateExamResponse
 Cohesion: 0.67
 Nodes (3): fromModel(), UpdateUserRoleResponse, User
 
-### Community 349 - "Community 349"
-Cohesion: 0.67
-Nodes (3): parseFailed(), textScanOnly(), QueryStructureFacts
-
 ### Community 350 - "Community 350"
 Cohesion: 0.67
 Nodes (3): String, label(), WhiteboxPolicy()
@@ -1816,8 +1809,8 @@ Cohesion: 0.67
 Nodes (3): fromModel(), Class, GetClassDetailResponse
 
 ### Community 354 - "Community 354"
-Cohesion: 0.67
-Nodes (3): ExecuteSqlResponseDto, fromResponse(), ExecuteSqlResponse
+Cohesion: 0.50
+Nodes (3): ClaudeServiceImpl, CodexServiceImpl, OpenAiServiceImpl
 
 ### Community 355 - "Community 355"
 Cohesion: 0.67
@@ -1844,24 +1837,24 @@ Cohesion: 0.40
 Nodes (4): ColumnMetadata, ConstraintMetadata, ForeignKeyMetadata, TableMetadata
 
 ### Community 374 - "Community 374"
-Cohesion: 0.24
-Nodes (5): GeneratedQuestion, Override, SpecAttribute, StudentFeedbackContext, StudentFeedbackDraft
+Cohesion: 0.67
+Nodes (3): toRequest(), AddTeacherToClassRequest, Long
 
 ### Community 510 - "Community 510"
 Cohesion: 0.39
 Nodes (5): ExamDraftEntity, ExamDraftJpaRepository, List, Long, Optional
 
 ### Community 511 - "Community 511"
-Cohesion: 0.33
-Nodes (6): NotificationBufferService, WebSocketViolationNotificationService, List, Long, Override, String
+Cohesion: 0.67
+Nodes (3): toRequest(), Long, UpdateUserRoleRequest
 
 ### Community 513 - "Community 513"
-Cohesion: 0.42
-Nodes (6): JpaRulePresetRepository, RulePresetEntity, List, Long, QuestionType, String
+Cohesion: 0.67
+Nodes (3): fromModel(), GetCurrentUserResponse, User
 
 ### Community 516 - "Community 516"
-Cohesion: 0.25
-Nodes (4): CodexVmClient, ExamSchemaService, PostConstruct, SpecAttribute
+Cohesion: 0.18
+Nodes (5): CodexVmClient, ArrayNode, ExamSchemaService, ObjectNode, PostConstruct
 
 ### Community 518 - "Community 518"
 Cohesion: 0.50
@@ -1879,25 +1872,21 @@ Nodes (4): PasswordEncoder, PasswordEncoderImpl, Override, String
 Cohesion: 0.39
 Nodes (5): CloneExamTemplateResponse, ExamSettings, Long, Transactional, CloneExamTemplateUsecase
 
-### Community 527 - "Community 527"
-Cohesion: 0.22
-Nodes (5): HttpClient, ClaudeVmClient, CodexVmClient, String, String
-
 ### Community 528 - "Community 528"
 Cohesion: 0.31
 Nodes (4): ExecuteSqlRequestDto, ReportViolationRequestDto, HttpServletRequest, SubmitExamRequestDto
 
 ### Community 529 - "Community 529"
-Cohesion: 0.43
-Nodes (5): CreateSpecificationRequest, Long, SpecificationResponse, Transactional, CreateSpecificationUsecase
+Cohesion: 0.67
+Nodes (3): fromModel(), ExamDraft, GetExamDraftResponse
 
 ### Community 530 - "Community 530"
 Cohesion: 0.24
 Nodes (8): CustomRegexResult, SelectWhiteboxContext, String, WhiteboxEvaluation, WhiteboxRule, CustomRegexWhiteboxEvaluator, invalid(), valid()
 
 ### Community 531 - "Community 531"
-Cohesion: 0.25
-Nodes (8): RedisNotificationBufferService, List, Override, RedisTemplate, Scheduled, String, TeacherNotification, TeacherNotificationRepository
+Cohesion: 0.14
+Nodes (15): NotificationBufferService, RedisNotificationBufferService, WebSocketViolationNotificationService, List, Override, RedisTemplate, Scheduled, String (+7 more)
 
 ### Community 532 - "Community 532"
 Cohesion: 0.29
@@ -1916,8 +1905,8 @@ Cohesion: 0.53
 Nodes (4): GetTeacherNotificationsRequest, PaginationResponse, TeacherNotificationResponse, GetTeacherNotificationsUsecase
 
 ### Community 537 - "Community 537"
-Cohesion: 0.47
-Nodes (4): ExamViolationResponse, List, Long, GetViolationsUsecase
+Cohesion: 0.67
+Nodes (3): fromModel(), ExamDraft, SaveExamDraftResponse
 
 ### Community 538 - "Community 538"
 Cohesion: 0.47
@@ -1927,13 +1916,9 @@ Nodes (4): List, String, WhiteboxCatalogEntry, WhiteboxCatalogUsecase
 Cohesion: 0.40
 Nodes (4): DeleteNotificationUsecase, GetTeacherNotificationsUsecase, GetUnreadNotificationCountUsecase, MarkNotificationReadUsecase
 
-### Community 543 - "Community 543"
-Cohesion: 0.60
-Nodes (4): fromModels(), CreateExamQuestionsResponse, ExamQuestion, List
-
-### Community 545 - "Community 545"
-Cohesion: 0.60
-Nodes (3): UpdateUserRoleRequest, UpdateUserRoleResponse, UpdateUserRoleUsecase
+### Community 542 - "Community 542"
+Cohesion: 0.67
+Nodes (3): fromResponse(), UpdateUserRoleResponse, UpdateUserRoleResponseDto
 
 ### Community 550 - "Community 550"
 Cohesion: 0.20
@@ -1948,12 +1933,12 @@ Cohesion: 0.29
 Nodes (8): CreateClassResponse, List, Map, String, StudentInfo, Transactional, UpdateClassRequest, UpdateClassUsecase
 
 ### Community 558 - "Community 558"
-Cohesion: 0.29
-Nodes (8): isFullySuccessful(), Exam, ExamQuestion, ExamQuestionResponse, QuestionType, Transactional, UpdateExamQuestionRequest, UpdateExamQuestionUsecase
+Cohesion: 0.33
+Nodes (7): Exam, ExamQuestion, ExamQuestionResponse, QuestionType, Transactional, UpdateExamQuestionRequest, UpdateExamQuestionUsecase
 
 ### Community 559 - "Community 559"
-Cohesion: 0.44
-Nodes (4): GradingSupportExecutionStatusTest, ExamQuestion, Test, TestCase
+Cohesion: 0.20
+Nodes (10): ExamSchemaService, GradingSupportExecutionStatusTest, CreateSpecificationRequest, Long, SpecificationResponse, Transactional, ExamQuestion, Test (+2 more)
 
 ### Community 568 - "Community 568"
 Cohesion: 0.40
@@ -1976,24 +1961,24 @@ Cohesion: 0.50
 Nodes (3): ClassPerformanceDto, GetStudentDashboardResponse, StudentOverviewDto
 
 ## Knowledge Gaps
-- **970 isolated node(s):** `openapi`, `title`, `version`, `description`, `name` (+965 more)
+- **969 isolated node(s):** `openapi`, `title`, `version`, `description`, `name` (+964 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **73 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **83 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `isEmpty()` connect `Community 51` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 529`, `Community 18`, `Community 19`, `Community 531`, `Community 21`, `Community 20`, `Community 23`, `Community 24`, `Community 25`, `Community 26`, `Community 32`, `Community 33`, `Community 34`, `Community 35`, `Community 36`, `Community 546`, `Community 38`, `Community 39`, `Community 550`, `Community 41`, `Community 555`, `Community 43`, `Community 45`, `Community 46`, `Community 558`, `Community 48`, `Community 50`, `Community 52`, `Community 53`, `Community 54`, `Community 59`, `Community 61`, `Community 62`, `Community 68`, `Community 71`, `Community 77`, `Community 79`, `Community 80`, `Community 83`, `Community 90`, `Community 91`, `Community 97`, `Community 98`, `Community 100`, `Community 104`, `Community 106`, `Community 108`, `Community 113`, `Community 115`, `Community 116`, `Community 122`, `Community 136`, `Community 144`, `Community 148`, `Community 150`, `Community 152`, `Community 157`, `Community 164`, `Community 165`, `Community 166`, `Community 169`, `Community 172`, `Community 176`, `Community 205`, `Community 211`, `Community 226`, `Community 234`, `Community 238`, `Community 243`, `Community 266`, `Community 268`, `Community 269`, `Community 277`, `Community 341`, `Community 352`, `Community 511`?**
-  _High betweenness centrality (0.172) - this node is a cross-community bridge._
-- **Why does `getMessage()` connect `Community 24` to `Community 0`, `Community 516`, `Community 5`, `Community 6`, `Community 9`, `Community 11`, `Community 12`, `Community 269`, `Community 142`, `Community 16`, `Community 145`, `Community 529`, `Community 18`, `Community 20`, `Community 148`, `Community 23`, `Community 152`, `Community 26`, `Community 32`, `Community 33`, `Community 34`, `Community 165`, `Community 38`, `Community 166`, `Community 41`, `Community 169`, `Community 43`, `Community 558`, `Community 48`, `Community 176`, `Community 50`, `Community 53`, `Community 58`, `Community 61`, `Community 62`, `Community 71`, `Community 77`, `Community 81`, `Community 337`, `Community 83`, `Community 341`, `Community 217`, `Community 91`, `Community 222`, `Community 98`, `Community 105`, `Community 238`, `Community 240`, `Community 113`, `Community 115`, `Community 243`, `Community 374`, `Community 122`?**
-  _High betweenness centrality (0.059) - this node is a cross-community bridge._
-- **Why does `ok()` connect `Community 42` to `Community 224`, `Community 352`, `Community 128`, `Community 3`, `Community 547`, `Community 129`, `Community 233`, `Community 170`, `Community 44`, `Community 528`, `Community 17`, `Community 242`, `Community 116`, `Community 121`, `Community 27`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Why does `isEmpty()` connect `Community 51` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 19`, `Community 531`, `Community 21`, `Community 20`, `Community 23`, `Community 25`, `Community 26`, `Community 32`, `Community 33`, `Community 546`, `Community 35`, `Community 36`, `Community 38`, `Community 39`, `Community 40`, `Community 41`, `Community 550`, `Community 555`, `Community 43`, `Community 45`, `Community 46`, `Community 559`, `Community 558`, `Community 50`, `Community 52`, `Community 53`, `Community 54`, `Community 59`, `Community 61`, `Community 62`, `Community 68`, `Community 71`, `Community 77`, `Community 79`, `Community 80`, `Community 83`, `Community 91`, `Community 92`, `Community 97`, `Community 98`, `Community 100`, `Community 106`, `Community 108`, `Community 113`, `Community 115`, `Community 116`, `Community 122`, `Community 126`, `Community 132`, `Community 136`, `Community 141`, `Community 144`, `Community 146`, `Community 148`, `Community 150`, `Community 152`, `Community 153`, `Community 157`, `Community 164`, `Community 165`, `Community 166`, `Community 169`, `Community 172`, `Community 176`, `Community 192`, `Community 205`, `Community 211`, `Community 213`, `Community 218`, `Community 234`, `Community 238`, `Community 243`, `Community 266`, `Community 268`, `Community 269`, `Community 277`, `Community 341`, `Community 352`?**
+  _High betweenness centrality (0.193) - this node is a cross-community bridge._
+- **Why does `getMessage()` connect `Community 24` to `Community 0`, `Community 132`, `Community 6`, `Community 9`, `Community 11`, `Community 12`, `Community 141`, `Community 144`, `Community 145`, `Community 18`, `Community 20`, `Community 148`, `Community 23`, `Community 152`, `Community 153`, `Community 26`, `Community 156`, `Community 32`, `Community 33`, `Community 165`, `Community 38`, `Community 166`, `Community 41`, `Community 169`, `Community 43`, `Community 558`, `Community 559`, `Community 176`, `Community 50`, `Community 53`, `Community 58`, `Community 61`, `Community 62`, `Community 192`, `Community 71`, `Community 77`, `Community 81`, `Community 83`, `Community 217`, `Community 218`, `Community 91`, `Community 222`, `Community 98`, `Community 105`, `Community 238`, `Community 240`, `Community 113`, `Community 115`, `Community 243`, `Community 122`?**
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Why does `ok()` connect `Community 42` to `Community 224`, `Community 352`, `Community 129`, `Community 3`, `Community 547`, `Community 233`, `Community 170`, `Community 44`, `Community 528`, `Community 17`, `Community 242`, `Community 116`, `Community 121`, `Community 27`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Are the 299 inferred relationships involving `isEmpty()` (e.g. with `.sweepExpiredExamsAndAutoSubmit()` and `.sweep()`) actually correct?**
   _`isEmpty()` has 299 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 164 inferred relationships involving `getMessage()` (e.g. with `.sweepExpiredExamsAndAutoSubmit()` and `.pollGradingQueue()`) actually correct?**
   _`getMessage()` has 164 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `openapi`, `title`, `version` to the rest of the system?**
-  _970 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _969 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.11524822695035461 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.11933395004625347 - nodes in this community are weakly interconnected._

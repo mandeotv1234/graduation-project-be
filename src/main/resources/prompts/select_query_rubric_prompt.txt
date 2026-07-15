@@ -56,7 +56,7 @@ Trả về ĐÚNG cấu trúc JSON sau (không markdown, không giải thích):
 - Cấu trúc chấm điểm dựa theo QUY ĐỊNH TRỪ DẦN ĐIỂM (deduct points).
 - KHÔNG sử dụng `global_grading_rules`, chỉ sử dụng `grading_rules` và `test_cases`.
 - `test_cases[].penalty_value` là NGÂN SÁCH ĐIỂM của test case đó (điểm trừ tối đa nếu case sai hoàn toàn); TỔNG penalty_value của tất cả test_cases PHẢI BẰNG total_points. Case quan trọng hơn (Happy Path) có thể nhận ngân sách lớn hơn.
-- `grading_rules[].action` BẮT BUỘC dùng `DEDUCT_PERCENTAGE`: `penalty_value` của rule là PHẦN TRĂM (0-100) trừ trên NGÂN SÁCH ĐIỂM CỦA TỪNG TEST CASE cho MỖI vi phạm (VD: 30 nghĩa là mỗi dòng thiếu trừ 30% điểm của test case đang chấm). TUYỆT ĐỐI KHÔNG dùng DEDUCT_POINTS với số điểm tuyệt đối — điểm tuyệt đối sẽ vượt ngân sách của test case nhỏ và gây sai lệch log chấm. FAIL_ALL/IGNORE vẫn dùng được khi cần.
+- `grading_rules[].action` BẮT BUỘC dùng `DEDUCT_PERCENTAGE`: `penalty_value` của rule là PHẦN TRĂM (0-100) trừ trên NGÂN SÁCH ĐIỂM CỦA TỪNG TEST CASE cho MỖI vi phạm (VD: 30 nghĩa là mỗi dòng thiếu trừ 30%% điểm của test case đang chấm). TUYỆT ĐỐI KHÔNG dùng DEDUCT_POINTS với số điểm tuyệt đối — điểm tuyệt đối sẽ vượt ngân sách của test case nhỏ và gây sai lệch log chấm. FAIL_ALL/IGNORE vẫn dùng được khi cần.
 - BẮT BUỘC tạo ít nhất 3-4 test cases chất lượng cao `setup_custom_script` (kịch bản tạo dữ liệu), bao phủ các lỗi thường gặp của sinh viên nhưng KHÔNG CẦN điền `expected_result` (Backend sẽ tự sinh `expected_result` bằng cách chạy script đáp án chuẩn).
 - Mỗi test case BẮT BUỘC có trường `"mutation_type"` chọn từ taxonomy sau (dựa trên XData mutation model):
   - `HAPPY_PATH` — Dữ liệu bình thường, kiểm tra logic chính

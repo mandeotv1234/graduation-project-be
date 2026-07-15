@@ -17,7 +17,6 @@ import graduation_project_be.domain.models.ExamResult;
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
-import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.TeacherClass;
 import graduation_project_be.domain.models.User;
 import graduation_project_be.domain.models.enums.GradingStatus;
@@ -163,32 +162,12 @@ public class GradeExamUsecase {
                 });
     }
 
-    /**
-     * Loads DDL specification (and optionally the first active dataset) into a
-     * schema. Used to reconstruct the same baseline state that the student saw
-     * when starting the exam, so that grading questions which reference spec
-     * tables (Function/SP/Trigger) work even if the exam has no CREATE_TABLE
-     * questions.
-     */
-    private void setupSchemaWithSpec(
-            String schemaName,
-            ExamSpecification specification,
-            boolean includeDataset,
-            Long seedDatasetId) {
+    /** Loads only the specification DDL into a grading/reference schema. */
+    private void loadSpecificationDdl(String schemaName, ExamSpecification specification) {
         if (specification == null || specification.getDdlScript() == null) {
             return;
         }
-        String defaultDataScript = null;
-        if (includeDataset && seedDatasetId != null && specification.getDatasets() != null) {
-            defaultDataScript = specification.getDatasets().stream()
-                    .filter(SpecDataset::isActive)
-                    .filter(dataset -> seedDatasetId.equals(dataset.getId()))
-                    .map(SpecDataset::getDataScript)
-                    .filter(s -> s != null && !s.isBlank())
-                    .findFirst()
-                    .orElse(null);
-        }
-        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), defaultDataScript);
+        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), null);
     }
 
     /**
@@ -292,16 +271,16 @@ public class GradeExamUsecase {
                     .sorted(Comparator.comparingInt(ExamQuestion::getOrderIndex))
                     .toList();
 
-            // 7. Reset + reload student schema with DDL spec only.
-            // Without this, SP/Function/Trigger questions referencing tables from the spec
-            // would fail because the schema was wiped clean before grading.
-            // Seed dataset is only for the student's live exam environment; grading test
-            // cases prepare their own data.
+            // 7. Rebuild the same baseline the student received when starting the exam.
+            // With isLoadDdl=false the schema must stay empty so replaying CREATE_TABLE
+            // and INSERT_DATA submissions does not conflict with pre-created objects.
             boolean isLoadDdl = exam.getSettings() != null
                     && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
             log.info("Đang reset schema [{}] trước khi chấm (isLoadDdl={})", schemaName, isLoadDdl);
             examSchemaService.resetSchema(schemaName, false);
-            setupSchemaWithSpec(schemaName, specification, isLoadDdl, null);
+            if (isLoadDdl) {
+                loadSpecificationDdl(schemaName, specification);
+            }
 
             // 8. Setup teacher schema as a "reference answer" environment.
             // DDL only (no datasets — test cases provide their own setup data),
@@ -311,7 +290,7 @@ public class GradeExamUsecase {
             //     their validation_query against the teacher's correct answer.
             log.info("Đang thiết lập schema giáo viên [{}] để kiểm tra test case", teacherSchemaName);
             examSchemaService.resetSchema(teacherSchemaName, false);
-            setupSchemaWithSpec(teacherSchemaName, specification, false, null);
+            loadSpecificationDdl(teacherSchemaName, specification);
             Map<Long, String> teacherSetupErrors = populateTeacherSchemaWithAnswers(teacherSchemaName, sortedQuestions);
 
             // 9. Grade ALL questions sequentially (order by orderIndex)
@@ -385,7 +364,7 @@ public class GradeExamUsecase {
                             boolean fallbackTriggered = false;
                             try {
                                 examSchemaService.resetSchema(routineSchemaName, false);
-                                setupSchemaWithSpec(routineSchemaName, specification, false, null);
+                                loadSpecificationDdl(routineSchemaName, specification);
                                 try {
                                     support.executeSqlScriptBatches(routineSchemaName, studentQuery);
                                 } catch (Exception execErr) {

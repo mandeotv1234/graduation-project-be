@@ -27,7 +27,6 @@ import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamSpecification;
 import graduation_project_be.domain.models.ExamSubmission;
 import graduation_project_be.domain.models.QuestionType;
-import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.enums.GradingStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -135,13 +134,16 @@ public class PreviewSubmitExamUsecase {
         boolean isLoadDdl = exam.getSettings() != null
                 && Boolean.TRUE.equals(exam.getSettings().getIsLoadDdl());
 
-        // Reset preview schema with DDL only (no seed — graders provide their own test data)
+        // Rebuild the same baseline used by a real student attempt. When DDL loading is
+        // disabled this schema must remain empty so CREATE_TABLE answers can be replayed.
         examSchemaService.resetSchema(schemaName, false);
-        setupSchemaWithSpec(schemaName, specification, isLoadDdl, null);
+        if (isLoadDdl) {
+            loadSpecificationDdl(schemaName, specification);
+        }
 
         // Setup grading reference schema: DDL only + apply correctQuery for non-SELECT/CREATE/INSERT
         examSchemaService.resetSchema(gradeSchemaName, false);
-        setupSchemaWithSpec(gradeSchemaName, specification, false, null);
+        loadSpecificationDdl(gradeSchemaName, specification);
         Map<Long, String> teacherSetupErrors = populateTeacherSchemaWithAnswers(gradeSchemaName, sortedQuestions);
 
         BigDecimal totalScore = BigDecimal.ZERO;
@@ -184,7 +186,7 @@ public class PreviewSubmitExamUsecase {
                         String routineSchema = schemaName + "_pv_routine_" + question.getId();
                         try {
                             examSchemaService.resetSchema(routineSchema, false);
-                            setupSchemaWithSpec(routineSchema, specification, false, null);
+                            loadSpecificationDdl(routineSchema, specification);
                             boolean hasExecError = false;
                             try {
                                 support.executeSqlScriptBatches(routineSchema, studentQuery);
@@ -335,19 +337,9 @@ public class PreviewSubmitExamUsecase {
         );
     }
 
-    private void setupSchemaWithSpec(String schemaName, ExamSpecification specification,
-            boolean includeDataset, Long seedDatasetId) {
+    private void loadSpecificationDdl(String schemaName, ExamSpecification specification) {
         if (specification == null || specification.getDdlScript() == null) return;
-        String seedScript = null;
-        if (includeDataset && seedDatasetId != null && specification.getDatasets() != null) {
-            seedScript = specification.getDatasets().stream()
-                    .filter(SpecDataset::isActive)
-                    .filter(d -> seedDatasetId.equals(d.getId()))
-                    .map(SpecDataset::getDataScript)
-                    .filter(s -> s != null && !s.isBlank())
-                    .findFirst().orElse(null);
-        }
-        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), seedScript);
+        examSchemaService.loadTemplateIntoSchema(schemaName, specification.getDdlScript(), null);
     }
 
     private Map<Long, String> populateTeacherSchemaWithAnswers(String teacherSchema,

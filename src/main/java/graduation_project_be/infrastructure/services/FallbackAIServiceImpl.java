@@ -25,13 +25,13 @@ public class FallbackAIServiceImpl implements AIService {
     private final ObjectMapper objectMapper;
 
     public FallbackAIServiceImpl(
-            OpenAiServiceImpl openAiService,
             CodexServiceImpl codexService,
-            ClaudeServiceImpl claudeService) {
+            ClaudeServiceImpl claudeService,
+            OpenAiServiceImpl openAiService) {
         this.providers = List.of(
-                new Provider("OpenAI", openAiService),
                 new Provider("Codex", codexService),
-                new Provider("Claude", claudeService));
+                new Provider("Claude", claudeService),
+                new Provider("OpenAI", openAiService));
         this.objectMapper = new ObjectMapper();
     }
 

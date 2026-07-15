@@ -156,6 +156,7 @@ public class GradeExamUsecase {
         examResultRepository.findByExamIdAndStudentIdAndAttemptNumber(examId, studentId, attemptNumber)
                 .ifPresent(result -> {
                     result.setStatus(GradingStatus.SYSTEM_ERROR);
+                    result.setLastGradedAt(TimeUtils.now());
                     examResultRepository.save(result);
                     log.error("Đã đánh dấu kết quả thi là SYSTEM_ERROR: exam={}, student={}, attempt={}", examId,
                             studentId, attemptNumber);
@@ -624,6 +625,7 @@ public class GradeExamUsecase {
             existingResult.setTotalQuestions(totalQuestions);
             existingResult.setCorrectCount(correctCount);
             existingResult.setStatus(GradingStatus.COMPLETED);
+            existingResult.setLastGradedAt(TimeUtils.now());
             examResultRepository.save(existingResult);
 
             // Collect results as a generic structure for notification
@@ -681,16 +683,56 @@ public class GradeExamUsecase {
                     examId, exam.getTitle(), teacherIds, studentId, studentName, totalScore, maxScore);
 
         } catch (Exception e) {
+            if (isRetryableInfrastructureFailure(e)) {
+                log.warn("Lỗi hạ tầng có thể retry khi chấm bài: exam={}, student={}, attempt={}: {}",
+                        examId, studentId, attemptNumber, e.getMessage(), e);
+                if (e instanceof RuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new RuntimeException(e);
+            }
+
             log.error("Chấm bài thất bại: exam={}, student={}, attempt={}: {}",
                     examId, studentId, attemptNumber, e.getMessage(), e);
 
             // Mark result as FAILED
             existingResult.setStatus(GradingStatus.FAILED);
+            existingResult.setLastGradedAt(TimeUtils.now());
             examResultRepository.save(existingResult);
 
             // Notify student about failure
             gradingNotificationService.notifyGradingFailed(examId, studentId, e.getMessage());
         }
+    }
+
+    private boolean isRetryableInfrastructureFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage() == null
+                    ? ""
+                    : current.getMessage().toLowerCase(Locale.ROOT);
+            if (className.contains("CannotAcquireLockException")
+                    || className.contains("CannotCreateTransactionException")
+                    || className.contains("CannotGetJdbcConnectionException")
+                    || className.contains("DataAccessResourceFailureException")
+                    || className.contains("TransientDataAccess")
+                    || className.contains("SQLTransient")
+                    || message.contains("deadlocked")
+                    || message.contains("deadlock victim")
+                    || message.contains("connection is not available")
+                    || message.contains("could not obtain jdbc connection")
+                    || message.contains("unable to acquire jdbc connection")
+                    || message.contains("transport-level error")
+                    || message.contains("connection reset")
+                    || message.contains("connection is closed")
+                    || message.contains("rerun the transaction")
+                    || message.contains("lock request time out")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private List<Long> resolveTeacherIds(Exam exam) {

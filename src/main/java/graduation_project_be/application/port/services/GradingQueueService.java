@@ -14,6 +14,18 @@ public interface GradingQueueService {
     void enqueue(Long examId, Long studentId, int attemptNumber);
 
     /**
+     * Enqueue a recovery job only when the same exam/student/attempt is not already
+     * queued or being processed. Implementations may clear an old DLQ entry before
+     * re-enqueueing.
+     *
+     * @return true when a job was enqueued, false when an active job already exists
+     */
+    default boolean enqueueRecovery(Long examId, Long studentId, int attemptNumber) {
+        enqueue(examId, studentId, attemptNumber);
+        return true;
+    }
+
+    /**
      * Dequeue the next grading job from the queue and move to processing area.
      * Returns null if the queue is empty.
      */

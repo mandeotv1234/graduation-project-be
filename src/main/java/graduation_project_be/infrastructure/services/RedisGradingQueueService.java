@@ -38,6 +38,25 @@ public class RedisGradingQueueService implements GradingQueueService {
             "end " +
             "return staleItems";
 
+    private static final String ENQUEUE_RECOVERY_SCRIPT =
+            "local prefix = ARGV[1] " +
+            "local value = ARGV[2] " +
+            "local prefixLen = string.len(prefix) " +
+            "local queued = redis.call('LRANGE', KEYS[1], 0, -1) " +
+            "for i, item in ipairs(queued) do " +
+            "    if string.sub(item, 1, prefixLen) == prefix then return 0 end " +
+            "end " +
+            "local processing = redis.call('ZRANGE', KEYS[2], 0, -1) " +
+            "for i, item in ipairs(processing) do " +
+            "    if string.sub(item, 1, prefixLen) == prefix then return 0 end " +
+            "end " +
+            "local dlq = redis.call('LRANGE', KEYS[3], 0, -1) " +
+            "for i, item in ipairs(dlq) do " +
+            "    if string.sub(item, 1, prefixLen) == prefix then redis.call('LREM', KEYS[3], 0, item) end " +
+            "end " +
+            "redis.call('RPUSH', KEYS[1], value) " +
+            "return 1";
+
     private final RedisTemplate<String, String> redisTemplate;
 
     @Override
@@ -46,6 +65,23 @@ public class RedisGradingQueueService implements GradingQueueService {
         String value = job.toRedisValue();
         redisTemplate.opsForList().rightPush(QUEUE_KEY, value);
         log.info("Enqueued grading job: {}", value);
+    }
+
+    @Override
+    public boolean enqueueRecovery(Long examId, Long studentId, int attemptNumber) {
+        GradingJob job = new GradingJob(examId, studentId, attemptNumber, 0);
+        String value = job.toRedisValue();
+        String prefix = examId + ":" + studentId + ":" + attemptNumber + ":";
+
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>(ENQUEUE_RECOVERY_SCRIPT, Long.class);
+        Long result = redisTemplate.execute(script, List.of(QUEUE_KEY, PROCESSING_KEY, DLQ_KEY), prefix, value);
+        boolean enqueued = result != null && result == 1L;
+        if (enqueued) {
+            log.warn("Recovery enqueued grading job: {}", value);
+        } else {
+            log.debug("Recovery skipped existing grading job: {}", value);
+        }
+        return enqueued;
     }
 
     @Override

@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 public class MsSqlExamSchemaService implements ExamSchemaService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ReentrantLock schemaDdlLock = new ReentrantLock(true);
 
     /**
      * Maximum time (in seconds) a student SQL query is allowed to run.
@@ -54,6 +56,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     private void ensureSchemaAndUser(String schemaName) {
         String userName = schemaName + "_user";
 
+        schemaDdlLock.lock();
         try {
             // 1. Create schema if not exists
             String createSchema = String.format(
@@ -85,6 +88,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         } catch (Exception e) {
             log.error("Không thể tạo schema/user cho {}", schemaName, e);
             throw new RuntimeException("Không thể chuẩn bị schema bài thi: " + e.getMessage(), e);
+        } finally {
+            schemaDdlLock.unlock();
         }
     }
 
@@ -92,6 +97,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     public void resetSchema(String schemaName, boolean keepTables) {
         String userName = schemaName + "_user";
 
+        schemaDdlLock.lock();
         try {
             // Multi-dataset grading may call reset before any executeSql call.
             // Ensure schema + user exist before impersonating with EXECUTE AS USER.
@@ -188,6 +194,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         } catch (Exception e) {
             log.error("Không thể reset schema {}: {}", schemaName, e.getMessage());
             throw new RuntimeException("Không thể reset schema: " + e.getMessage(), e);
+        } finally {
+            schemaDdlLock.unlock();
         }
     }
 
@@ -195,6 +203,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     public void dropSchema(String schemaName) {
         String userName = schemaName + "_user";
 
+        schemaDdlLock.lock();
         try {
             // First reset all objects inside the schema
             resetSchema(schemaName, false);
@@ -218,6 +227,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         } catch (Exception e) {
             log.error("Không thể xóa schema {}: {}", schemaName, e.getMessage());
             throw new RuntimeException("Không thể xóa schema: " + e.getMessage(), e);
+        } finally {
+            schemaDdlLock.unlock();
         }
     }
 
@@ -244,6 +255,7 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         String userName = schemaName + "_user";
         ensureSchemaAndUser(schemaName);
 
+        schemaDdlLock.lock();
         try {
             jdbcTemplate.execute((Connection conn) -> {
                 try (Statement stmt = conn.createStatement()) {
@@ -282,6 +294,8 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
         } catch (Exception e) {
             log.error("Không thể nạp template vào schema: {}", schemaName, e);
             throw new RuntimeException("Không thể nạp template vào schema: " + e.getMessage(), e);
+        } finally {
+            schemaDdlLock.unlock();
         }
     }
 

@@ -37,7 +37,7 @@ public class RegradeExamUsecase {
         if (!result.getExamId().equals(examId)) {
             throw new BadRequestException("Result does not belong to exam " + examId);
         }
-        if (result.getStatus() != GradingStatus.COMPLETED) {
+        if (!isRegradableStatus(result.getStatus())) {
             throw new BadRequestException("Cannot re-grade: result status is " + result.getStatus());
         }
 
@@ -62,6 +62,7 @@ public class RegradeExamUsecase {
             submission.setIsCorrect(null);
             submission.setErrorMessage(null);
             submission.setExecutionTimeMs(null);
+            submission.setGradingTraceJson(null);
             submission.setGradingType(GradingType.AUTO);
             submission.setGradedBy(null);
             submission.setGradedAt(null);
@@ -71,7 +72,10 @@ public class RegradeExamUsecase {
 
         // 4. Reset result to PENDING
         result.setStatus(GradingStatus.PENDING);
+        result.setTotalScore(BigDecimal.ZERO);
+        result.setCorrectCount(0);
         result.setGradingType(GradingType.AUTO);
+        result.setLastGradedAt(null);
         examResultRepository.save(result);
 
         // 5. Enqueue grading job AFTER DB commit to avoid stale data if rollback
@@ -87,5 +91,11 @@ public class RegradeExamUsecase {
         });
 
         return new RegradeExamResponse("Re-grading started", previousScores);
+    }
+
+    private boolean isRegradableStatus(GradingStatus status) {
+        return status == GradingStatus.COMPLETED
+                || status == GradingStatus.FAILED
+                || status == GradingStatus.SYSTEM_ERROR;
     }
 }

@@ -48,6 +48,7 @@ public class GetExamResultsUsecase {
             User student = studentMap.get(result.getStudentId());
             return new GetExamResultsResponse(
                     result.getId(),
+                    result.getId(),
                     result.getStudentId(),
                     student != null ? student.getFullName() : "Unknown",
                     student != null ? student.getEmail() : "Unknown",

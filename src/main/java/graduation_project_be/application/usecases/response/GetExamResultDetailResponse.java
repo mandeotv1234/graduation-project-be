@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record GetExamResultDetailResponse(
+    Long resultId,
     Long submissionId,
     Long studentId,
     String studentName,

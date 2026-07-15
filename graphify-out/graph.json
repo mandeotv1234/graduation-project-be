@@ -936,7 +936,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1209",
       "id": "graduation_project_be_api_specification_properties_orderindex",
-      "community": 72,
+      "community": 73,
       "norm_label": "orderindex"
     },
     {
@@ -945,7 +945,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1210",
       "id": "graduation_project_be_api_specification_orderindex_type",
-      "community": 72,
+      "community": 73,
       "norm_label": "type"
     },
     {
@@ -954,7 +954,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1211",
       "id": "graduation_project_be_api_specification_orderindex_description",
-      "community": 72,
+      "community": 73,
       "norm_label": "description"
     },
     {
@@ -1197,7 +1197,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1262",
       "id": "graduation_project_be_api_specification_schemas_answeritemdto",
-      "community": 142,
+      "community": 119,
       "norm_label": "answeritemdto"
     },
     {
@@ -1206,7 +1206,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1263",
       "id": "graduation_project_be_api_specification_answeritemdto_type",
-      "community": 142,
+      "community": 119,
       "norm_label": "type"
     },
     {
@@ -1215,7 +1215,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1264",
       "id": "graduation_project_be_api_specification_answeritemdto_required",
-      "community": 142,
+      "community": 119,
       "norm_label": "required"
     },
     {
@@ -1224,7 +1224,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1268",
       "id": "graduation_project_be_api_specification_answeritemdto_properties",
-      "community": 142,
+      "community": 72,
       "norm_label": "properties"
     },
     {
@@ -1233,7 +1233,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1269",
       "id": "graduation_project_be_api_specification_properties_questionid",
-      "community": 142,
+      "community": 72,
       "norm_label": "questionid"
     },
     {
@@ -1242,7 +1242,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1270",
       "id": "graduation_project_be_api_specification_questionid_type",
-      "community": 142,
+      "community": 72,
       "norm_label": "type"
     },
     {
@@ -1251,7 +1251,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1271",
       "id": "graduation_project_be_api_specification_questionid_format",
-      "community": 142,
+      "community": 72,
       "norm_label": "format"
     },
     {
@@ -1260,7 +1260,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1272",
       "id": "graduation_project_be_api_specification_questionid_description",
-      "community": 142,
+      "community": 72,
       "norm_label": "description"
     },
     {
@@ -1269,7 +1269,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1274",
       "id": "graduation_project_be_api_specification_properties_studentquery",
-      "community": 142,
+      "community": 72,
       "norm_label": "studentquery"
     },
     {
@@ -1278,7 +1278,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1275",
       "id": "graduation_project_be_api_specification_studentquery_type",
-      "community": 142,
+      "community": 72,
       "norm_label": "type"
     },
     {
@@ -1287,7 +1287,7 @@
       "source_file": "api-specification.json",
       "source_location": "L1276",
       "id": "graduation_project_be_api_specification_studentquery_description",
-      "community": 142,
+      "community": 72,
       "norm_label": "description"
     },
     {
@@ -11427,7 +11427,7 @@
       "label": "fromResponse()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultsResponseDto.java",
-      "source_location": "L22",
+      "source_location": "L23",
       "id": "response_getexamresultsresponsedto_fromresponse",
       "community": 315,
       "norm_label": "fromresponse()"
@@ -11436,7 +11436,7 @@
       "label": "GetExamResultsResponse",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultsResponseDto.java",
-      "source_location": "L22",
+      "source_location": "L23",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultsresponsedto_java_getexamresultsresponse",
       "community": 315,
       "norm_label": "getexamresultsresponse"
@@ -11445,7 +11445,7 @@
       "label": "GetExamResultsResponseDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultsResponseDto.java",
-      "source_location": "L22",
+      "source_location": "L23",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultsresponsedto_java_getexamresultsresponsedto",
       "community": 315,
       "norm_label": "getexamresultsresponsedto"
@@ -12543,7 +12543,7 @@
       "label": "fromResponse()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L28",
+      "source_location": "L29",
       "id": "response_getexamresultdetailresponsedto_fromresponse",
       "community": 110,
       "norm_label": "fromresponse()"
@@ -12552,7 +12552,7 @@
       "label": "GetExamResultDetailResponse",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L28",
+      "source_location": "L29",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultdetailresponsedto_java_getexamresultdetailresponse",
       "community": 110,
       "norm_label": "getexamresultdetailresponse"
@@ -12561,7 +12561,7 @@
       "label": "GetExamResultDetailResponseDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L28",
+      "source_location": "L29",
       "id": "getexamresultdetailresponsedto",
       "community": 110,
       "norm_label": "getexamresultdetailresponsedto"
@@ -12570,7 +12570,7 @@
       "label": "QuestionResultDetail",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L69",
+      "source_location": "L71",
       "id": "questionresultdetail",
       "community": 110,
       "norm_label": "questionresultdetail"
@@ -12579,7 +12579,7 @@
       "label": "QuestionResultDetailDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L69",
+      "source_location": "L71",
       "id": "questionresultdetaildto",
       "community": 110,
       "norm_label": "questionresultdetaildto"
@@ -12588,7 +12588,7 @@
       "label": "TestCaseResultDetail",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L95",
+      "source_location": "L97",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultdetailresponsedto_java_testcaseresultdetail",
       "community": 110,
       "norm_label": "testcaseresultdetail"
@@ -12597,7 +12597,7 @@
       "label": "TestCaseResultDetailDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L95",
+      "source_location": "L97",
       "id": "testcaseresultdetaildto",
       "community": 110,
       "norm_label": "testcaseresultdetaildto"
@@ -12606,7 +12606,7 @@
       "label": "fromDomain()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L116",
+      "source_location": "L118",
       "id": "response_getexamresultdetailresponsedto_fromdomain",
       "community": 110,
       "norm_label": "fromdomain()"
@@ -12615,7 +12615,7 @@
       "label": "GradingTrace",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L116",
+      "source_location": "L118",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultdetailresponsedto_java_gradingtrace",
       "community": 110,
       "norm_label": "gradingtrace"
@@ -12624,7 +12624,7 @@
       "label": "GradingTraceDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L116",
+      "source_location": "L118",
       "id": "gradingtracedto",
       "community": 110,
       "norm_label": "gradingtracedto"
@@ -12633,7 +12633,7 @@
       "label": "GradingTraceItem",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L151",
+      "source_location": "L153",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_response_getexamresultdetailresponsedto_java_gradingtraceitem",
       "community": 110,
       "norm_label": "gradingtraceitem"
@@ -12642,7 +12642,7 @@
       "label": "GradingTraceItemDto",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/response/GetExamResultDetailResponseDto.java",
-      "source_location": "L151",
+      "source_location": "L153",
       "id": "gradingtraceitemdto",
       "community": 110,
       "norm_label": "gradingtraceitemdto"
@@ -14345,7 +14345,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/GoogleLoginRequestDto.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_request_googleloginrequestdto_java",
-      "community": 553,
+      "community": 28,
       "norm_label": "googleloginrequestdto.java"
     },
     {
@@ -14354,7 +14354,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/GoogleLoginRequestDto.java",
       "source_location": "L15",
       "id": "request_googleloginrequestdto_torequest",
-      "community": 553,
+      "community": 28,
       "norm_label": "torequest()"
     },
     {
@@ -14363,7 +14363,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/GoogleLoginRequestDto.java",
       "source_location": "L15",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_request_googleloginrequestdto_java_googleloginrequest",
-      "community": 553,
+      "community": 28,
       "norm_label": "googleloginrequest"
     },
     {
@@ -15461,7 +15461,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/ExamSettingsDto.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_request_examsettingsdto_java",
-      "community": 569,
+      "community": 28,
       "norm_label": "examsettingsdto.java"
     },
     {
@@ -15470,7 +15470,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/ExamSettingsDto.java",
       "source_location": "L23",
       "id": "request_examsettingsdto_tomodel",
-      "community": 569,
+      "community": 28,
       "norm_label": "tomodel()"
     },
     {
@@ -15479,7 +15479,7 @@
       "source_file": "src/main/java/graduation_project_be/adapter/web/api/dtos/request/ExamSettingsDto.java",
       "source_location": "L23",
       "id": "src_main_java_graduation_project_be_adapter_web_api_dtos_request_examsettingsdto_java_examsettings",
-      "community": 569,
+      "community": 28,
       "norm_label": "examsettings"
     },
     {
@@ -19952,7 +19952,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L98",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_generategradingrubric",
-      "community": 61,
+      "community": 98,
       "norm_label": ".generategradingrubric()"
     },
     {
@@ -19961,7 +19961,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L98",
       "id": "src_main_java_graduation_project_be_application_usecases_rubrictestingusecase_java_generategradingrubricrequest",
-      "community": 61,
+      "community": 98,
       "norm_label": "generategradingrubricrequest"
     },
     {
@@ -20420,7 +20420,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L1188",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_buildpriorquestioncontext",
-      "community": 61,
+      "community": 98,
       "norm_label": ".buildpriorquestioncontext()"
     },
     {
@@ -20429,7 +20429,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L1188",
       "id": "contextquery",
-      "community": 61,
+      "community": 98,
       "norm_label": "contextquery"
     },
     {
@@ -20447,7 +20447,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L1241",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_testgradeinsert",
-      "community": 61,
+      "community": 43,
       "norm_label": ".testgradeinsert()"
     },
     {
@@ -20456,7 +20456,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L1241",
       "id": "src_main_java_graduation_project_be_application_usecases_rubrictestingusecase_java_testgradeinsertrequest",
-      "community": 61,
+      "community": 43,
       "norm_label": "testgradeinsertrequest"
     },
     {
@@ -20978,7 +20978,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L3304",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_resolveinsertpayload",
-      "community": 61,
+      "community": 43,
       "norm_label": ".resolveinsertpayload()"
     },
     {
@@ -21059,7 +21059,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L3400",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_appendinserterrordetails",
-      "community": 51,
+      "community": 98,
       "norm_label": ".appendinserterrordetails()"
     },
     {
@@ -21095,7 +21095,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L3542",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_parseintegersafe",
-      "community": 43,
+      "community": 98,
       "norm_label": ".parseintegersafe()"
     },
     {
@@ -21104,7 +21104,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/RubricTestingUsecase.java",
       "source_location": "L3553",
       "id": "usecases_rubrictestingusecase_rubrictestingusecase_parsedoublesafe",
-      "community": 61,
+      "community": 98,
       "norm_label": ".parsedoublesafe()"
     },
     {
@@ -24180,7 +24180,7 @@
       "label": ".parseGradingTrace()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L105",
+      "source_location": "L106",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_parsegradingtrace",
       "community": 77,
       "norm_label": ".parsegradingtrace()"
@@ -24189,7 +24189,7 @@
       "label": "String",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L105",
+      "source_location": "L106",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_string",
       "community": 77,
       "norm_label": "string"
@@ -24198,7 +24198,7 @@
       "label": "GradingTrace",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L105",
+      "source_location": "L106",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_gradingtrace",
       "community": 77,
       "norm_label": "gradingtrace"
@@ -24207,7 +24207,7 @@
       "label": ".resolveTeacherName()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L115",
+      "source_location": "L116",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_resolveteachername",
       "community": 77,
       "norm_label": ".resolveteachername()"
@@ -24216,7 +24216,7 @@
       "label": "Map",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L115",
+      "source_location": "L116",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_map",
       "community": 77,
       "norm_label": "map"
@@ -24225,7 +24225,7 @@
       "label": ".buildStoredProcedureTestCaseResults()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L124",
+      "source_location": "L125",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_buildstoredproceduretestcaseresults",
       "community": 77,
       "norm_label": ".buildstoredproceduretestcaseresults()"
@@ -24234,7 +24234,7 @@
       "label": "ExamQuestion",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L124",
+      "source_location": "L125",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_examquestion",
       "community": 77,
       "norm_label": "examquestion"
@@ -24243,7 +24243,7 @@
       "label": "ExamSubmission",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L124",
+      "source_location": "L125",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_examsubmission",
       "community": 77,
       "norm_label": "examsubmission"
@@ -24252,7 +24252,7 @@
       "label": "List",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L124",
+      "source_location": "L125",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_list",
       "community": 77,
       "norm_label": "list"
@@ -24261,7 +24261,7 @@
       "label": "TestCaseResultDetail",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L124",
+      "source_location": "L125",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_testcaseresultdetail",
       "community": 77,
       "norm_label": "testcaseresultdetail"
@@ -24270,7 +24270,7 @@
       "label": ".extractCaseFailureMessages()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L172",
+      "source_location": "L173",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_extractcasefailuremessages",
       "community": 77,
       "norm_label": ".extractcasefailuremessages()"
@@ -24279,7 +24279,7 @@
       "label": "TestCase",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L172",
+      "source_location": "L173",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultdetailusecase_java_testcase",
       "community": 77,
       "norm_label": "testcase"
@@ -24288,7 +24288,7 @@
       "label": ".resolveCaseName()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L199",
+      "source_location": "L200",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_resolvecasename",
       "community": 77,
       "norm_label": ".resolvecasename()"
@@ -24297,7 +24297,7 @@
       "label": ".cleanFailureMessage()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultDetailUsecase.java",
-      "source_location": "L207",
+      "source_location": "L208",
       "id": "usecases_getexamresultdetailusecase_getexamresultdetailusecase_cleanfailuremessage",
       "community": 77,
       "norm_label": ".cleanfailuremessage()"
@@ -28086,7 +28086,7 @@
       "label": ".buildStudentWhiteboxTrace()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L113",
+      "source_location": "L114",
       "id": "usecases_getmyresultdetailusecase_getmyresultdetailusecase_buildstudentwhiteboxtrace",
       "community": 50,
       "norm_label": ".buildstudentwhiteboxtrace()"
@@ -28095,7 +28095,7 @@
       "label": "ExamSubmission",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L113",
+      "source_location": "L114",
       "id": "src_main_java_graduation_project_be_application_usecases_getmyresultdetailusecase_java_examsubmission",
       "community": 50,
       "norm_label": "examsubmission"
@@ -28104,7 +28104,7 @@
       "label": "GradingTrace",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L113",
+      "source_location": "L114",
       "id": "src_main_java_graduation_project_be_application_usecases_getmyresultdetailusecase_java_gradingtrace",
       "community": 50,
       "norm_label": "gradingtrace"
@@ -28113,7 +28113,7 @@
       "label": ".resolveTeacherName()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L133",
+      "source_location": "L134",
       "id": "usecases_getmyresultdetailusecase_getmyresultdetailusecase_resolveteachername",
       "community": 50,
       "norm_label": ".resolveteachername()"
@@ -28122,7 +28122,7 @@
       "label": "Long",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L133",
+      "source_location": "L134",
       "id": "src_main_java_graduation_project_be_application_usecases_getmyresultdetailusecase_java_long",
       "community": 50,
       "norm_label": "long"
@@ -28131,7 +28131,7 @@
       "label": "Map",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L133",
+      "source_location": "L134",
       "id": "src_main_java_graduation_project_be_application_usecases_getmyresultdetailusecase_java_map",
       "community": 50,
       "norm_label": "map"
@@ -28140,7 +28140,7 @@
       "label": "String",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetMyResultDetailUsecase.java",
-      "source_location": "L133",
+      "source_location": "L134",
       "id": "src_main_java_graduation_project_be_application_usecases_getmyresultdetailusecase_java_string",
       "community": 50,
       "norm_label": "string"
@@ -28644,7 +28644,7 @@
       "label": ".applyFilters()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultsUsecase.java",
-      "source_location": "L83",
+      "source_location": "L84",
       "id": "usecases_getexamresultsusecase_getexamresultsusecase_applyfilters",
       "community": 146,
       "norm_label": ".applyfilters()"
@@ -28653,7 +28653,7 @@
       "label": ".applyEncounterMode()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultsUsecase.java",
-      "source_location": "L119",
+      "source_location": "L120",
       "id": "usecases_getexamresultsusecase_getexamresultsusecase_applyencountermode",
       "community": 146,
       "norm_label": ".applyencountermode()"
@@ -28662,7 +28662,7 @@
       "label": "String",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultsUsecase.java",
-      "source_location": "L119",
+      "source_location": "L120",
       "id": "src_main_java_graduation_project_be_application_usecases_getexamresultsusecase_java_string",
       "community": 146,
       "norm_label": "string"
@@ -28671,7 +28671,7 @@
       "label": ".groupAndSortByStudent()",
       "file_type": "code",
       "source_file": "src/main/java/graduation_project_be/application/usecases/GetExamResultsUsecase.java",
-      "source_location": "L150",
+      "source_location": "L151",
       "id": "usecases_getexamresultsusecase_getexamresultsusecase_groupandsortbystudent",
       "community": 146,
       "norm_label": ".groupandsortbystudent()"
@@ -37421,7 +37421,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/response/LoginResponse.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_application_usecases_response_loginresponse_java",
-      "community": 28,
+      "community": 553,
       "norm_label": "loginresponse.java"
     },
     {
@@ -37430,7 +37430,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/response/LoginResponse.java",
       "source_location": "L17",
       "id": "response_loginresponse_frommodel",
-      "community": 28,
+      "community": 553,
       "norm_label": "frommodel()"
     },
     {
@@ -37439,7 +37439,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/response/LoginResponse.java",
       "source_location": "L17",
       "id": "src_main_java_graduation_project_be_application_usecases_response_loginresponse_java_token",
-      "community": 28,
+      "community": 553,
       "norm_label": "token"
     },
     {
@@ -37448,7 +37448,7 @@
       "source_file": "src/main/java/graduation_project_be/application/usecases/response/LoginResponse.java",
       "source_location": "L17",
       "id": "src_main_java_graduation_project_be_application_usecases_response_loginresponse_java_loginresponse",
-      "community": 28,
+      "community": 553,
       "norm_label": "loginresponse"
     },
     {
@@ -47096,7 +47096,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamTemplateEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examtemplateentity_java",
-      "community": 514,
+      "community": 28,
       "norm_label": "examtemplateentity.java"
     },
     {
@@ -47105,7 +47105,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamTemplateEntity.java",
       "source_location": "L19",
       "id": "entities_examtemplateentity_examtemplateentity",
-      "community": 514,
+      "community": 28,
       "norm_label": "examtemplateentity"
     },
     {
@@ -47114,7 +47114,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamTemplateEntity.java",
       "source_location": "L56",
       "id": "entities_examtemplateentity_examtemplateentity_tomodel",
-      "community": 514,
+      "community": 28,
       "norm_label": ".tomodel()"
     },
     {
@@ -47123,7 +47123,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamTemplateEntity.java",
       "source_location": "L56",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examtemplateentity_java_examtemplate",
-      "community": 514,
+      "community": 28,
       "norm_label": "examtemplate"
     },
     {
@@ -47132,7 +47132,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamTemplateEntity.java",
       "source_location": "L70",
       "id": "entities_examtemplateentity_examtemplateentity_frommodel",
-      "community": 514,
+      "community": 28,
       "norm_label": ".frommodel()"
     },
     {
@@ -47186,7 +47186,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_classentity_java",
-      "community": 284,
+      "community": 28,
       "norm_label": "classentity.java"
     },
     {
@@ -47195,7 +47195,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEntity.java",
       "source_location": "L12",
       "id": "entities_classentity_classentity",
-      "community": 284,
+      "community": 28,
       "norm_label": "classentity"
     },
     {
@@ -47204,7 +47204,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEntity.java",
       "source_location": "L38",
       "id": "entities_classentity_classentity_tomodel",
-      "community": 284,
+      "community": 28,
       "norm_label": ".tomodel()"
     },
     {
@@ -47213,7 +47213,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEntity.java",
       "source_location": "L38",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_classentity_java_class",
-      "community": 284,
+      "community": 28,
       "norm_label": "class"
     },
     {
@@ -47222,7 +47222,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEntity.java",
       "source_location": "L49",
       "id": "entities_classentity_classentity_frommodel",
-      "community": 284,
+      "community": 28,
       "norm_label": ".frommodel()"
     },
     {
@@ -47492,7 +47492,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSettingsJson.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examsettingsjson_java",
-      "community": 28,
+      "community": 331,
       "norm_label": "examsettingsjson.java"
     },
     {
@@ -47501,7 +47501,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSettingsJson.java",
       "source_location": "L11",
       "id": "entities_examsettingsjson_examsettingsjson",
-      "community": 28,
+      "community": 331,
       "norm_label": "examsettingsjson"
     },
     {
@@ -47510,7 +47510,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSettingsJson.java",
       "source_location": "L36",
       "id": "entities_examsettingsjson_examsettingsjson_tomodel",
-      "community": 28,
+      "community": 331,
       "norm_label": ".tomodel()"
     },
     {
@@ -47519,7 +47519,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSettingsJson.java",
       "source_location": "L36",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examsettingsjson_java_examsettings",
-      "community": 28,
+      "community": 331,
       "norm_label": "examsettings"
     },
     {
@@ -47528,7 +47528,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSettingsJson.java",
       "source_location": "L57",
       "id": "entities_examsettingsjson_examsettingsjson_frommodel",
-      "community": 28,
+      "community": 331,
       "norm_label": ".frommodel()"
     },
     {
@@ -47537,7 +47537,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEnrollmentEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_classenrollmententity_java",
-      "community": 28,
+      "community": 142,
       "norm_label": "classenrollmententity.java"
     },
     {
@@ -47546,7 +47546,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEnrollmentEntity.java",
       "source_location": "L12",
       "id": "entities_classenrollmententity_classenrollmententity",
-      "community": 28,
+      "community": 142,
       "norm_label": "classenrollmententity"
     },
     {
@@ -47555,7 +47555,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEnrollmentEntity.java",
       "source_location": "L32",
       "id": "entities_classenrollmententity_classenrollmententity_tomodel",
-      "community": 28,
+      "community": 142,
       "norm_label": ".tomodel()"
     },
     {
@@ -47564,7 +47564,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEnrollmentEntity.java",
       "source_location": "L32",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_classenrollmententity_java_classenrollment",
-      "community": 28,
+      "community": 142,
       "norm_label": "classenrollment"
     },
     {
@@ -47573,7 +47573,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ClassEnrollmentEntity.java",
       "source_location": "L40",
       "id": "entities_classenrollmententity_classenrollmententity_frommodel",
-      "community": 28,
+      "community": 142,
       "norm_label": ".frommodel()"
     },
     {
@@ -47816,7 +47816,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSubmissionEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examsubmissionentity_java",
-      "community": 331,
+      "community": 28,
       "norm_label": "examsubmissionentity.java"
     },
     {
@@ -47825,7 +47825,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSubmissionEntity.java",
       "source_location": "L15",
       "id": "entities_examsubmissionentity_examsubmissionentity",
-      "community": 331,
+      "community": 28,
       "norm_label": "examsubmissionentity"
     },
     {
@@ -47834,7 +47834,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSubmissionEntity.java",
       "source_location": "L81",
       "id": "entities_examsubmissionentity_examsubmissionentity_tomodel",
-      "community": 331,
+      "community": 28,
       "norm_label": ".tomodel()"
     },
     {
@@ -47843,7 +47843,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSubmissionEntity.java",
       "source_location": "L81",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examsubmissionentity_java_examsubmission",
-      "community": 331,
+      "community": 28,
       "norm_label": "examsubmission"
     },
     {
@@ -47852,7 +47852,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSubmissionEntity.java",
       "source_location": "L104",
       "id": "entities_examsubmissionentity_examsubmissionentity_frommodel",
-      "community": 331,
+      "community": 28,
       "norm_label": ".frommodel()"
     },
     {
@@ -47933,7 +47933,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSpecificationEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examspecificationentity_java",
-      "community": 28,
+      "community": 514,
       "norm_label": "examspecificationentity.java"
     },
     {
@@ -47942,7 +47942,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSpecificationEntity.java",
       "source_location": "L13",
       "id": "entities_examspecificationentity_examspecificationentity",
-      "community": 28,
+      "community": 514,
       "norm_label": "examspecificationentity"
     },
     {
@@ -47951,7 +47951,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSpecificationEntity.java",
       "source_location": "L57",
       "id": "entities_examspecificationentity_examspecificationentity_tomodel",
-      "community": 28,
+      "community": 514,
       "norm_label": ".tomodel()"
     },
     {
@@ -47960,7 +47960,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSpecificationEntity.java",
       "source_location": "L57",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examspecificationentity_java_examspecification",
-      "community": 28,
+      "community": 514,
       "norm_label": "examspecification"
     },
     {
@@ -47969,7 +47969,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamSpecificationEntity.java",
       "source_location": "L75",
       "id": "entities_examspecificationentity_examspecificationentity_frommodel",
-      "community": 28,
+      "community": 514,
       "norm_label": ".frommodel()"
     },
     {
@@ -48077,7 +48077,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamQuestionEntity.java",
       "source_location": "L1",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examquestionentity_java",
-      "community": 28,
+      "community": 284,
       "norm_label": "examquestionentity.java"
     },
     {
@@ -48086,7 +48086,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamQuestionEntity.java",
       "source_location": "L13",
       "id": "entities_examquestionentity_examquestionentity",
-      "community": 28,
+      "community": 284,
       "norm_label": "examquestionentity"
     },
     {
@@ -48095,7 +48095,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamQuestionEntity.java",
       "source_location": "L53",
       "id": "entities_examquestionentity_examquestionentity_tomodel",
-      "community": 28,
+      "community": 284,
       "norm_label": ".tomodel()"
     },
     {
@@ -48104,7 +48104,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamQuestionEntity.java",
       "source_location": "L53",
       "id": "src_main_java_graduation_project_be_infrastructure_persistence_entities_examquestionentity_java_examquestion",
-      "community": 28,
+      "community": 284,
       "norm_label": "examquestion"
     },
     {
@@ -48113,7 +48113,7 @@
       "source_file": "src/main/java/graduation_project_be/infrastructure/persistence/entities/ExamQuestionEntity.java",
       "source_location": "L68",
       "id": "entities_examquestionentity_examquestionentity_frommodel",
-      "community": 28,
+      "community": 284,
       "norm_label": ".frommodel()"
     },
     {
@@ -64050,9 +64050,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L3",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "examresultrepository",
-      "confidence_score": 1.0
+      "target": "examresultrepository"
     },
     {
       "relation": "imports",
@@ -64061,9 +64061,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L4",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "examsubmissionrepository",
-      "confidence_score": 1.0
+      "target": "examsubmissionrepository"
     },
     {
       "relation": "imports",
@@ -64072,9 +64072,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L5",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "gradingqueueservice",
-      "confidence_score": 1.0
+      "target": "gradingqueueservice"
     },
     {
       "relation": "imports",
@@ -64083,9 +64083,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L12",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_beforeeach",
-      "confidence_score": 1.0
+      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_beforeeach"
     },
     {
       "relation": "imports",
@@ -64094,9 +64094,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L13",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_test",
-      "confidence_score": 1.0
+      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_test"
     },
     {
       "relation": "contains",
@@ -64104,9 +64104,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L28",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java",
-      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest",
-      "confidence_score": 1.0
+      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest"
     },
     {
       "relation": "method",
@@ -64114,9 +64114,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L50",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "usecases_regradeexamusecasetest_regradeexamusecasetest",
-      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest_execute_resetsresultandsubmissionbeforeenqueueingaftercommit",
-      "confidence_score": 1.0
+      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest_execute_resetsresultandsubmissionbeforeenqueueingaftercommit"
     },
     {
       "relation": "method",
@@ -64124,9 +64124,9 @@
       "source_file": "src/test/java/graduation_project_be/application/usecases/RegradeExamUsecaseTest.java",
       "source_location": "L42",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "usecases_regradeexamusecasetest_regradeexamusecasetest",
-      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest_setup",
-      "confidence_score": 1.0
+      "target": "usecases_regradeexamusecasetest_regradeexamusecasetest_setup"
     },
     {
       "relation": "references",
@@ -64135,9 +64135,9 @@
       "source_location": "L42",
       "weight": 1.0,
       "context": "attribute",
+      "confidence_score": 1.0,
       "source": "usecases_regradeexamusecasetest_regradeexamusecasetest_setup",
-      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_beforeeach",
-      "confidence_score": 1.0
+      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_beforeeach"
     },
     {
       "relation": "calls",
@@ -64168,9 +64168,9 @@
       "source_location": "L50",
       "weight": 1.0,
       "context": "attribute",
+      "confidence_score": 1.0,
       "source": "usecases_regradeexamusecasetest_regradeexamusecasetest_execute_resetsresultandsubmissionbeforeenqueueingaftercommit",
-      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_test",
-      "confidence_score": 1.0
+      "target": "src_test_java_graduation_project_be_application_usecases_regradeexamusecasetest_java_test"
     },
     {
       "relation": "calls",
@@ -232706,5 +232706,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "967e7b9ac429d3a27358c589e97b1e97ec5eed88"
+  "built_at_commit": "19fa5b037c839922648e96d82f850f40afbb2aa3"
 }

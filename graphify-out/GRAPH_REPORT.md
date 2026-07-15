@@ -1,16 +1,16 @@
 # Graph Report - graduation-project-be  (2026-07-15)
 
 ## Corpus Check
-- 707 files · ~246,602 words
+- 707 files · ~246,615 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6603 nodes · 16085 edges · 571 communities (488 shown, 83 thin omitted)
+- 6603 nodes · 16085 edges · 570 communities (488 shown, 82 thin omitted)
 - Extraction: 87% EXTRACTED · 13% INFERRED · 0% AMBIGUOUS · INFERRED: 2148 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `967e7b9a`
+- Built from commit: `19fa5b03`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -458,7 +458,6 @@
 - [[_COMMUNITY_Community 559|Community 559]]
 - [[_COMMUNITY_Community 560|Community 560]]
 - [[_COMMUNITY_Community 568|Community 568]]
-- [[_COMMUNITY_Community 569|Community 569]]
 - [[_COMMUNITY_Community 570|Community 570]]
 - [[_COMMUNITY_Community 571|Community 571]]
 - [[_COMMUNITY_Community 579|Community 579]]
@@ -490,7 +489,7 @@
 - `fromModel()` --calls--> `Role`  [INFERRED]
   src/main/java/graduation_project_be/application/usecases/response/GetCurrentUserResponse.java → src/main/java/graduation_project_be/application/usecases/ExecuteSqlUsecase.java
 
-## Communities (571 total, 83 thin omitted)
+## Communities (570 total, 82 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.12
@@ -605,8 +604,8 @@ Cohesion: 0.08
 Nodes (37): SpecificationController, CreateSpecificationRequestDto, CreateSpecificationUsecase, CreateSpecificationV2RequestDto, ExamSpecificationResponseDto, GenerateSchemaFromDdlRequestDto, GenerateSpecEntityDescriptionResponseDto, GenerateSpecEntityDescriptionUsecase (+29 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.06
-Nodes (24): CreateClassResponseDto, ClassEnrollmentEntity, ExamQuestionEntity, ExamSettingsJson, ExamSpecificationEntity, ExamViolationEntity, toRequest(), toRequest() (+16 more)
+Cohesion: 0.07
+Nodes (23): CreateClassResponseDto, ClassEntity, ExamSubmissionEntity, ExamTemplateEntity, ExamViolationEntity, toModel(), toRequest(), toRequest() (+15 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.05
@@ -658,7 +657,7 @@ Nodes (19): ClassController, of(), ok(), ResponseDto(), BannedStudentResponseDto
 
 ### Community 43 - "Community 43"
 Cohesion: 0.12
-Nodes (11): SelectExamBootstrap, ExamQuestionResponse, ExecuteSelectQueryRequest, ExecuteSelectTestCaseResponse, Long, Set, String, Throwable (+3 more)
+Nodes (12): SelectExamBootstrap, ExamQuestionResponse, ExecuteSelectQueryRequest, ExecuteSelectTestCaseResponse, Long, Set, String, TestGradeInsertRequest (+4 more)
 
 ### Community 44 - "Community 44"
 Cohesion: 0.12
@@ -729,8 +728,8 @@ Cohesion: 0.20
 Nodes (11): List, Map, String, WhiteboxCatalogEntry, WhiteboxFeature, WhiteboxFeatureKind, WhiteboxParamSpec, WhiteboxPolicy (+3 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.08
-Nodes (18): ContextQuery, RefineRubricTestCasesResponse, RubricAgentRunResponse, AppliedEdit, BigDecimal, BuildCreateTablesResponse, BuildInsertTablesResponse, GenerateGradingRubricRequest (+10 more)
+Cohesion: 0.11
+Nodes (15): RefineRubricTestCasesResponse, RubricAgentRunResponse, AppliedEdit, BigDecimal, BuildCreateTablesResponse, BuildInsertTablesResponse, RefineRubricTestCasesRequest, SelectRuleApplication (+7 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.14
@@ -773,12 +772,12 @@ Cohesion: 0.11
 Nodes (8): GeneratedQuestion, Override, PdfExtractionResult, RoutineRubricIssue, SpecAttribute, String, StudentFeedbackContext, StudentFeedbackDraft
 
 ### Community 72 - "Community 72"
-Cohesion: 0.10
-Nodes (20): nullable, type, type, type, format, type, description, type (+12 more)
+Cohesion: 0.08
+Nodes (25): properties, nullable, type, type, type, format, type, errorMessage (+17 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.10
-Nodes (20): description, type, description, type, properties, description, type, description (+12 more)
+Cohesion: 0.09
+Nodes (23): description, type, description, type, properties, description, type, description (+15 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.13
@@ -873,8 +872,8 @@ Cohesion: 0.23
 Nodes (9): CreateSchemaGraphBuilder, Boolean, ConstraintNode, CreateSchemaGraph, JsonNode, List, String, TableMetadata (+1 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.12
-Nodes (7): RoutineTestCaseGrade, StringBuilder, Double, ExamSchemaService, SqlExecutionResult, StringBuilder, RubricTestingUsecase
+Cohesion: 0.10
+Nodes (9): ContextQuery, RoutineTestCaseGrade, StringBuilder, Double, ExamSchemaService, GenerateGradingRubricRequest, SqlExecutionResult, StringBuilder (+1 more)
 
 ### Community 99 - "Community 99"
 Cohesion: 0.18
@@ -953,8 +952,8 @@ Cohesion: 0.17
 Nodes (12): description, items, type, $ref, answers, questionResults, items, type (+4 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.17
-Nodes (12): schemas, required, type, type, description, enum, type, CreateExamQuestionRequestDto (+4 more)
+Cohesion: 0.13
+Nodes (15): required, type, schemas, required, type, type, description, enum (+7 more)
 
 ### Community 120 - "Community 120"
 Cohesion: 0.17
@@ -1043,10 +1042,6 @@ Nodes (6): HeartbeatService, HeartbeatKey, HeartbeatState, List, Long, Optional
 ### Community 141 - "Community 141"
 Cohesion: 0.38
 Nodes (6): CreateTableQuestionGrader, ExamQuestion, ExamSubmission, Set, String, TableMetadata
-
-### Community 142 - "Community 142"
-Cohesion: 0.18
-Nodes (11): properties, required, type, questionId, studentQuery, description, format, type (+3 more)
 
 ### Community 143 - "Community 143"
 Cohesion: 0.20
@@ -1924,6 +1919,10 @@ Nodes (3): fromResponse(), UpdateUserRoleResponse, UpdateUserRoleResponseDto
 Cohesion: 0.20
 Nodes (12): RegradeAllScope, Exam, ExamResult, GradingStatus, Integer, List, Long, RegradeAllExamRequest (+4 more)
 
+### Community 553 - "Community 553"
+Cohesion: 0.67
+Nodes (3): fromModel(), LoginResponse, Token
+
 ### Community 555 - "Community 555"
 Cohesion: 0.29
 Nodes (8): CreateClassRequest, CreateClassResponse, List, Map, String, StudentInfo, Transactional, CreateClassUsecase
@@ -1963,7 +1962,7 @@ Nodes (3): ClassPerformanceDto, GetStudentDashboardResponse, StudentOverviewDto
 ## Knowledge Gaps
 - **969 isolated node(s):** `openapi`, `title`, `version`, `description`, `name` (+964 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **83 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **82 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_

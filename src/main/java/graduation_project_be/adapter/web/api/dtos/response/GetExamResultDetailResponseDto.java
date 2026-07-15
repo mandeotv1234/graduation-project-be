@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record GetExamResultDetailResponseDto(
+    Long resultId,
     Long submissionId,
     Long studentId,
     String studentName,
@@ -27,6 +28,7 @@ public record GetExamResultDetailResponseDto(
 ) {
     public static GetExamResultDetailResponseDto fromResponse(GetExamResultDetailResponse r) {
         return new GetExamResultDetailResponseDto(
+            r.resultId(),
             r.submissionId(),
             r.studentId(),
             r.studentName(),

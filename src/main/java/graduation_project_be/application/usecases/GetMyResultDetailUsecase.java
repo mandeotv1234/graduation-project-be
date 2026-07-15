@@ -90,6 +90,7 @@ public class GetMyResultDetailUsecase {
 
         return new GetExamResultDetailResponse(
                 result.getId(),
+                result.getId(),
                 result.getStudentId(),
                 student.getFullName(),
                 student.getEmail(),

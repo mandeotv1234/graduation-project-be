@@ -1050,6 +1050,13 @@ public class UsecasesConfiguration {
     // ===== ADMIN USER USECASES =====
 
     @Bean
+    CreateUserUsecase createUserUsecase(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder) {
+        return new CreateUserUsecase(userRepository, passwordEncoder);
+    }
+
+    @Bean
     GetUsersUsecase getUsersUsecase(UserRepository userRepository) {
         return new GetUsersUsecase(userRepository);
     }

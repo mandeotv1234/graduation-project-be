@@ -34,7 +34,7 @@ public class MicrosoftLoginUsecase {
             if (userOptional.isEmpty()) {
                 user = User.builder()
                         .email(microsoftUserInfo.email())
-                        .fullName(microsoftUserInfo.name())
+                        .fullName(normalizeProviderName(microsoftUserInfo.name()))
                         .role(Role.STUDENT)
                         .isActive(true)
                         .createdAt(TimeUtils.now())
@@ -43,8 +43,9 @@ public class MicrosoftLoginUsecase {
                 user = userRepository.save(user);
             } else {
                 user = userOptional.get();
-                if (shouldUpdateMicrosoftName(user, microsoftUserInfo.name())) {
-                    user.setFullName(microsoftUserInfo.name().trim());
+                String microsoftName = normalizeProviderName(microsoftUserInfo.name());
+                if (microsoftName != null && !microsoftName.equals(user.getFullName())) {
+                    user.setFullName(microsoftName);
                     user = userRepository.save(user);
                 }
             }
@@ -56,15 +57,7 @@ public class MicrosoftLoginUsecase {
         }
     }
 
-    private boolean shouldUpdateMicrosoftName(User user, String microsoftName) {
-        if (microsoftName == null || microsoftName.isBlank()) {
-            return false;
-        }
-        String currentName = user.getFullName();
-        if (currentName == null || currentName.isBlank()) {
-            return true;
-        }
-        String studentCode = user.getEmail() == null ? "" : user.getEmail().split("@")[0];
-        return currentName.equals(studentCode) || currentName.equals(user.getEmail());
+    private String normalizeProviderName(String providerName) {
+        return providerName == null || providerName.isBlank() ? null : providerName.trim();
     }
 }

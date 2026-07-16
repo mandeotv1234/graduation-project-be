@@ -1,19 +1,24 @@
 package graduation_project_be.adapter.web.api.controller;
 
+import graduation_project_be.adapter.web.api.dtos.request.CreateUserRequestDto;
 import graduation_project_be.adapter.web.api.dtos.request.UpdateUserRoleRequestDto;
+import graduation_project_be.adapter.web.api.dtos.response.CreateUserResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.GetUsersResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.PaginationResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.ResponseDto;
 import graduation_project_be.adapter.web.api.dtos.response.UpdateUserRoleResponseDto;
+import graduation_project_be.application.usecases.CreateUserUsecase;
 import graduation_project_be.application.usecases.GetUsersUsecase;
 import graduation_project_be.application.usecases.UpdateUserRoleUsecase;
 import graduation_project_be.application.usecases.request.GetUsersRequest;
+import graduation_project_be.application.usecases.response.CreateUserResponse;
 import graduation_project_be.application.usecases.response.GetUsersResponse;
 import graduation_project_be.application.usecases.response.PaginationResponse;
 import graduation_project_be.application.usecases.response.UpdateUserRoleResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -24,8 +29,20 @@ import org.springframework.web.bind.annotation.*;
 @Validated
 public class AdminUserController {
 
+    private final CreateUserUsecase createUserUsecase;
     private final GetUsersUsecase getUsersUsecase;
     private final UpdateUserRoleUsecase updateUserRoleUsecase;
+
+    @PostMapping
+    public ResponseEntity<ResponseDto> createUser(@RequestBody @Valid CreateUserRequestDto requestDto) {
+        CreateUserResponse response = createUserUsecase.execute(requestDto.toRequest());
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ResponseDto.of(
+                        CreateUserResponseDto.fromResponse(response),
+                        "CREATED",
+                        "User created successfully"));
+    }
 
     @GetMapping
     public ResponseEntity<PaginationResponseDto<GetUsersResponseDto>> getUsers(

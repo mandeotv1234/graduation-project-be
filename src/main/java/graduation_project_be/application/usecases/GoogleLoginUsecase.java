@@ -35,7 +35,7 @@ public class GoogleLoginUsecase {
             if (userOptional.isEmpty()) {
                 user = User.builder()
                         .email(googleUserInfo.email())
-                        .fullName(googleUserInfo.name())
+                        .fullName(normalizeProviderName(googleUserInfo.name()))
                         .googleSubject(googleUserInfo.subject())
                         .role(Role.TEACHER)
                         .isActive(true)
@@ -45,9 +45,20 @@ public class GoogleLoginUsecase {
                 user = userRepository.save(user);
             } else {
                 user = userOptional.get();
+                boolean shouldSave = false;
 
                 if (user.getGoogleSubject() == null) {
                     user.setGoogleSubject(googleUserInfo.subject());
+                    shouldSave = true;
+                }
+
+                String googleName = normalizeProviderName(googleUserInfo.name());
+                if (googleName != null && !googleName.equals(user.getFullName())) {
+                    user.setFullName(googleName);
+                    shouldSave = true;
+                }
+
+                if (shouldSave) {
                     user = userRepository.save(user);
                 }
             }
@@ -57,5 +68,9 @@ public class GoogleLoginUsecase {
         } catch (Exception e) {
             throw new UnauthorizedException("Failed to authenticate with Google: " + e.getMessage());
         }
+    }
+
+    private String normalizeProviderName(String providerName) {
+        return providerName == null || providerName.isBlank() ? null : providerName.trim();
     }
 }

@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatState;
 import graduation_project_be.application.usecases.request.RecordHeartbeatRequest;
@@ -35,6 +36,7 @@ class RecordHeartbeatUsecaseTest {
     private static final Long CLASS_ID = 10L;
 
     @Mock private HeartbeatService heartbeatService;
+    @Mock private ExamSessionService examSessionService;
     @Mock private ExamRepository examRepository;
     @Mock private CurrentUserService currentUserService;
     @Mock private ReportViolationUsecase reportViolationUsecase;
@@ -44,8 +46,8 @@ class RecordHeartbeatUsecaseTest {
 
     @BeforeEach
     void setUp() {
-        usecase = new RecordHeartbeatUsecase(heartbeatService, examRepository, currentUserService,
-                reportViolationUsecase);
+        usecase = new RecordHeartbeatUsecase(heartbeatService, examSessionService, examRepository,
+                currentUserService, reportViolationUsecase);
     }
 
     private Exam examWith(Boolean integrityEnabled) {
@@ -58,6 +60,7 @@ class RecordHeartbeatUsecaseTest {
 
     private void stubExam(Exam exam) {
         when(currentUserService.getCurrentUserId()).thenReturn(STUDENT_ID);
+        when(examSessionService.getActiveSession(EXAM_ID, STUDENT_ID)).thenReturn(Optional.of("ip|ua"));
         when(examRepository.findByIdAndIsPublished(EXAM_ID, true)).thenReturn(Optional.of(exam));
     }
 
@@ -84,6 +87,19 @@ class RecordHeartbeatUsecaseTest {
         HeartbeatState state = savedState();
         assertThat(state.tamperStreak()).isZero();
         assertThat(state.flagged()).isFalse();
+        verifyNoViolation();
+    }
+
+    @Test
+    void heartbeatWithoutActiveSession_isClearedAndIgnored() {
+        when(currentUserService.getCurrentUserId()).thenReturn(STUDENT_ID);
+        when(examSessionService.getActiveSession(EXAM_ID, STUDENT_ID)).thenReturn(Optional.empty());
+
+        usecase.execute(request(1, true));
+
+        verify(heartbeatService).clear(EXAM_ID, STUDENT_ID);
+        verify(heartbeatService, never()).save(any(), any(), any());
+        verify(examRepository, never()).findByIdAndIsPublished(any(), any());
         verifyNoViolation();
     }
 

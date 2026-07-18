@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.configurations;
 
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatKey;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatState;
@@ -15,6 +16,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +36,7 @@ class HeartbeatSweepJobTest {
     private static final Long STUDENT_ID = 2L;
 
     @Mock private HeartbeatService heartbeatService;
+    @Mock private ExamSessionService examSessionService;
     @Mock private ExamRepository examRepository;
     @Mock private ReportViolationUsecase reportViolationUsecase;
     @Captor private ArgumentCaptor<HeartbeatState> stateCaptor;
@@ -42,11 +45,13 @@ class HeartbeatSweepJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new HeartbeatSweepJob(heartbeatService, examRepository, reportViolationUsecase);
+        job = new HeartbeatSweepJob(heartbeatService, examSessionService, examRepository, reportViolationUsecase);
+        ReflectionTestUtils.setField(job, "heartbeatSweepEnabled", true);
     }
 
     private void stub(HeartbeatState state, Boolean integrityEnabled) {
         when(heartbeatService.scanActive()).thenReturn(List.of(new HeartbeatKey(EXAM_ID, STUDENT_ID)));
+        when(examSessionService.getActiveSession(EXAM_ID, STUDENT_ID)).thenReturn(Optional.of("ip|ua"));
         when(heartbeatService.get(EXAM_ID, STUDENT_ID)).thenReturn(Optional.of(state));
         Exam exam = Exam.builder()
                 .id(EXAM_ID)
@@ -66,6 +71,19 @@ class HeartbeatSweepJobTest {
         job.sweep();
 
         verify(heartbeatService, never()).save(any(), any(), any());
+        verify(reportViolationUsecase, never()).executeAsSystem(any(), any(), any(), any());
+    }
+
+    @Test
+    void heartbeatWithoutActiveSession_isClearedWithoutViolation() {
+        when(heartbeatService.scanActive()).thenReturn(List.of(new HeartbeatKey(EXAM_ID, STUDENT_ID)));
+        when(examSessionService.getActiveSession(EXAM_ID, STUDENT_ID)).thenReturn(Optional.empty());
+
+        job.sweep();
+
+        verify(heartbeatService).clear(EXAM_ID, STUDENT_ID);
+        verify(heartbeatService, never()).save(any(), any(), any());
+        verify(examRepository, never()).findByIdAndIsPublished(any(), any());
         verify(reportViolationUsecase, never()).executeAsSystem(any(), any(), any(), any());
     }
 

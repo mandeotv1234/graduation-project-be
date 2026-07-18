@@ -1,6 +1,7 @@
 package graduation_project_be.infrastructure.configurations;
 
 import graduation_project_be.application.port.repositories.ExamRepository;
+import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatKey;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatState;
@@ -31,6 +32,7 @@ import java.util.Optional;
 public class HeartbeatSweepJob {
 
     private final HeartbeatService heartbeatService;
+    private final ExamSessionService examSessionService;
     private final ExamRepository examRepository;
     private final ReportViolationUsecase reportViolationUsecase;
 
@@ -51,6 +53,11 @@ public class HeartbeatSweepJob {
             Map<Long, Exam> examCache = new HashMap<>();
 
             for (HeartbeatKey key : keys) {
+                if (!hasActiveSession(key)) {
+                    heartbeatService.clear(key.examId(), key.studentId());
+                    continue;
+                }
+
                 Optional<HeartbeatState> stateOpt = heartbeatService.get(key.examId(), key.studentId());
                 if (stateOpt.isEmpty()) continue;
                 HeartbeatState state = stateOpt.get();
@@ -70,22 +77,42 @@ public class HeartbeatSweepJob {
                         || latest.get().lastSeenEpochMs() != state.lastSeenEpochMs()) {
                     continue;
                 }
+                if (!hasActiveSession(key)) {
+                    heartbeatService.clear(key.examId(), key.studentId());
+                    continue;
+                }
                 state = latest.get();
 
                 int newStreak = state.tamperStreak() + 1;
                 if (newStreak >= RecordHeartbeatUsecase.TAMPER_STREAK_THRESHOLD && !state.flagged()) {
+                    if (!hasActiveSession(key)) {
+                        heartbeatService.clear(key.examId(), key.studentId());
+                        continue;
+                    }
                     raiseAbsence(key, ageSec);
                     // Clear instead of persisting a flagged state: stops re-scanning a gone
                     // student and avoids resurrecting a key that auto-submit may have just cleared.
                     heartbeatService.clear(key.examId(), key.studentId());
                 } else {
-                    heartbeatService.save(key.examId(), key.studentId(),
+                    saveIfSessionActive(key,
                             new HeartbeatState(state.lastSeenEpochMs(), state.lastSeq(), newStreak, state.flagged()));
                 }
             }
         } catch (Exception e) {
             log.error("Heartbeat absence sweep failed", e);
         }
+    }
+
+    private void saveIfSessionActive(HeartbeatKey key, HeartbeatState state) {
+        if (hasActiveSession(key)) {
+            heartbeatService.save(key.examId(), key.studentId(), state);
+        } else {
+            heartbeatService.clear(key.examId(), key.studentId());
+        }
+    }
+
+    private boolean hasActiveSession(HeartbeatKey key) {
+        return examSessionService.getActiveSession(key.examId(), key.studentId()).isPresent();
     }
 
     private void raiseAbsence(HeartbeatKey key, long ageSec) {

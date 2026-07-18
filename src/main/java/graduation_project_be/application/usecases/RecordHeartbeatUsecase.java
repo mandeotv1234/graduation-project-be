@@ -2,6 +2,7 @@ package graduation_project_be.application.usecases;
 
 import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
+import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.port.services.HeartbeatService.HeartbeatState;
 import graduation_project_be.application.usecases.request.RecordHeartbeatRequest;
@@ -29,6 +30,7 @@ public class RecordHeartbeatUsecase {
     private static final boolean DEFAULT_INTEGRITY_ENABLED = true;
 
     private final HeartbeatService heartbeatService;
+    private final ExamSessionService examSessionService;
     private final ExamRepository examRepository;
     private final CurrentUserService currentUserService;
     private final ReportViolationUsecase reportViolationUsecase;
@@ -36,6 +38,12 @@ public class RecordHeartbeatUsecase {
     public void execute(RecordHeartbeatRequest request) {
         Long studentId = currentUserService.getCurrentUserId();
         Long examId = request.examId();
+
+        if (!hasActiveSession(examId, studentId)) {
+            heartbeatService.clear(examId, studentId);
+            log.debug("Ignoring heartbeat without active exam session: exam={}, student={}", examId, studentId);
+            return;
+        }
 
         Exam exam = examRepository.findByIdAndIsPublished(examId, true)
                 .orElseThrow(() -> new IllegalArgumentException("Exam not found or not published"));
@@ -45,7 +53,7 @@ public class RecordHeartbeatUsecase {
 
         // Integrity detection disabled for this exam → only track liveness for the monitor.
         if (!integrityEnabled(exam)) {
-            heartbeatService.save(examId, studentId, new HeartbeatState(now, request.seq(), 0, false));
+            saveIfSessionActive(examId, studentId, new HeartbeatState(now, request.seq(), 0, false));
             return;
         }
 
@@ -58,7 +66,7 @@ public class RecordHeartbeatUsecase {
 
         if (!anomaly) {
             // Clean heartbeat → reset streak + flagged so a later tamper episode can re-raise.
-            heartbeatService.save(examId, studentId, new HeartbeatState(now, request.seq(), 0, false));
+            saveIfSessionActive(examId, studentId, new HeartbeatState(now, request.seq(), 0, false));
             return;
         }
 
@@ -66,12 +74,28 @@ public class RecordHeartbeatUsecase {
         boolean alreadyFlagged = priorOpt.map(HeartbeatState::flagged).orElse(false);
 
         if (newStreak >= TAMPER_STREAK_THRESHOLD && !alreadyFlagged) {
+            if (!hasActiveSession(examId, studentId)) {
+                heartbeatService.clear(examId, studentId);
+                return;
+            }
             raiseTamper(examId, studentId, request.failedChecks());
-            heartbeatService.save(examId, studentId, new HeartbeatState(now, request.seq(), 0, true));
+            saveIfSessionActive(examId, studentId, new HeartbeatState(now, request.seq(), 0, true));
         } else {
-            heartbeatService.save(examId, studentId,
+            saveIfSessionActive(examId, studentId,
                     new HeartbeatState(now, request.seq(), newStreak, alreadyFlagged));
         }
+    }
+
+    private void saveIfSessionActive(Long examId, Long studentId, HeartbeatState state) {
+        if (hasActiveSession(examId, studentId)) {
+            heartbeatService.save(examId, studentId, state);
+        } else {
+            heartbeatService.clear(examId, studentId);
+        }
+    }
+
+    private boolean hasActiveSession(Long examId, Long studentId) {
+        return examSessionService.getActiveSession(examId, studentId).isPresent();
     }
 
     private void raiseTamper(Long examId, Long studentId, List<String> failedChecks) {

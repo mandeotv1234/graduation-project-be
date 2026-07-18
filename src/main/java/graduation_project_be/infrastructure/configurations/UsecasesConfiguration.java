@@ -622,11 +622,12 @@ public class UsecasesConfiguration {
     @Bean
     RecordHeartbeatUsecase recordHeartbeatUsecase(
             HeartbeatService heartbeatService,
+            ExamSessionService examSessionService,
             ExamRepository examRepository,
             CurrentUserService currentUserService,
             ReportViolationUsecase reportViolationUsecase) {
         return new RecordHeartbeatUsecase(
-                heartbeatService, examRepository, currentUserService, reportViolationUsecase);
+                heartbeatService, examSessionService, examRepository, currentUserService, reportViolationUsecase);
     }
 
     @Bean

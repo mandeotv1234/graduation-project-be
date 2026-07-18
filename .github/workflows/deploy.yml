@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - fix/GRAD-224-Fix-anti-cheating-count-violations-for-BE
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

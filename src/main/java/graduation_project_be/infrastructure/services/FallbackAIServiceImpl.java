@@ -41,7 +41,7 @@ public class FallbackAIServiceImpl implements AIService {
                 "generateSqlAnswer",
                 provider -> provider.generateSqlAnswer(questionContent, questionType, schemaContext),
                 this::isValidGeneratedQuestion,
-                new GeneratedQuestion("-- AI generation failed across all providers", null));
+                new GeneratedQuestion(null, null));
     }
 
     @Override

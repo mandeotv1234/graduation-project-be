@@ -8,6 +8,8 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.repositories.ExamSpecificationRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.AIService;
+import graduation_project_be.application.port.services.PdfStorageService;
+import graduation_project_be.application.port.services.PdfTextExtractor;
 import graduation_project_be.application.usecases.request.CreateExamQuestionsRequest;
 import graduation_project_be.application.usecases.response.CreateExamQuestionsResponse;
 import graduation_project_be.domain.models.Exam;
@@ -35,6 +37,8 @@ public class CreateExamQuestionsUsecase {
     private final ExamSpecificationRepository examSpecificationRepository;
     private final CurrentUserService currentUserService;
     private final AIService aiService;
+    private final PdfStorageService pdfStorageService;
+    private final PdfTextExtractor pdfTextExtractor;
     // T09: services for the rubric+test-case pipeline (SP/Function/Trigger only)
     private final RubricToTestCaseTransformer rubricTransformer;
     private final ExpectedValueDeriver expectedValueDeriver;
@@ -51,8 +55,11 @@ public class CreateExamQuestionsUsecase {
             throw new UnauthorizedException("You do not have access to this exam");
         }
 
-        // Build schema context from specification (if exists) for better AI prompts
-        String schemaContext = buildSchemaContext(request.examId());
+        boolean requiresAi = request.questions().stream()
+                .anyMatch(item -> item.correctQuery() == null || item.correctQuery().isBlank());
+        String schemaContext = requiresAi
+                ? buildGenerationContext(exam, request.schemaContext())
+                : "";
 
         // Resolve spec once for the test-case pipeline below.
         ExamSpecification specification = exam.getSpecificationId() != null
@@ -87,6 +94,12 @@ public class CreateExamQuestionsUsecase {
                         item.content(),
                         questionType.name(),
                         schemaContext);
+
+                if (generated == null || generated.correctQuery() == null || generated.correctQuery().isBlank()) {
+                    throw new BadRequestException(String.format(
+                            "Câu %d: không thể sinh đáp án SQL. Vui lòng kiểm tra nội dung câu hỏi hoặc thử lại.",
+                            item.orderIndex() != null ? item.orderIndex() : questionsToSave.size() + 1));
+                }
 
                 if (correctQuery == null || correctQuery.isBlank()) {
                     correctQuery = generated.correctQuery();
@@ -214,10 +227,53 @@ public class CreateExamQuestionsUsecase {
                 q.getId(), q.getQuestionType(), testCases.size());
     }
 
-    private String buildSchemaContext(Long examId) {
+    private String buildGenerationContext(Exam exam, String extractedSchemaContext) {
+        String schemaContext = extractedSchemaContext != null && !extractedSchemaContext.isBlank()
+                ? extractedSchemaContext.trim()
+                : buildSchemaContext(exam);
+        String pdfText = readFullPdfText(exam);
+
+        StringBuilder context = new StringBuilder();
+        if (!schemaContext.isBlank()) {
+            context.append("=== SCHEMA TRÍCH XUẤT TỪ ĐỀ ===\n")
+                    .append(schemaContext);
+        }
+        if (!pdfText.isBlank()) {
+            if (!context.isEmpty()) {
+                context.append("\n\n");
+            }
+            context.append("=== TOÀN BỘ NỘI DUNG FILE PDF ===\n")
+                    .append(pdfText);
+        }
+
+        return context.isEmpty() ? "Không có thông tin schema hoặc nội dung PDF" : context.toString();
+    }
+
+    private String readFullPdfText(Exam exam) {
+        if (exam.getPdfFilePath() == null || exam.getPdfFilePath().isBlank()) {
+            return "";
+        }
+
         try {
-            return examRepository.findById(examId)
-                    .flatMap(exam -> examSpecificationRepository.findById(exam.getSpecificationId()))
+            byte[] pdfBytes = pdfStorageService.loadPdf(exam.getPdfFilePath());
+            String pdfText = pdfTextExtractor.extract(pdfBytes);
+            if (pdfText == null) {
+                return "";
+            }
+            log.info("Loaded full PDF text for exam {} ({} chars)", exam.getId(), pdfText.length());
+            return pdfText;
+        } catch (Exception e) {
+            log.warn("Could not read PDF text for exam {}: {}", exam.getId(), e.getMessage());
+            return "";
+        }
+    }
+
+    private String buildSchemaContext(Exam exam) {
+        try {
+            if (exam.getSpecificationId() == null) {
+                return "";
+            }
+            return examSpecificationRepository.findById(exam.getSpecificationId())
                     .map(spec -> {
                         StringBuilder sb = new StringBuilder();
                         sb.append("Database: ").append(spec.getName()).append("\n");
@@ -257,10 +313,10 @@ public class CreateExamQuestionsUsecase {
                         }
                         return sb.toString();
                     })
-                    .orElse("No schema specification available");
+                    .orElse("");
         } catch (Exception e) {
-            log.warn("Could not load schema context for exam {}: {}", examId, e.getMessage());
-            return "No schema specification available";
+            log.warn("Could not load schema context for exam {}: {}", exam.getId(), e.getMessage());
+            return "";
         }
     }
 }

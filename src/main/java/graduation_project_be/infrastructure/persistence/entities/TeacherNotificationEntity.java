@@ -27,6 +27,9 @@ public class TeacherNotificationEntity {
     @Column(name = "exam_id", nullable = false)
     private Long examId;
 
+    @Column(name = "result_id")
+    private Long resultId;
+
     @Column(name = "student_id", nullable = false)
     private Long studentId;
 
@@ -56,6 +59,7 @@ public class TeacherNotificationEntity {
                 .id(id)
                 .teacherId(teacherId)
                 .examId(examId)
+                .resultId(resultId)
                 .studentId(studentId)
                 .studentName(studentName)
                 .violationType(violationType)
@@ -72,6 +76,7 @@ public class TeacherNotificationEntity {
                 .id(model.getId())
                 .teacherId(model.getTeacherId())
                 .examId(model.getExamId())
+                .resultId(model.getResultId())
                 .studentId(model.getStudentId())
                 .studentName(model.getStudentName())
                 .violationType(model.getViolationType())

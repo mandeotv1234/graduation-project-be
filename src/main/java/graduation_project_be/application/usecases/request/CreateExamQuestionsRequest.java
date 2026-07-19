@@ -5,6 +5,7 @@ import java.util.List;
 
 public record CreateExamQuestionsRequest(
         Long examId,
+        String schemaContext,
         List<QuestionItem> questions) {
 
     public record QuestionItem(

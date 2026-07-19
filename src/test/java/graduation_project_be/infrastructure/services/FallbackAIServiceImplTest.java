@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -49,5 +50,20 @@ class FallbackAIServiceImplTest {
         providerOrder.verify(codexService).generateSqlAnswer("question", "SELECT", "schema");
         providerOrder.verify(claudeService).generateSqlAnswer("question", "SELECT", "schema");
         providerOrder.verify(openAiService).generateSqlAnswer("question", "SELECT", "schema");
+    }
+
+    @Test
+    void generateSqlAnswer_returnsEmptyResultWhenAllProvidersFail() {
+        when(codexService.generateSqlAnswer("question", "SELECT", "schema"))
+                .thenReturn(null);
+        when(claudeService.generateSqlAnswer("question", "SELECT", "schema"))
+                .thenReturn(null);
+        when(openAiService.generateSqlAnswer("question", "SELECT", "schema"))
+                .thenReturn(null);
+
+        GeneratedQuestion result = fallbackService.generateSqlAnswer("question", "SELECT", "schema");
+
+        assertNull(result.correctQuery());
+        assertNull(result.verifyScript());
     }
 }

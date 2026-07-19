@@ -20,6 +20,8 @@ import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.request.StartExamSessionRequest;
 import graduation_project_be.application.usecases.response.StartExamSessionResponse;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy.ExamDeadlines;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamDeviceConflict;
 import graduation_project_be.domain.models.ExamSpecification;
@@ -29,12 +31,12 @@ import graduation_project_be.domain.models.TeacherClass;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -80,12 +82,20 @@ public class StartExamSessionUsecase {
                             (ban.getReason() != null ? ban.getReason() : "Không có lý do"));
                 });
 
+        Optional<LocalDateTime> existingStartTime = examSessionService.getExamStartTime(
+                request.examId(), studentId);
+
         // 3. Validate exam time window
         LocalDateTime now = TimeUtils.now();
         if (exam.getStartTime() != null && now.isBefore(exam.getStartTime())) {
             throw new BadRequestException("Exam has not started yet");
         }
-        if (exam.getEndTime() != null && now.isAfter(exam.getEndTime())) {
+        boolean canResumeExistingSession = existingStartTime
+                .map(startedAt -> !ExamDeadlinePolicy.calculate(exam, startedAt).isExpired(now))
+                .orElse(false);
+        if (exam.getEndTime() != null
+                && !now.isBefore(exam.getEndTime())
+                && !canResumeExistingSession) {
             throw new BadRequestException("Exam has already ended");
         }
 
@@ -99,8 +109,7 @@ public class StartExamSessionUsecase {
         }
 
         // 5. Check existing session and IP/UA
-        Optional<LocalDateTime> existingStartTime = examSessionService.getExamStartTime(
-                request.examId(), studentId);
+        boolean hadActiveDeviceSession = examSessionService.getActiveSession(request.examId(), studentId).isPresent();
 
         boolean started = examSessionService.tryStartSession(
                 request.examId(), studentId, request.ipAddress(), request.userAgent());
@@ -154,46 +163,41 @@ public class StartExamSessionUsecase {
 
         // 6. Session started or same-device reconnect
         LocalDateTime examStartedAt;
-        if (existingStartTime.isPresent()) {
-            LocalDateTime candidateDeadline = existingStartTime.get().plusMinutes(exam.getDurationMinutes());
-            if (exam.getEndTime() != null && exam.getEndTime().isBefore(candidateDeadline)) {
-                candidateDeadline = exam.getEndTime();
-            }
-            boolean stillValid = Duration.between(now, candidateDeadline).getSeconds() > 0;
-            if (stillValid) {
-                String schemaName = buildStudentSchemaName(request.examId(), studentId, nextAttempt);
-                if (isSchemaReadyForStart(schemaName, exam)) {
-                    examStartedAt = existingStartTime.get();
+        try {
+            if (existingStartTime.isPresent()) {
+                ExamDeadlines existingDeadlines = ExamDeadlinePolicy.calculate(exam, existingStartTime.get());
+                if (!existingDeadlines.isExpired(now)) {
+                    String schemaName = buildStudentSchemaName(request.examId(), studentId, nextAttempt);
+                    if (isSchemaReadyForStart(schemaName, exam)) {
+                        examStartedAt = existingStartTime.get();
+                    } else {
+                        examStartedAt = prepareFreshAttemptAndStartClock(
+                                request.examId(), studentId, exam, nextAttempt);
+                        log.info("Đã khởi tạo lại schema trống của sinh viên khi start-session: exam={}, student={}",
+                                request.examId(), studentId);
+                    }
                 } else {
-                    examStartedAt = now;
-                    initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
-                    examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
-                    examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
-                    log.info("Đã khởi tạo lại schema trống của sinh viên khi start-session: exam={}, student={}",
-                            request.examId(), studentId);
+                    examStartedAt = prepareFreshAttemptAndStartClock(
+                            request.examId(), studentId, exam, nextAttempt);
                 }
             } else {
-                examStartedAt = now;
-                initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
-                examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
-                examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
+                examStartedAt = prepareFreshAttemptAndStartClock(
+                        request.examId(), studentId, exam, nextAttempt);
             }
-        } else {
-            examStartedAt = now;
-            initializeStudentSchemaForFreshStart(request.examId(), studentId, exam, nextAttempt);
-            examSessionService.saveExamStartTime(request.examId(), studentId, examStartedAt);
-            examDraftRepository.deleteByExamIdAndStudentId(request.examId(), studentId);
+        } catch (RuntimeException exception) {
+            if (!hadActiveDeviceSession) {
+                examSessionService.clearSession(request.examId(), studentId);
+            }
+            throw exception;
         }
 
-        LocalDateTime examDeadline = examStartedAt.plusMinutes(exam.getDurationMinutes());
-        if (exam.getEndTime() != null && exam.getEndTime().isBefore(examDeadline)) {
-            examDeadline = exam.getEndTime();
-        }
-
-        long remainingSeconds = Duration.between(now, examDeadline).getSeconds();
-        if (remainingSeconds <= 0) {
+        LocalDateTime responseTime = TimeUtils.now();
+        ExamDeadlines deadlines = ExamDeadlinePolicy.calculate(exam, examStartedAt);
+        if (deadlines.isExpired(responseTime)) {
             throw new BadRequestException("Exam time has expired");
         }
+        long remainingSeconds = ExamDeadlinePolicy.remainingSeconds(
+                responseTime, deadlines.activeDeadline(responseTime));
 
         messagingTemplate.convertAndSend(
             "/topic/exam/" + request.examId() + "/violations",
@@ -201,20 +205,43 @@ public class StartExamSessionUsecase {
                 "type", "SESSION_STATUS_CHANGED",
                 "studentId", studentId,
                 "examStatus", "IN_PROGRESS",
-                "timestamp", now.toString(),
+                "timestamp", responseTime.toString(),
                 "autoSubmitted", false,
                 "violationCount", 0
             )
         );
 
         return StartExamSessionResponse.success(
-                now, examStartedAt, examDeadline, remainingSeconds, exam.getDurationMinutes());
+                responseTime, examStartedAt, deadlines.regularDeadline(), remainingSeconds, exam.getDurationMinutes());
+    }
+
+    private LocalDateTime prepareFreshAttemptAndStartClock(
+            Long examId, Long studentId, Exam exam, int attemptNumber) {
+        long preparationStartedAt = System.nanoTime();
+        initializeStudentSchemaForFreshStart(examId, studentId, exam, attemptNumber);
+        examDraftRepository.deleteByExamIdAndStudentId(examId, studentId);
+
+        LocalDateTime readyAt = TimeUtils.now();
+        if (exam.getEndTime() != null && !readyAt.isBefore(exam.getEndTime())) {
+            throw new BadRequestException("Exam has already ended while preparing the exam environment");
+        }
+
+        examSessionService.saveExamStartTime(examId, studentId, readyAt);
+        log.info(
+                "Exam environment ready and clock started: exam={}, student={}, attempt={}, preparationMs={}, startedAt={}",
+                examId, studentId, attemptNumber,
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - preparationStartedAt), readyAt);
+        return readyAt;
     }
 
     private void initializeStudentSchemaForFreshStart(Long examId, Long studentId, Exam exam, int attemptNumber) {
         String schemaName = buildStudentSchemaName(examId, studentId, attemptNumber);
+        long readinessCheckStartedAt = System.nanoTime();
         if (isSchemaReadyForStart(schemaName, exam)) {
-            log.info("Schema [{}] already prepared before start-session, skipping reset/load", schemaName);
+            log.info(
+                    "Schema [{}] already prepared before start-session, skipping reset/load (readinessCheckMs={})",
+                    schemaName,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - readinessCheckStartedAt));
             return;
         }
 
@@ -232,8 +259,14 @@ public class StartExamSessionUsecase {
                 ? resolveSeedDatasetScript(specification, exam.getSettings().getSeedDatasetId())
                 : null;
 
+        long schemaLoadStartedAt = System.nanoTime();
         examSchemaService.resetSchema(schemaName, false);
         examSchemaService.loadTemplateIntoSchema(schemaName, ddlScript, defaultDatasetScript);
+        log.info(
+                "Student schema prepared: schema={}, readinessCheckMs={}, resetAndLoadMs={}",
+                schemaName,
+                TimeUnit.NANOSECONDS.toMillis(schemaLoadStartedAt - readinessCheckStartedAt),
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - schemaLoadStartedAt));
     }
 
     private String buildStudentSchemaName(Long examId, Long studentId, int attemptNumber) {

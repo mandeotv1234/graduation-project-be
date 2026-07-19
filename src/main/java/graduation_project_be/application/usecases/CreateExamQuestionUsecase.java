@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.BadRequestException;
 import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.ClassRepository;
 import graduation_project_be.application.port.repositories.ExamQuestionRepository;
@@ -60,6 +61,11 @@ public class CreateExamQuestionUsecase {
                     request.content(),
                     questionType.name(),
                     schemaContext);
+
+            if (generated == null || generated.correctQuery() == null || generated.correctQuery().isBlank()) {
+                throw new BadRequestException(
+                        "Không thể sinh đáp án SQL. Vui lòng kiểm tra nội dung câu hỏi hoặc thử lại.");
+            }
 
             if (correctQuery == null || correctQuery.isBlank()) {
                 correctQuery = generated.correctQuery();

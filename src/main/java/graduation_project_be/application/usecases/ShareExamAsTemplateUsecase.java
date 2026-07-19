@@ -74,6 +74,7 @@ public class ShareExamAsTemplateUsecase {
                         .content(question.getContent())
                         .correctQuery(question.getCorrectQuery())
                         .verifyScript(question.getVerifyScript())
+                        .gradingRubric(question.getGradingRubric())
                         .questionType(question.getQuestionType())
                         .difficultyLevel(question.getDifficultyLevel())
                         .points(question.getPoints())

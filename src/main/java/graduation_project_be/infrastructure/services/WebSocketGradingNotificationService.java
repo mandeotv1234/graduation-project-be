@@ -77,22 +77,32 @@ public class WebSocketGradingNotificationService implements GradingNotificationS
     }
 
     @Override
-    public void notifyTeacherGradingCompleted(Long examId, String examName, List<Long> teacherIds, Long studentId,
-                                              String studentName, BigDecimal totalScore, BigDecimal maxScore) {
+    public void notifyTeacherGradingCompleted(
+            Long examId,
+            Long resultId,
+            String examName,
+            List<Long> teacherIds,
+            Long studentId,
+            String studentName,
+            int attemptNumber,
+            BigDecimal totalScore,
+            BigDecimal maxScore) {
         String examDestination = String.format("/topic/teacher/exam/%d/grading-result", examId);
 
-        Map<String, Object> payload = Map.of(
-                "examId", examId,
-                "examName", examName != null ? examName : ("Exam " + examId),
-                "teacherIds", teacherIds != null ? teacherIds : List.of(),
-                "studentId", studentId,
-                "studentName", studentName != null ? studentName : "Unknown Student",
-                "totalScore", totalScore,
-                "maxScore", maxScore,
-                "status", "COMPLETED",
-                "message", "Sinh viên " + (studentName != null ? studentName : studentId) +
-                           " đã thi xong bài " + (examName != null ? examName : examId) +
-                           ". Điểm: " + totalScore + "/" + maxScore);
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("examId", examId);
+        payload.put("resultId", resultId);
+        payload.put("examName", examName != null ? examName : ("Exam " + examId));
+        payload.put("teacherIds", teacherIds != null ? teacherIds : List.of());
+        payload.put("studentId", studentId);
+        payload.put("studentName", studentName != null ? studentName : "Unknown Student");
+        payload.put("attemptNumber", attemptNumber);
+        payload.put("totalScore", totalScore);
+        payload.put("maxScore", maxScore);
+        payload.put("status", "COMPLETED");
+        payload.put("message", "Sinh viên " + (studentName != null ? studentName : studentId)
+                + " đã thi xong bài " + (examName != null ? examName : examId)
+                + ". Điểm: " + totalScore + "/" + maxScore);
 
         messagingTemplate.convertAndSend(examDestination, payload);
         messagingTemplate.convertAndSend(TEACHER_GLOBAL_GRADING_RESULTS_DESTINATION, payload);

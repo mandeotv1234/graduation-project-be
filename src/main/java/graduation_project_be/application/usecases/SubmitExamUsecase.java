@@ -10,6 +10,8 @@ import graduation_project_be.application.port.services.GradingQueueService;
 import graduation_project_be.application.port.services.HeartbeatService;
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.response.SubmitExamResponse;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy.ExamDeadlines;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.ExamResult;
@@ -204,7 +206,8 @@ public class SubmitExamUsecase {
 
         // 9a. Save notification to DB WITHIN the same transaction
         //     so that /unread-count API always sees it after commit.
-        saveSubmissionNotifications(exam, studentId, studentName, teacherIds, attemptNumber);
+        saveSubmissionNotifications(
+                exam, savedExamResult.getId(), studentId, studentName, teacherIds, attemptNumber);
 
         // 9b. Enqueue grading job and send WebSocket AFTER DB commit
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -212,7 +215,8 @@ public class SubmitExamUsecase {
             public void afterCommit() {
                 gradingQueueService.enqueue(examId, studentId, attemptNumber);
                 log.info("Grading job enqueued: exam={}, student={}, attempt={}", examId, studentId, attemptNumber);
-                sendSubmissionWebSocket(exam, studentId, studentName, teacherIds, attemptNumber);
+                sendSubmissionWebSocket(
+                        exam, savedExamResult.getId(), studentId, studentName, teacherIds, attemptNumber);
             }
         });
 
@@ -258,7 +262,13 @@ public class SubmitExamUsecase {
      * Save submission notifications to DB — runs inside the main @Transactional
      * so the records commit atomically with the exam submission.
      */
-    private void saveSubmissionNotifications(Exam exam, Long studentId, String studentName, List<Long> teacherIds, int attemptNumber) {
+    private void saveSubmissionNotifications(
+            Exam exam,
+            Long resultId,
+            Long studentId,
+            String studentName,
+            List<Long> teacherIds,
+            int attemptNumber) {
         if (teacherIds == null || teacherIds.isEmpty()) {
             return;
         }
@@ -269,6 +279,7 @@ public class SubmitExamUsecase {
                 .map(teacherId -> TeacherNotification.builder()
                         .teacherId(teacherId)
                         .examId(exam.getId())
+                        .resultId(resultId)
                         .studentId(studentId)
                         .studentName(studentName)
                         .violationType("NỘP BÀI")
@@ -289,25 +300,33 @@ public class SubmitExamUsecase {
      * Send WebSocket notification to teachers — runs in afterCommit()
      * so teachers only see it after DB has committed.
      */
-    private void sendSubmissionWebSocket(Exam exam, Long studentId, String studentName, List<Long> teacherIds, int attemptNumber) {
+    private void sendSubmissionWebSocket(
+            Exam exam,
+            Long resultId,
+            Long studentId,
+            String studentName,
+            List<Long> teacherIds,
+            int attemptNumber) {
         if (teacherIds == null || teacherIds.isEmpty()) {
             return;
         }
 
         String message = String.format("Đã nộp bài lần %d. Đang chấm điểm.", attemptNumber);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("examId", exam.getId());
+        payload.put("resultId", resultId);
+        payload.put("examName", exam.getTitle() != null ? exam.getTitle() : ("Exam " + exam.getId()));
+        payload.put("teacherIds", teacherIds);
+        payload.put("studentId", studentId);
+        payload.put("studentName", studentName);
+        payload.put("attemptNumber", attemptNumber);
+        payload.put("totalScore", BigDecimal.ZERO);
+        payload.put("maxScore", BigDecimal.ZERO);
+        payload.put("status", "SUBMITTED");
+        payload.put("message", message);
         messagingTemplate.convertAndSend(
                 "/topic/teacher/grading-results",
-                Map.of(
-                        "examId", exam.getId(),
-                        "examName", exam.getTitle() != null ? exam.getTitle() : ("Exam " + exam.getId()),
-                        "teacherIds", teacherIds,
-                        "studentId", studentId,
-                        "studentName", studentName,
-                        "attemptNumber", attemptNumber,
-                        "totalScore", BigDecimal.ZERO,
-                        "maxScore", BigDecimal.ZERO,
-                        "status", "SUBMITTED",
-                        "message", message));
+                payload);
     }
 
     private List<Long> resolveTeacherIds(Exam exam) {
@@ -333,56 +352,29 @@ public class SubmitExamUsecase {
         Optional<LocalDateTime> startTimeOpt = examSessionService.getExamStartTime(examId, studentId);
 
         if (startTimeOpt.isPresent()) {
-            LocalDateTime examStartedAt = startTimeOpt.get();
-            LocalDateTime examDeadline = examStartedAt.plusMinutes(exam.getDurationMinutes());
+            ExamDeadlines deadlines = ExamDeadlinePolicy.calculate(exam, startTimeOpt.get());
+            long secondsOverdue = Math.max(0,
+                    Duration.between(deadlines.regularDeadline(), submittedAt).getSeconds());
+            long secondsPastSubmissionDeadline = Duration.between(
+                    deadlines.submissionDeadline(), submittedAt).getSeconds();
 
-            if (exam.getEndTime() != null && exam.getEndTime().isBefore(examDeadline)) {
-                examDeadline = exam.getEndTime();
-            }
-
-            long secondsOverdue = Duration.between(examDeadline, submittedAt).getSeconds();
-
-            boolean allowOvertime = exam.getSettings() != null
-                    && Boolean.TRUE.equals(exam.getSettings().getAllowOvertime());
-            int lateThresholdMinutes = exam.getLateThreshold() != null ? exam.getLateThreshold() : 0;
-
-            if (secondsOverdue > SUBMIT_GRACE_SECONDS) {
-                if (allowOvertime && lateThresholdMinutes > 0) {
-                    long lateThresholdSeconds = (long) lateThresholdMinutes * 60;
-                    if (secondsOverdue <= lateThresholdSeconds) {
-                        log.info(
-                                "Late submission accepted within lateThreshold: exam={}, student={}, overdue={}s, threshold={}min",
-                                examId, studentId, secondsOverdue, lateThresholdMinutes);
-                        return secondsOverdue;
-                    }
-
-                    if (isAutoSubmit) {
-                        log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId,
-                                studentId, secondsOverdue);
-                        return secondsOverdue;
-                    }
-
-                    log.warn("Late submission rejected: exam={}, student={}, overdue={}s exceeds lateThreshold={}min",
-                            examId, studentId, secondsOverdue, lateThresholdMinutes);
+            if (secondsPastSubmissionDeadline > SUBMIT_GRACE_SECONDS && !isAutoSubmit) {
+                log.warn(
+                        "Submission rejected after final deadline: exam={}, student={}, overdue={}s, lateThreshold={}min, transportGrace={}s",
+                        examId, studentId, secondsOverdue, deadlines.lateThresholdMinutes(), SUBMIT_GRACE_SECONDS);
+                if (deadlines.lateThresholdMinutes() > 0) {
                     throw new BadRequestException(
-                            "Thời gian nộp bài trễ đã vượt quá ngưỡng cho phép (" + lateThresholdMinutes + " phút).");
+                            "Thời gian nộp bài trễ đã vượt quá ngưỡng cho phép ("
+                                    + deadlines.lateThresholdMinutes() + " phút).");
                 }
-
-                if (isAutoSubmit) {
-                    log.info("Auto-submit processing overdue exam: exam={}, student={}, overdue={}s", examId, studentId,
-                            secondsOverdue);
-                    return secondsOverdue;
-                }
-
-                log.warn("Late submission rejected: exam={}, student={}, overdue={}s (grace={}s)",
-                        examId, studentId, secondsOverdue, SUBMIT_GRACE_SECONDS);
                 throw new BadRequestException(
                         "Exam time has expired. Submission was " + secondsOverdue + " seconds late.");
             }
 
             if (secondsOverdue > 0) {
-                log.info("Late submission accepted within grace period: exam={}, student={}, overdue={}s",
-                        examId, studentId, secondsOverdue);
+                log.info(
+                        "Late submission accepted: exam={}, student={}, overdue={}s, lateThreshold={}min, autoSubmit={}",
+                        examId, studentId, secondsOverdue, deadlines.lateThresholdMinutes(), isAutoSubmit);
                 return secondsOverdue;
             }
         } else {

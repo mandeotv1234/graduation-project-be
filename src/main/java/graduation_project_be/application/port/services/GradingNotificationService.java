@@ -31,6 +31,14 @@ public interface GradingNotificationService {
     /**
      * Notify teachers that a student's grading is complete.
      */
-    void notifyTeacherGradingCompleted(Long examId, String examName, List<Long> teacherIds, Long studentId,
-                                       String studentName, BigDecimal totalScore, BigDecimal maxScore);
+    void notifyTeacherGradingCompleted(
+            Long examId,
+            Long resultId,
+            String examName,
+            List<Long> teacherIds,
+            Long studentId,
+            String studentName,
+            int attemptNumber,
+            BigDecimal totalScore,
+            BigDecimal maxScore);
 }

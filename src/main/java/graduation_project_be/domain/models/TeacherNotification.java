@@ -15,6 +15,7 @@ public class TeacherNotification {
     private Long id;
     private Long teacherId;
     private Long examId;
+    private Long resultId;
     private Long studentId;
     private String studentName;
     private String violationType;

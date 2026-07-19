@@ -7,6 +7,8 @@ import graduation_project_be.application.port.repositories.ExamRepository;
 import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.response.ExamTimeResponse;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy.ExamDeadlines;
 import graduation_project_be.domain.models.Exam;
 import lombok.RequiredArgsConstructor;
 
@@ -47,18 +49,17 @@ public class GetExamTimeUsecase {
                     exam.getDurationMinutes(), "WAITING", false);
         }
 
-        // Check if exam has ended (hard end time)
-        if (exam.getEndTime() != null && now.isAfter(exam.getEndTime())) {
-            return new ExamTimeResponse(
-                    examId, now, exam.getStartTime(), exam.getEndTime(),
-                    null, 0, 0,
-                    exam.getDurationMinutes(), "ENDED", true);
-        }
-
         // Exam is in time window — check if student has started a session
         Optional<LocalDateTime> studentStartedAt = examSessionService.getExamStartTime(examId, studentId);
 
         if (studentStartedAt.isEmpty()) {
+            if (exam.getEndTime() != null && !now.isBefore(exam.getEndTime())) {
+                return new ExamTimeResponse(
+                        examId, now, exam.getStartTime(), exam.getEndTime(),
+                        null, 0, 0,
+                        exam.getDurationMinutes(), "ENDED", true);
+            }
+
             // Student hasn't started yet, but exam is in progress
             return new ExamTimeResponse(
                     examId, now, exam.getStartTime(), exam.getEndTime(),
@@ -66,21 +67,19 @@ public class GetExamTimeUsecase {
                     exam.getDurationMinutes(), "IN_PROGRESS", false);
         }
 
-        // Student has started — calculate remaining time
-        LocalDateTime examDeadline = studentStartedAt.get().plusMinutes(exam.getDurationMinutes());
-        if (exam.getEndTime() != null && exam.getEndTime().isBefore(examDeadline)) {
-            examDeadline = exam.getEndTime();
-        }
-
-        long remainingSeconds = Duration.between(now, examDeadline).getSeconds();
-        boolean expired = remainingSeconds <= 0;
+        ExamDeadlines deadlines = ExamDeadlinePolicy.calculate(exam, studentStartedAt.get());
+        boolean expired = deadlines.isExpired(now);
+        boolean inLateSubmissionTime = deadlines.isLateSubmissionTime(now);
+        long remainingSeconds = expired
+                ? 0
+                : ExamDeadlinePolicy.remainingSeconds(now, deadlines.activeDeadline(now));
 
         return new ExamTimeResponse(
-                examId, now, exam.getStartTime(), examDeadline,
+                examId, now, exam.getStartTime(), deadlines.regularDeadline(),
                 studentStartedAt.get(),
-                Math.max(0, remainingSeconds), 0,
+                remainingSeconds, 0,
                 exam.getDurationMinutes(),
-                expired ? "ENDED" : "IN_PROGRESS",
+                expired ? "ENDED" : inLateSubmissionTime ? "LATE_SUBMISSION" : "IN_PROGRESS",
                 expired);
     }
 }

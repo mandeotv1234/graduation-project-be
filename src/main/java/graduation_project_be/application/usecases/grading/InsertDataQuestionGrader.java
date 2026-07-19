@@ -539,7 +539,7 @@ public class InsertDataQuestionGrader {
             }
 
             if (earnedTable > 0d && extraRows > 0) {
-                if (!hasLegacyExtraRowSettings && extraRowRule != null && extraRowRule.isObject()) {
+                if (extraRowRule != null && extraRowRule.isObject()) {
                     double defaultExtraPenalty = Math.max(rowPenalty, tablePoints * penaltyPerExtraRow);
                     InsertRuleDecision extraDecision = resolveInsertRuleDecision(extraRowRule, tablePoints,
                             defaultExtraPenalty);

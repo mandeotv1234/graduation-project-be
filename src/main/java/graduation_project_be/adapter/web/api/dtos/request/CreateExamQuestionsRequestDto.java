@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 public record CreateExamQuestionsRequestDto(
+        String schemaContext,
         @NotEmpty(message = "Questions list must not be empty")
         @Valid
         List<QuestionItemDto> questions) {
@@ -33,6 +34,6 @@ public record CreateExamQuestionsRequestDto(
                         q.difficultyLevel(), q.points(),
                         q.orderIndex(), q.questionType(), q.gradingRubric()))
                 .toList();
-        return new CreateExamQuestionsRequest(examId, items);
+        return new CreateExamQuestionsRequest(examId, schemaContext, items);
     }
 }

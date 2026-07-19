@@ -8,6 +8,7 @@ public record TeacherNotificationResponseDto(
         Long id,
         Long teacherId,
         Long examId,
+        Long resultId,
         Long studentId,
         String studentName,
         String violationType,
@@ -19,7 +20,7 @@ public record TeacherNotificationResponseDto(
 
     public static TeacherNotificationResponseDto fromResponse(TeacherNotificationResponse r) {
         return new TeacherNotificationResponseDto(
-                r.id(), r.teacherId(), r.examId(), r.studentId(),
+                r.id(), r.teacherId(), r.examId(), r.resultId(), r.studentId(),
                 r.studentName(), r.violationType(), r.description(),
                 r.violationCount(), r.autoSubmitted(), r.isRead(),
                 r.createdAt());

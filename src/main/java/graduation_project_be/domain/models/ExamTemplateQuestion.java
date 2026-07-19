@@ -21,4 +21,5 @@ public class ExamTemplateQuestion {
     private Integer orderIndex;
     private QuestionType questionType;
     private String verifyScript;
+    private String gradingRubric;
 }

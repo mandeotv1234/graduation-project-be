@@ -659,7 +659,8 @@ public class GradeExamUsecase {
             String studentName = (student != null) ? student.getFullName() : "Không rõ";
             List<Long> teacherIds = resolveTeacherIds(exam);
             gradingNotificationService.notifyTeacherGradingCompleted(
-                    examId, exam.getTitle(), teacherIds, studentId, studentName, totalScore, maxScore);
+                    examId, existingResult.getId(), exam.getTitle(), teacherIds,
+                    studentId, studentName, attemptNumber, totalScore, maxScore);
 
         } catch (Exception e) {
             if (isRetryableInfrastructureFailure(e)) {

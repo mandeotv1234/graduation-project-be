@@ -767,11 +767,37 @@ public class UsecasesConfiguration {
             ExamSpecificationRepository examSpecificationRepository,
             CurrentUserService currentUserService,
             AIService aiService,
+            PdfStorageService pdfStorageService,
+            PdfTextExtractor pdfTextExtractor,
             graduation_project_be.infrastructure.services.RubricToTestCaseTransformer rubricTransformer,
             graduation_project_be.infrastructure.services.ExpectedValueDeriver expectedValueDeriver) {
         return new CreateExamQuestionsUsecase(classRepository, examQuestionRepository, examRepository,
                 examSpecificationRepository, currentUserService, aiService,
+                pdfStorageService, pdfTextExtractor,
                 rubricTransformer, expectedValueDeriver);
+    }
+
+    @Bean
+    CreateExamSpecificationFromQuestionsUsecase createExamSpecificationFromQuestionsUsecase(
+            ClassRepository classRepository,
+            ExamQuestionRepository examQuestionRepository,
+            ExamRepository examRepository,
+            ExamSpecificationRepository examSpecificationRepository,
+            CurrentUserService currentUserService,
+            ExamSchemaService examSchemaService,
+            PdfStorageService pdfStorageService,
+            PdfTextExtractor pdfTextExtractor,
+            graduation_project_be.application.usecases.support.SpecificationSchemaJsonBuilder schemaJsonBuilder) {
+        return new CreateExamSpecificationFromQuestionsUsecase(
+                classRepository,
+                examQuestionRepository,
+                examRepository,
+                examSpecificationRepository,
+                currentUserService,
+                examSchemaService,
+                pdfStorageService,
+                pdfTextExtractor,
+                schemaJsonBuilder);
     }
 
         @Bean

@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1807260001
+      author: manhuynh
+      comment: "GRAD-226: Link teacher notifications to the exact exam result"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: teacher_notifications
+                columnName: result_id
+      changes:
+        - addColumn:
+            tableName: teacher_notifications
+            columns:
+              - column:
+                  name: result_id
+                  type: BIGINT
+        - addForeignKeyConstraint:
+            baseTableName: teacher_notifications
+            baseColumnNames: result_id
+            referencedTableName: exam_results
+            referencedColumnNames: id
+            constraintName: fk_teacher_notifications_result
+            onDelete: CASCADE
+            onUpdate: CASCADE
+        - createIndex:
+            tableName: teacher_notifications
+            indexName: idx_teacher_notifications_result
+            columns:
+              - column:
+                  name: result_id
+
+  - changeSet:
+      id: 1807260002
+      author: manhuynh
+      comment: "GRAD-226: Preserve question grading rubrics in exam templates"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - columnExists:
+                tableName: exam_template_questions
+                columnName: grading_rubric
+      changes:
+        - addColumn:
+            tableName: exam_template_questions
+            columns:
+              - column:
+                  name: grading_rubric
+                  type: TEXT
+
+  - changeSet:
+      id: 1807260003
+      author: manhuynh
+      comment: "GRAD-226: Backfill result links for existing submission notifications"
+      changes:
+        - sql:
+            sql: >
+              UPDATE teacher_notifications tn
+              SET result_id = (
+                SELECT er.id
+                FROM exam_results er
+                WHERE er.exam_id = tn.exam_id
+                  AND er.student_id = tn.student_id
+                ORDER BY ABS(EXTRACT(EPOCH FROM (er.submitted_at - tn.created_at)))
+                LIMIT 1
+              )
+              WHERE tn.violation_type = 'NỘP BÀI'
+                AND tn.result_id IS NULL
+
+  - changeSet:
+      id: 1807260004
+      author: manhuynh
+      comment: "GRAD-226: Backfill rubrics for existing exam template questions"
+      changes:
+        - sql:
+            sql: >
+              UPDATE exam_template_questions etq
+              SET grading_rubric = eq.grading_rubric
+              FROM exam_templates et
+              JOIN exam_questions eq ON eq.exam_id = et.source_exam_id
+              WHERE etq.template_id = et.id
+                AND eq.order_index = etq.order_index
+                AND eq.question_type = etq.question_type
+                AND etq.grading_rubric IS NULL

@@ -7,6 +7,8 @@ import graduation_project_be.application.port.services.ExamSessionService;
 import graduation_project_be.application.usecases.SubmitExamUsecase;
 import graduation_project_be.application.usecases.request.SubmitExamRequest;
 import graduation_project_be.application.usecases.request.SubmitExamRequest.AnswerItem;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy;
+import graduation_project_be.application.usecases.support.ExamDeadlinePolicy.ExamDeadlines;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamDraft;
 import lombok.RequiredArgsConstructor;
@@ -73,30 +75,16 @@ public class AutoSubmitWorkerConfiguration {
                     continue; // Kì thi đã biến mất hoặc bị hủy
                 }
 
-                LocalDateTime examStartedAt = startTimeOpt.get();
-                LocalDateTime examDeadline = examStartedAt.plusMinutes(exam.getDurationMinutes());
-
-                if (exam.getEndTime() != null && exam.getEndTime().isBefore(examDeadline)) {
-                    examDeadline = exam.getEndTime();
-                }
-
-                long secondsOverdue = Duration.between(examDeadline, TimeUtils.now()).getSeconds();
-
-                boolean allowOvertime = exam.getSettings() != null
-                        && Boolean.TRUE.equals(exam.getSettings().getAllowOvertime());
-                int lateThresholdMinutes = exam.getLateThreshold() != null ? exam.getLateThreshold() : 0;
-
-                long effectiveGraceSeconds = AUTO_SUBMIT_GRACE_SECONDS;
-                if (allowOvertime && lateThresholdMinutes > 0) {
-                    // Nếu thi cho phép trễ, cộng thêm block trễ vào thời hạn đợi auto-submit.
-                    effectiveGraceSeconds += (long) lateThresholdMinutes * 60;
-                }
+                ExamDeadlines deadlines = ExamDeadlinePolicy.calculate(exam, startTimeOpt.get());
+                long secondsPastSubmissionDeadline = Duration.between(
+                        deadlines.submissionDeadline(), TimeUtils.now()).getSeconds();
 
                 // NẾU SINH VIÊN QUÁ HẠN > SỐ GIÂY DUNG SAI => CHẮC CHẮN MẤT MẠNG VÀ FE KHÔNG THỂ BẮN API
                 // => SERVER SẼ ĐỨNG RA NỘP HỘ BẢN NHÁP VÀ CHUYỂN QUA GRADING
-                if (secondsOverdue > effectiveGraceSeconds) {
-                    log.warn("System Auto-submit: Exam={}, Student={} overdue by {}s. Triggering automatic draft grade ingestion...", 
-                            examId, studentId, secondsOverdue);
+                if (secondsPastSubmissionDeadline > AUTO_SUBMIT_GRACE_SECONDS) {
+                    log.warn(
+                            "System Auto-submit: Exam={}, Student={} passed final submission deadline by {}s (lateThreshold={}min). Triggering automatic draft grade ingestion...",
+                            examId, studentId, secondsPastSubmissionDeadline, deadlines.lateThresholdMinutes());
                             
                     try {
                         List<AnswerItem> answers = draft.getAnswers() == null ? List.of() : draft.getAnswers().stream()

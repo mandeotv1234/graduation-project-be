@@ -18,7 +18,10 @@ import graduation_project_be.application.usecases.request.StartExamSessionReques
 import graduation_project_be.domain.models.ClassStudentBan;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamSettings;
+import graduation_project_be.domain.models.ExamSpecification;
+import graduation_project_be.domain.models.SpecDataset;
 import graduation_project_be.domain.models.TableMetadata;
+import graduation_project_be.shared.utils.TimeUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,12 +32,16 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -310,5 +317,66 @@ class StartExamSessionUsecaseTest {
         verify(examSchemaService, never()).loadTemplateIntoSchema(
                 anyString(), nullable(String.class), nullable(String.class));
         verify(examSessionService).saveExamStartTime(examId, studentId, response.examStartedAt());
+    }
+
+    @Test
+    void execute_should_start_authoritative_clock_only_after_schema_and_draft_are_ready() {
+        Long studentId = 1L;
+        Long classId = 10L;
+        Long examId = 100L;
+        AtomicReference<LocalDateTime> schemaLoadedAt = new AtomicReference<>();
+
+        StartExamSessionRequest request = new StartExamSessionRequest(examId, "192.168.1.1", "Mozilla/5.0");
+        Exam exam = Exam.builder()
+                .id(examId)
+                .classId(classId)
+                .specificationId(50L)
+                .isPublished(true)
+                .startTime(TimeUtils.now().minusMinutes(10))
+                .endTime(TimeUtils.now().plusHours(2))
+                .durationMinutes(60)
+                .maxAttempts(3)
+                .settings(ExamSettings.builder()
+                        .isLoadDdl(true)
+                        .seedDatasetId(7L)
+                        .build())
+                .build();
+        ExamSpecification specification = ExamSpecification.builder()
+                .id(50L)
+                .ddlScript("CREATE TABLE Students (Id INT)")
+                .datasets(List.of(SpecDataset.builder()
+                        .id(7L)
+                        .isActive(true)
+                        .dataScript("INSERT INTO Students VALUES (1)")
+                        .build()))
+                .build();
+
+        when(currentUserService.getCurrentUserId()).thenReturn(studentId);
+        when(examRepository.findByIdAndIsPublished(examId, true)).thenReturn(Optional.of(exam));
+        when(classEnrollmentRepository.existsByClassIdAndStudentId(classId, studentId)).thenReturn(true);
+        when(classStudentBanRepository.findActiveByClassIdAndStudentId(classId, studentId))
+                .thenReturn(Optional.empty());
+        when(examSessionService.getExamStartTime(examId, studentId)).thenReturn(Optional.empty());
+        when(examSessionService.getActiveSession(examId, studentId)).thenReturn(Optional.empty());
+        when(examSessionService.tryStartSession(examId, studentId, "192.168.1.1", "Mozilla/5.0"))
+                .thenReturn(true);
+        when(examResultRepository.countByExamIdAndStudentId(examId, studentId)).thenReturn(0L);
+        when(examSchemaService.extractMetadata("exam_100_student_1_att_1")).thenReturn(List.of());
+        when(examSpecificationRepository.findById(50L)).thenReturn(Optional.of(specification));
+        doAnswer(invocation -> {
+            schemaLoadedAt.set(TimeUtils.now());
+            return null;
+        }).when(examSchemaService).loadTemplateIntoSchema(
+                "exam_100_student_1_att_1",
+                "CREATE TABLE Students (Id INT)",
+                "INSERT INTO Students VALUES (1)");
+
+        var response = startExamSessionUsecase.execute(request);
+
+        assertThat(response.examStartedAt()).isAfterOrEqualTo(schemaLoadedAt.get());
+        var order = inOrder(examSchemaService, examDraftRepository, examSessionService);
+        order.verify(examSchemaService).loadTemplateIntoSchema(anyString(), any(), any());
+        order.verify(examDraftRepository).deleteByExamIdAndStudentId(examId, studentId);
+        order.verify(examSessionService).saveExamStartTime(examId, studentId, response.examStartedAt());
     }
 }

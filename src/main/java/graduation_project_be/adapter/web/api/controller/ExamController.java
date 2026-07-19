@@ -50,6 +50,7 @@ public class ExamController {
         private final StartExamSessionUsecase startExamSessionUsecase;
         private final GetExamTimeUsecase getExamTimeUsecase;
         private final SaveExamSpecificationUsecase saveExamSpecificationUsecase;
+        private final CreateExamSpecificationFromQuestionsUsecase createExamSpecificationFromQuestionsUsecase;
         private final GetExamSpecificationUsecase getExamSpecificationUsecase;
         private final UpdateExamUsecase updateExamUsecase;
         private final UpdateExamQuestionUsecase updateExamQuestionUsecase;
@@ -298,6 +299,18 @@ public class ExamController {
                                                 ExamSpecificationResponseDto.fromResponse(response),
                                                 "CREATED",
                                                 "Exam specification saved successfully"));
+        }
+
+        @PostMapping("/{examId}/specification/from-questions")
+        @PreAuthorize("hasRole('TEACHER')")
+        public ResponseEntity<ResponseDto> createSpecificationFromQuestions(
+                        @PathVariable("examId") @Positive Long examId) {
+                ExamSpecificationResponse response = createExamSpecificationFromQuestionsUsecase.execute(examId);
+                return ResponseEntity.status(HttpStatus.CREATED)
+                                .body(ResponseDto.of(
+                                                ExamSpecificationResponseDto.fromResponse(response),
+                                                "CREATED",
+                                                "Tạo đặc tả từ đáp án CREATE/INSERT thành công"));
         }
 
         @GetMapping("/{examId}/specification")

@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - develop
-      - feature/GRAD-227-Fix-Function-and-Stored-Procedure-Metadata-Gates-and-Test-Case-Scorin
 
 env:
   REGISTRY: registry.digitalocean.com/graduation

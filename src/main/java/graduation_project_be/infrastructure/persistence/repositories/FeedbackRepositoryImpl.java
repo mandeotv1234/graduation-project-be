@@ -12,6 +12,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -27,6 +28,11 @@ public class FeedbackRepositoryImpl implements FeedbackRepository {
     @Override
     public boolean existsByExamIdAndStudentId(Long examId, Long studentId) {
         return feedbackJpaRepository.existsByExamIdAndStudentId(examId, studentId);
+    }
+
+    @Override
+    public Optional<Feedback> findById(Long id) {
+        return feedbackJpaRepository.findById(id).map(FeedbackEntity::toModel);
     }
 
     @Override

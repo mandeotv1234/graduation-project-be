@@ -1,0 +1,248 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2107262001
+      author: manhuynh
+      comment: "GRAD-227: Seed realistic K24 student feedback from June 13 to June 18"
+      dbms: postgresql
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              WITH seed_data (
+                email,
+                exam_id,
+                ui_ux_rating,
+                system_reliability_rating,
+                nps_score,
+                feature_requests,
+                general_feedback,
+                created_at
+              ) AS (
+                VALUES
+                  (
+                    '24122040@student.hcmus.edu.vn', 15, 4, 3, 7,
+                    'Hiển thị tiến độ chấm theo từng câu thay vì chỉ có vòng xoay.',
+                    'Trình soạn SQL dễ nhìn, chuyển qua lại giữa các câu vẫn giữ bài. Lúc chấm nhiều test case thì em phải chờ khá lâu nhưng kết quả trả về rõ.',
+                    TIMESTAMP '2026-06-13 08:25:00'
+                  ),
+                  (
+                    '24122028@student.hcmus.edu.vn', 16, 3, 3, 6,
+                    'Tách riêng kết quả SELECT, PRINT và thông báo lỗi của procedure.',
+                    'Phần chạy stored procedure dùng được nhưng khung kết quả hơi khó đọc khi có nhiều output. Đồng hồ và danh sách câu hỏi dễ theo dõi.',
+                    TIMESTAMP '2026-06-13 09:40:00'
+                  ),
+                  (
+                    '24122034@student.hcmus.edu.vn', 15, 4, 4, 8,
+                    'Đánh dấu đúng dòng SQL bị lỗi trong editor.',
+                    'Em thao tác ổn trên laptop, chưa gặp mất bài. Thông báo lỗi có nội dung nhưng nếu chỉ ngay dòng sai thì sửa nhanh hơn.',
+                    TIMESTAMP '2026-06-13 11:15:00'
+                  ),
+                  (
+                    '24122008@student.hcmus.edu.vn', 15, 3, 2, 5,
+                    'Có nút thử kết nối lại khi chấm bị treo.',
+                    'Có lần em bấm chạy phải đợi khá lâu nên không biết bài đã gửi chưa. Tải lại trang thì câu trả lời vẫn còn.',
+                    TIMESTAMP '2026-06-13 14:05:00'
+                  ),
+                  (
+                    '24122049@student.hcmus.edu.vn', 15, 4, 3, 7,
+                    NULL,
+                    'Giao diện gọn, các nút chạy và nộp bài dễ thấy. Cảnh báo toàn màn hình hơi dồn dập khi em chuyển cửa sổ để kiểm tra mạng.',
+                    TIMESTAMP '2026-06-13 20:30:00'
+                  ),
+                  (
+                    '24122047@student.hcmus.edu.vn', 7, 4, 4, 8,
+                    'Cho phép thu gọn phần mô tả để có thêm chỗ viết SQL.',
+                    'Màn hình thi dùng ổn, kết quả sau khi chạy câu SELECT dễ kiểm tra. Trên màn hình nhỏ phần đề chiếm hơi nhiều chiều cao.',
+                    TIMESTAMP '2026-06-14 16:20:00'
+                  ),
+                  (
+                    '24122021@student.hcmus.edu.vn', 15, 4, 4, 8,
+                    'Cho xem trạng thái tự lưu gần nhất ngay cạnh editor.',
+                    'Bài làm được lưu lại khi mạng chập chờn nên em yên tâm hơn. Phần khởi tạo đề lúc bắt đầu còn hơi lâu.',
+                    TIMESTAMP '2026-06-14 22:05:00'
+                  ),
+                  (
+                    '24122036@student.hcmus.edu.vn', 16, 3, 4, 7,
+                    'Hiện ví dụ cách gọi function hoặc procedure ngay dưới câu hỏi.',
+                    'Em chưa quen cú pháp procedure nên mất thời gian ở phần gọi hàm. Hệ thống báo lỗi SQL đầy đủ và không bị mất nội dung.',
+                    TIMESTAMP '2026-06-15 09:20:00'
+                  ),
+                  (
+                    '24122006@student.hcmus.edu.vn', 15, 4, 4, 8,
+                    'Thêm lịch sử các lần bấm chạy của một câu.',
+                    'Editor phản hồi nhanh nhưng em muốn đối chiếu với lần chạy trước mà hiện tại phải tự lưu kết quả. Việc chuyển câu khá mượt.',
+                    TIMESTAMP '2026-06-15 10:40:00'
+                  ),
+                  (
+                    '24122026@student.hcmus.edu.vn', 16, 4, 3, 7,
+                    NULL,
+                    'Phần đếm giờ và tự lưu hoạt động ổn. Có lúc kết quả chấm về chậm nhưng không ảnh hưởng câu SQL đang viết.',
+                    TIMESTAMP '2026-06-15 14:45:00'
+                  ),
+                  (
+                    '24122025@student.hcmus.edu.vn', 16, 4, 4, 8,
+                    'Hiển thị lý do test case không đạt bằng tiếng Việt ngắn gọn hơn.',
+                    'Chi tiết chấm theo test case hữu ích, nhưng một số thông báo kỹ thuật khá dài. Em vẫn xác định được câu nào sai.',
+                    TIMESTAMP '2026-06-16 21:00:00'
+                  ),
+                  (
+                    '24122004@student.hcmus.edu.vn', 16, 5, 4, 9,
+                    'Có phím tắt chạy SQL và chuyển sang câu kế tiếp.',
+                    'Giao diện rõ, trạng thái câu đã làm dễ nhìn. Nếu thao tác hoàn toàn bằng bàn phím được thì làm bài nhanh hơn.',
+                    TIMESTAMP '2026-06-16 21:20:00'
+                  ),
+                  (
+                    '24122046@student.hcmus.edu.vn', 16, 3, 3, 6,
+                    'Báo trước khi phiên đăng nhập sắp hết hạn.',
+                    'Em làm bài ổn nhưng có lúc phải đăng nhập lại nên hơi lo câu trả lời chưa lưu. Sau khi vào lại thì dữ liệu vẫn còn.',
+                    TIMESTAMP '2026-06-17 09:00:00'
+                  ),
+                  (
+                    '24122024@student.hcmus.edu.vn', 16, 4, 4, 8,
+                    'Giữ vị trí con trỏ và vùng đang chọn khi đổi câu.',
+                    'Tự lưu tốt, danh sách câu bên trái dễ theo dõi. Khi quay lại câu cũ editor nhảy lên đầu nên hơi mất thời gian tìm đoạn đang sửa.',
+                    TIMESTAMP '2026-06-17 11:20:00'
+                  ),
+                  (
+                    '24122035@student.hcmus.edu.vn', 15, 5, 5, 9,
+                    NULL,
+                    'Các bước bắt đầu thi rõ ràng, thông báo nộp bài dễ hiểu. Em không gặp lỗi giao diện trong lần làm này.',
+                    TIMESTAMP '2026-06-17 17:30:00'
+                  ),
+                  (
+                    '24122031@student.hcmus.edu.vn', 16, 4, 4, 8,
+                    'Cho tải xuống nội dung SQL đã làm sau khi nộp.',
+                    'Hệ thống chạy ổn, thời gian phản hồi chấp nhận được. Em muốn lưu lại bài để xem và tự sửa sau khi thi.',
+                    TIMESTAMP '2026-06-17 18:00:00'
+                  ),
+                  (
+                    '24122019@student.hcmus.edu.vn', 16, 4, 3, 7,
+                    'Hiển thị điểm tạm tính theo từng câu sau khi chạy thử nếu giảng viên cho phép.',
+                    'Phần kết quả SQL dễ đọc, nhưng em chưa biết câu hiện tại đạt bao nhiêu test case trước khi nộp. Tổng thể thao tác không bị gián đoạn.',
+                    TIMESTAMP '2026-06-17 18:40:00'
+                  ),
+                  (
+                    '24122016@student.hcmus.edu.vn', 16, 3, 4, 6,
+                    'Cảnh báo rõ thao tác nào bị tính là rời toàn màn hình.',
+                    'Giám sát toàn màn hình hoạt động khá nhạy; em bấm nhầm phím Esc thì nhận cảnh báo ngay. Phần làm và nộp bài vẫn bình thường.',
+                    TIMESTAMP '2026-06-17 22:40:00'
+                  ),
+                  (
+                    '24122009@student.hcmus.edu.vn', 16, 4, 4, 8,
+                    'Thêm bộ lọc chỉ xem các câu chưa làm.',
+                    'Đề nhiều câu nên em phải cuộn danh sách khá nhiều. Editor và nút chạy ổn, kết quả không bị giật.',
+                    TIMESTAMP '2026-06-18 08:00:00'
+                  ),
+                  (
+                    '24122005@student.hcmus.edu.vn', 15, 4, 4, 7,
+                    'Cho mở rộng khung kết quả chấm để đọc bảng nhiều cột.',
+                    'Kết quả SELECT đúng nhưng bảng bị hẹp khi có nhiều cột. Các phần khác dễ dùng và tốc độ ổn.',
+                    TIMESTAMP '2026-06-18 09:40:00'
+                  ),
+                  (
+                    '24122002@student.hcmus.edu.vn', 15, 3, 3, 6,
+                    'Thông báo rõ đang khởi tạo schema trước khi bắt đầu tính giờ.',
+                    'Sau khi bấm bắt đầu em chờ một lúc mới vào được đề nên tưởng nút chưa nhận. Vào màn hình thi rồi thì chạy SQL bình thường.',
+                    TIMESTAMP '2026-06-18 10:00:00'
+                  ),
+                  (
+                    '24122014@student.hcmus.edu.vn', 16, 5, 4, 9,
+                    NULL,
+                    'Em thấy phần lưu nháp và chuyển câu ổn định, không bị mất lệnh. Chi tiết kết quả sau khi nộp khá dễ hiểu.',
+                    TIMESTAMP '2026-06-18 10:45:00'
+                  ),
+                  (
+                    '24122003@student.hcmus.edu.vn', 16, 4, 3, 7,
+                    'Khi mở Feedback AI nên có trạng thái đang phân tích và giữ nguyên màn hình hiện tại.',
+                    'Phần feedback theo từng câu giúp em biết test case nào chưa đạt. Lúc bấm xem Feedback AI phải chờ nhưng chưa có thông báo nên em tưởng chưa bấm được.',
+                    TIMESTAMP '2026-06-18 11:30:00'
+                  ),
+                  (
+                    '24122056@student.hcmus.edu.vn', 16, 4, 4, 8,
+                    'Cho sao chép nhanh câu SQL từ lịch sử lần thi trước khi được giảng viên cho phép.',
+                    'Điểm và từng lần thi hiển thị rõ. Em muốn so sánh bài hiện tại với lần trước để biết mình đã sửa phần nào.',
+                    TIMESTAMP '2026-06-18 11:45:00'
+                  ),
+                  (
+                    '24122050@student.hcmus.edu.vn', 16, 4, 5, 8,
+                    'Thêm xác nhận rõ ràng khi hệ thống tự động nộp do hết giờ.',
+                    'Đồng hồ đếm ngược dễ nhìn, bài được nộp đúng lúc. Thông báo lúc tự nộp xuất hiện hơi nhanh nên em không chắc đã gửi thành công.',
+                    TIMESTAMP '2026-06-18 13:30:00'
+                  )
+              )
+              INSERT INTO feedbacks (
+                student_id,
+                exam_id,
+                ui_ux_rating,
+                system_reliability_rating,
+                nps_score,
+                feature_requests,
+                general_feedback,
+                created_at
+              )
+              SELECT
+                users.id,
+                seed_data.exam_id,
+                seed_data.ui_ux_rating,
+                seed_data.system_reliability_rating,
+                seed_data.nps_score,
+                seed_data.feature_requests,
+                seed_data.general_feedback,
+                seed_data.created_at
+              FROM seed_data
+              JOIN users
+                ON users.email = seed_data.email
+               AND users.role = 'STUDENT'
+              JOIN exams
+                ON exams.id = seed_data.exam_id
+              WHERE EXISTS (
+                SELECT 1
+                FROM exam_results
+                WHERE exam_results.student_id = users.id
+                  AND exam_results.exam_id = seed_data.exam_id
+                  AND exam_results.submitted_at <= seed_data.created_at
+              )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM feedbacks
+                  WHERE feedbacks.student_id = users.id
+                    AND feedbacks.exam_id = seed_data.exam_id
+                );
+      rollback:
+        - sql:
+            splitStatements: false
+            sql: |
+              WITH seeded_feedback (email, exam_id, created_at) AS (
+                VALUES
+                  ('24122040@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-13 08:25:00'),
+                  ('24122028@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-13 09:40:00'),
+                  ('24122034@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-13 11:15:00'),
+                  ('24122008@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-13 14:05:00'),
+                  ('24122049@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-13 20:30:00'),
+                  ('24122047@student.hcmus.edu.vn', 7, TIMESTAMP '2026-06-14 16:20:00'),
+                  ('24122021@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-14 22:05:00'),
+                  ('24122036@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-15 09:20:00'),
+                  ('24122006@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-15 10:40:00'),
+                  ('24122026@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-15 14:45:00'),
+                  ('24122025@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-16 21:00:00'),
+                  ('24122004@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-16 21:20:00'),
+                  ('24122046@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-17 09:00:00'),
+                  ('24122024@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-17 11:20:00'),
+                  ('24122035@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-17 17:30:00'),
+                  ('24122031@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-17 18:00:00'),
+                  ('24122019@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-17 18:40:00'),
+                  ('24122016@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-17 22:40:00'),
+                  ('24122009@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-18 08:00:00'),
+                  ('24122005@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-18 09:40:00'),
+                  ('24122002@student.hcmus.edu.vn', 15, TIMESTAMP '2026-06-18 10:00:00'),
+                  ('24122014@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-18 10:45:00'),
+                  ('24122003@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-18 11:30:00'),
+                  ('24122056@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-18 11:45:00'),
+                  ('24122050@student.hcmus.edu.vn', 16, TIMESTAMP '2026-06-18 13:30:00')
+              )
+              DELETE FROM feedbacks
+              USING users, seeded_feedback
+              WHERE feedbacks.student_id = users.id
+                AND users.email = seeded_feedback.email
+                AND feedbacks.exam_id = seeded_feedback.exam_id
+                AND feedbacks.created_at = seeded_feedback.created_at;

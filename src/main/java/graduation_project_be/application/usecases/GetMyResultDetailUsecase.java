@@ -8,6 +8,7 @@ import graduation_project_be.application.usecases.grading.whitebox.WhiteboxStude
 import graduation_project_be.application.usecases.request.GetMyResultDetailRequest;
 import graduation_project_be.application.usecases.response.GetExamResultDetailResponse;
 import graduation_project_be.domain.models.*;
+import graduation_project_be.domain.models.enums.GradingStatus;
 import graduation_project_be.domain.models.enums.GradingType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -44,12 +45,18 @@ public class GetMyResultDetailUsecase {
         Exam exam = examRepository.findById(result.getExamId())
                 .orElseThrow(() -> new ResourceNotFoundException("Exam", "id", result.getExamId()));
 
-        if (exam.getSettings() == null || !Boolean.TRUE.equals(exam.getSettings().getAllowReview())) {
-            throw new UnauthorizedException("Giáo viên không cho phép xem lại bài làm này.");
-        }
-
         User student = userRepository.findById(result.getStudentId())
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", result.getStudentId()));
+
+        boolean gradingCompleted = result.getStatus() == GradingStatus.COMPLETED;
+        boolean canViewQuestionDetails = gradingCompleted
+                && exam.getSettings() != null
+                && (Boolean.TRUE.equals(exam.getSettings().getAllowReview())
+                        || Boolean.TRUE.equals(exam.getSettings().getShowResultAfterSubmit()));
+        if (!canViewQuestionDetails) {
+            return toResponse(result, student, List.of(), false);
+        }
+        boolean canViewCorrectAnswers = Boolean.TRUE.equals(exam.getSettings().getAllowReview());
 
         List<ExamQuestion> questions = examQuestionRepository.findByExamId(exam.getId());
         List<ExamSubmission> submissions = examSubmissionRepository.findByExamIdAndStudentIdAndAttemptNumber(
@@ -71,7 +78,7 @@ public class GetMyResultDetailUsecase {
                             submission != null ? submission.getId() : null,
                             q.getContent(),
                             submission != null ? submission.getStudentQuery() : "",
-                            q.getCorrectQuery(),
+                            canViewCorrectAnswers ? q.getCorrectQuery() : null,
                             submission != null && Boolean.TRUE.equals(submission.getIsCorrect()),
                             submission != null ? submission.getScoreEarned() : java.math.BigDecimal.ZERO,
                             q.getPoints(),
@@ -88,6 +95,14 @@ public class GetMyResultDetailUsecase {
                     );
                 }).toList();
 
+        return toResponse(result, student, details, true);
+    }
+
+    private GetExamResultDetailResponse toResponse(
+            ExamResult result,
+            User student,
+            List<GetExamResultDetailResponse.QuestionResultDetail> details,
+            boolean includeScores) {
         return new GetExamResultDetailResponse(
                 result.getId(),
                 result.getId(),
@@ -95,9 +110,9 @@ public class GetMyResultDetailUsecase {
                 student.getFullName(),
                 student.getEmail(),
                 result.getAttemptNumber(),
-                result.getTotalScore(),
-                result.getMaxScore(),
-                result.getCorrectCount(),
+                includeScores ? result.getTotalScore() : null,
+                includeScores ? result.getMaxScore() : null,
+                includeScores ? result.getCorrectCount() : 0,
                 result.getTotalQuestions(),
                 result.getStatus(),
                 result.getSubmittedAt(),

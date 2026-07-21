@@ -52,7 +52,33 @@ OUTPUT JSON SHAPE:
   }
 }
 
-Generate 5 to 6 high-quality test cases, never fewer than 5.
+Do not target a fixed number of test cases and do not stop at 6 merely because a
+basic success case plus several error cases already exist. Generate the number of
+non-redundant cases required by the observable branches in REFERENCE SQL. There is
+no fixed minimum total beyond the success rules below and no maximum case count.
+
+SUCCESS-COVERAGE AND SCORE-BALANCE RULES:
+- Unless REFERENCE SQL genuinely has no successful outcome, generate at least three
+  independent successful executions.
+- If there is only one success branch, exercise it with at least three meaningfully
+  different valid input combinations or valid database states. The cases must use
+  different test data and prove the resulting business values; do not create a
+  cosmetic duplicate that changes only case_id or description.
+- If there are multiple success branches, cover every materially different success
+  branch before adding lower-value edge cases.
+- When both success and failure cases exist, assign 60 percent of the total
+  score_weight to successful cases and 40 percent to failure/edge cases. Distribute
+  each pool across its cases and keep the final total equal to 1.0 within 0.01.
+- If REFERENCE SQL has no deterministic failure branch, assign 100 percent to the
+  successful cases. Never invent a failure rule merely to fill the failure pool.
+- If REFERENCE SQL genuinely has no successful outcome, do not invent one; assign
+  100 percent of score_weight to its distinct observable failure behaviors.
+- Generate one failure case for every distinct deterministic guard or error branch
+  implemented by REFERENCE SQL. Each case must isolate that branch while keeping
+  unrelated preconditions valid.
+- A submission that always returns or prints a generic error must not be able to
+  earn most of the score. Do not let numerous generic-error cases outweigh the
+  successful behavior of the procedure.
 routines[] must list only the stored procedure(s) the QUESTION asks the student to create.
 Do not list helper routines used internally by REFERENCE SQL.
 Do not include expected_result, expected_value, expected_output, explanations, or markdown.
@@ -73,6 +99,17 @@ Set every test_cases[].case_name to the same Vietnamese accented text as test_ca
 - Status-only procedure: use RETURN_VALUE.
 - Main behavior in OUTPUT parameters: use OUT_PARAMETER.
 - PRINT behavior: use PRINT_OUTPUT with match_type "CONTAINS" and validation_query "".
+- For a DML failure branch that prints only the same generic message such as
+  "ERROR" as other branches, do not use that message alone as proof. Prefer a
+  SIDE_EFFECT case that proves the intended row state did not change and include a
+  branch-specific return code or OUTPUT value when REFERENCE SQL provides one.
+- Do not create several indistinguishable PRINT_OUTPUT cases for the same generic
+  error text. Their different setup states do not make the observed PRINT output
+  branch-specific.
+- If a non-DML procedure has no observable state, return code, or OUTPUT parameter
+  and several branches only print the same generic error text, keep at most one
+  representative PRINT_OUTPUT case for that indistinguishable output. Distinguishing
+  those branches requires REFERENCE SQL to expose different error codes or messages.
 - If a DML procedure also returns a code or OUTPUT value, include that value in the SIDE_EFFECT validation_query when possible.
 
 3. BATCH, SCHEMA, AND EXECUTION RULES
@@ -196,7 +233,10 @@ Pre-flight check before returning JSON:
 
 6. COVERAGE
 For DML procedures, include:
-- at least one success SIDE_EFFECT case proving the actual inserted/updated/deleted data;
+- at least three independent success SIDE_EFFECT cases proving the actual
+  inserted/updated/deleted business data under meaningfully different valid inputs
+  or database states;
+- every materially different success branch implemented by REFERENCE SQL;
 - important failure/no-change cases derived from guards in REFERENCE SQL;
 - duplicate/protected/invalid-state cases when present;
 - missing parent/FK cases only when REFERENCE SQL explicitly checks existence or the question requires it;

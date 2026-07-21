@@ -12,7 +12,6 @@ import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 import graduation_project_be.application.usecases.GradingTraceCollector;
 
@@ -62,178 +61,298 @@ public class RoutineQuestionGrader {
         BigDecimal totalPoints = question.getPoints() != null ? question.getPoints() : BigDecimal.ZERO;
         boolean hasTestCases = !testCaseRepository.findByQuestionId(question.getId()).isEmpty();
 
-        // If teacher schema has no routines (DDL-only), grade purely by test cases
-        // (100% weight)
-        if (expectedRoutines == null || expectedRoutines.isEmpty()) {
-            if (!hasTestCases) {
-                // Nothing to grade against
-                String message = "[THIẾU CẤU HÌNH] Câu hỏi không có metadata routine trong rubric/teacher schema "
-                        + "và cũng không có test case.";
-                log.warn("Câu {} không có metadata của routine và cũng không có test case", question.getId());
-                support.addTeacherConfigTrace(
-                        GradingTraceItem.STATUS_FAIL,
-                        "Thiếu routine metadata/test case",
-                        message,
-                        totalPoints,
-                        "Không có routines[] trong rubric, teacher schema không có routine, và DB không có test case.");
-                if (submission != null) {
-                    submission.setScoreEarned(BigDecimal.ZERO);
-                    submission.setErrorMessage(message);
-                }
-                return false;
-            }
-            boolean passed = support.gradeByTestCases(schemaName, teacherSchemaName, question, submission);
-            // gradeByTestCases returns a normalized test-case ratio. SP uses deduction
-            // scoring (1 - failed weights); other routine types still use additive
-            // scoring.
-            if (submission != null && submission.getScoreEarned() != null) {
-                BigDecimal scaled = totalPoints.multiply(submission.getScoreEarned());
-                if (scaled.compareTo(totalPoints) > 0)
-                    scaled = totalPoints;
-                submission.setScoreEarned(scaled);
-            }
-            return passed;
+        if (question.getQuestionType() == QuestionType.FUNCTION) {
+            return gradeFunctionWithMetadataGate(
+                    schemaName,
+                    teacherSchemaName,
+                    question,
+                    submission,
+                    expectedRoutines,
+                    actualRoutines,
+                    totalPoints,
+                    hasTestCases);
+        }
+        return gradeStoredProcedureWithMetadataGate(
+                schemaName,
+                teacherSchemaName,
+                question,
+                submission,
+                expectedRoutines,
+                actualRoutines,
+                totalPoints,
+                hasTestCases);
+    }
+
+    private boolean gradeStoredProcedureWithMetadataGate(
+            String schemaName,
+            String teacherSchemaName,
+            ExamQuestion question,
+            ExamSubmission submission,
+            List<RoutineMetadata> expectedRoutines,
+            List<RoutineMetadata> actualRoutines,
+            BigDecimal totalPoints,
+            boolean hasTestCases) {
+        if (!hasTestCases) {
+            String message = "[THIẾU TEST CASE] Stored Procedure phải có test case; metadata chỉ là điều kiện bắt buộc và không được dùng để tính điểm.";
+            support.addTeacherConfigTrace(
+                    GradingTraceItem.STATUS_FAIL,
+                    "Thiếu test case Stored Procedure",
+                    message,
+                    totalPoints,
+                    "Không có test case đã persist cho câu Stored Procedure; hệ thống không fallback sang chấm metadata.");
+            setFailedSubmission(submission, message);
+            return false;
         }
 
-        // Stored procedure metadata is diagnostic when test cases exist; business
-        // behavior is scored entirely by test cases. Functions keep the legacy
-        // 20/80 split because they share this routine grader but are not part of
-        // the current SP-only rubric change.
-        boolean metadataDiagnosticOnly = hasTestCases
-                && question.getQuestionType() == QuestionType.STORED_PROCEDURE;
-        BigDecimal metadataWeight = metadataDiagnosticOnly
-                ? BigDecimal.ZERO
-                : (hasTestCases ? new BigDecimal("0.20") : BigDecimal.ONE);
-        BigDecimal testCaseWeight = metadataDiagnosticOnly
-                ? BigDecimal.ONE
-                : (hasTestCases ? new BigDecimal("0.80") : BigDecimal.ZERO);
-
-        BigDecimal maxMetadataScore = totalPoints.multiply(metadataWeight);
-        BigDecimal perRoutineMax = maxMetadataScore.divide(BigDecimal.valueOf(expectedRoutines.size()), 4,
-                RoundingMode.HALF_UP);
-        BigDecimal earnedMetadataScore = BigDecimal.ZERO;
-
-        StringBuilder errorBuilder = new StringBuilder();
-        boolean allPassedMetadata = true;
-
-        for (RoutineMetadata expected : expectedRoutines) {
-            RoutineMetadata actual = actualRoutines.stream()
-                    .filter(r -> r.getRoutineName().equalsIgnoreCase(expected.getRoutineName()))
-                    .findFirst().orElse(null);
-
-            if (actual == null) {
-                allPassedMetadata = false;
-                errorBuilder
-                        .append(String.format("Thiếu %s %s. ", expected.getRoutineType(), expected.getRoutineName()));
-                if (GradingTraceCollector.isActive()) {
-                    GradingTraceCollector.add(new GradingTraceItem(
-                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
-                            "Thiếu " + expected.getRoutineType(),
-                            String.format("Thiếu %s %s", expected.getRoutineType(), expected.getRoutineName()),
-                            null, null,
-                            "ROUTINE", "EXISTS", null, null,
-                            BigDecimal.ZERO, perRoutineMax, perRoutineMax,
-                            expected.getRoutineName(), null,
-                            "Kiểm tra sự tồn tại của " + expected.getRoutineType()));
-                }
-                continue;
-            }
-
-            double score = 0.5; // Found it
-
-            // Type check (Procedure vs Function).
-            // AI rubric ghi "STORED_PROCEDURE" theo enum domain trong khi
-            // INFORMATION_SCHEMA.ROUTINES.ROUTINE_TYPE trả "PROCEDURE" — normalize
-            // hai bên trước khi so để không log "Sai loại Routine" oan.
-            if (normalizeRoutineType(expected.getRoutineType())
-                    .equalsIgnoreCase(normalizeRoutineType(actual.getRoutineType()))) {
-                score += 0.2;
-            } else {
-                errorBuilder.append(String.format("Sai loại routine %s (kỳ vọng: %s). ", expected.getRoutineName(),
-                        expected.getRoutineType()));
-                allPassedMetadata = false;
-                if (GradingTraceCollector.isActive()) {
-                    GradingTraceCollector.add(new GradingTraceItem(
-                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
-                            "Sai loại routine",
-                            String.format("Sai loại routine %s (kỳ vọng: %s)", expected.getRoutineName(), expected.getRoutineType()),
-                            null, null, "ROUTINE_TYPE", "MISMATCH", null, null,
-                            null, null, null,
-                            expected.getRoutineType(), actual.getRoutineType(),
-                            "Kiểm tra loại routine"));
-                }
-            }
-
-            // Params check
-            if (expected.getParameters().size() == actual.getParameters().size()) {
-                score += 0.3;
-            } else {
-                errorBuilder.append(String.format("%s %s sai số lượng tham số. ", expected.getRoutineType(),
-                        expected.getRoutineName()));
-                allPassedMetadata = false;
-                if (GradingTraceCollector.isActive()) {
-                    GradingTraceCollector.add(new GradingTraceItem(
-                            GradingTraceItem.KIND_METADATA_CHECK, GradingTraceItem.STATUS_FAIL,
-                            "Sai số tham số",
-                            String.format("%s %s sai số lượng tham số (kỳ vọng: %d, thực tế: %d)",
-                                    expected.getRoutineType(), expected.getRoutineName(),
-                                    expected.getParameters().size(), actual.getParameters().size()),
-                            null, null, "ROUTINE_PARAMS", "COUNT_MISMATCH", null, null,
-                            null, null, null,
-                            String.valueOf(expected.getParameters().size()), String.valueOf(actual.getParameters().size()),
-                            "Kiểm tra số tham số routine"));
-                }
-            }
-
-            earnedMetadataScore = earnedMetadataScore.add(perRoutineMax.multiply(BigDecimal.valueOf(score)));
+        boolean caseSensitiveNames = extractCaseSensitiveNames(question.getGradingRubric());
+        StoredProcedureMetadataGateValidator.ValidationResult metadataResult =
+                StoredProcedureMetadataGateValidator.validate(
+                        expectedRoutines, actualRoutines, caseSensitiveNames);
+        if (!metadataResult.passed()) {
+            String message = buildStoredProcedureMetadataGateError(metadataResult);
+            addStoredProcedureMetadataFailureTraces(metadataResult, totalPoints);
+            setFailedSubmission(submission, message);
+            return false;
         }
 
-        if (allPassedMetadata)
-            earnedMetadataScore = maxMetadataScore;
-
-        if (GradingTraceCollector.isActive() && !allPassedMetadata) {
+        if (GradingTraceCollector.isActive()) {
             GradingTraceCollector.add(new GradingTraceItem(
-                    GradingTraceItem.KIND_SUMMARY, GradingTraceItem.STATUS_FAIL,
-                    "Tổng kết metadata routine",
-                    errorBuilder.toString().trim(),
-                    null, null, null, null, null, null,
-                    earnedMetadataScore, maxMetadataScore,
-                    maxMetadataScore.subtract(earnedMetadataScore),
-                    null, null,
-                    metadataDiagnosticOnly ? "Metadata chỉ mang tính chẩn đoán (100% TC scoring)" : "Metadata 20% + TC 80%"));
+                    GradingTraceItem.KIND_METADATA_CHECK,
+                    GradingTraceItem.STATUS_PASS,
+                    "Metadata Stored Procedure hợp lệ",
+                    "Stored Procedure đã vượt qua metadata gate; điểm được tính 100% từ test case.",
+                    null,
+                    null,
+                    "STORED_PROCEDURE_CONTRACT",
+                    "MATCH",
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "Tên, loại và số lượng tham số",
+                    "Hợp lệ",
+                    "Metadata là điều kiện bắt buộc, không cộng điểm."));
         }
 
-        BigDecimal earnedTestCaseScore = BigDecimal.ZERO;
-        boolean testCasesPassed = true;
-
-        if (hasTestCases) {
-            testCasesPassed = support.gradeByTestCases(schemaName, teacherSchemaName, question, submission);
-            // gradeByTestCases returns a normalized test-case ratio. SP uses deduction
-            // scoring (1 - failed weights); Function keeps additive scoring.
-            if (submission != null && submission.getScoreEarned() != null) {
-                BigDecimal maxTestCaseScore = totalPoints.multiply(testCaseWeight);
-                earnedTestCaseScore = maxTestCaseScore.multiply(submission.getScoreEarned());
-            }
-        }
-
-        BigDecimal finalScore = metadataDiagnosticOnly
-                ? earnedTestCaseScore
-                : earnedMetadataScore.add(earnedTestCaseScore);
-        if (finalScore.compareTo(totalPoints) > 0)
-            finalScore = totalPoints;
-
+        boolean testCasesPassed = support.gradeByTestCases(
+                schemaName, teacherSchemaName, question, submission);
         if (submission != null) {
-            submission.setScoreEarned(finalScore);
-            boolean totalPassed = metadataDiagnosticOnly
-                    ? testCasesPassed
-                    : allPassedMetadata && testCasesPassed;
-            if (!totalPassed) {
-                String tcError = submission.getErrorMessage() != null ? submission.getErrorMessage() : "";
-                submission.setErrorMessage((errorBuilder.toString().trim() + " " + tcError).trim());
-            }
+            BigDecimal ratio = submission.getScoreEarned() != null
+                    ? submission.getScoreEarned()
+                    : BigDecimal.ZERO;
+            ratio = ratio.max(BigDecimal.ZERO).min(BigDecimal.ONE);
+            submission.setScoreEarned(totalPoints.multiply(ratio));
+        }
+        return testCasesPassed;
+    }
+
+    private void addStoredProcedureMetadataFailureTraces(
+            StoredProcedureMetadataGateValidator.ValidationResult result,
+            BigDecimal totalPoints) {
+        if (!GradingTraceCollector.isActive()) {
+            return;
+        }
+        for (StoredProcedureMetadataGateValidator.Violation violation : result.violations()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    violation.configurationError()
+                            ? GradingTraceItem.KIND_TEACHER_CONFIG
+                            : GradingTraceItem.KIND_METADATA_CHECK,
+                    GradingTraceItem.STATUS_FAIL,
+                    violation.configurationError()
+                            ? "Cấu hình metadata Stored Procedure không hợp lệ"
+                            : "Metadata Stored Procedure không khớp",
+                    violation.message(),
+                    null,
+                    null,
+                    "STORED_PROCEDURE_CONTRACT",
+                    violation.code(),
+                    violation.configurationError() ? "REVIEW_CONFIG" : null,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    violation.expected(),
+                    violation.actual(),
+                    "Metadata gate thất bại; bỏ qua toàn bộ test case và chấm 0 điểm."));
+        }
+        GradingTraceCollector.add(new GradingTraceItem(
+                GradingTraceItem.KIND_SUMMARY,
+                GradingTraceItem.STATUS_FAIL,
+                "Stored Procedure không vượt qua metadata gate",
+                buildStoredProcedureMetadataGateError(result),
+                null,
+                null,
+                "STORED_PROCEDURE_CONTRACT",
+                "GATE_FAILED",
+                null,
+                null,
+                BigDecimal.ZERO,
+                totalPoints,
+                totalPoints,
+                "Metadata contract hợp lệ",
+                "Không hợp lệ",
+                "Test case không được thực thi."));
+    }
+
+    private String buildStoredProcedureMetadataGateError(
+            StoredProcedureMetadataGateValidator.ValidationResult result) {
+        boolean configurationError = result.violations().stream()
+                .anyMatch(StoredProcedureMetadataGateValidator.Violation::configurationError);
+        String prefix = configurationError
+                ? "[LỖI CẤU HÌNH METADATA] "
+                : "[METADATA STORED PROCEDURE KHÔNG HỢP LỆ] ";
+        StringJoiner messages = new StringJoiner(" ");
+        result.violations().forEach(violation -> messages.add(violation.message()));
+        return prefix + messages;
+    }
+
+    private boolean gradeFunctionWithMetadataGate(
+            String schemaName,
+            String teacherSchemaName,
+            ExamQuestion question,
+            ExamSubmission submission,
+            List<RoutineMetadata> expectedRoutines,
+            List<RoutineMetadata> actualRoutines,
+            BigDecimal totalPoints,
+            boolean hasTestCases) {
+        if (!hasTestCases) {
+            String message = "[THIẾU TEST CASE] Function phải có test case; metadata chỉ là điều kiện bắt buộc và không được dùng để tính điểm.";
+            support.addTeacherConfigTrace(
+                    GradingTraceItem.STATUS_FAIL,
+                    "Thiếu test case Function",
+                    message,
+                    totalPoints,
+                    "Không có test case đã persist cho câu Function; hệ thống không fallback sang chấm metadata.");
+            setFailedSubmission(submission, message);
+            return false;
         }
 
-        return metadataDiagnosticOnly ? testCasesPassed : allPassedMetadata && testCasesPassed;
+        boolean caseSensitiveNames = extractCaseSensitiveNames(question.getGradingRubric());
+        FunctionMetadataContractValidator.ValidationResult metadataResult =
+                FunctionMetadataContractValidator.validate(
+                        expectedRoutines, actualRoutines, caseSensitiveNames);
+        if (!metadataResult.passed()) {
+            String message = buildMetadataGateError(metadataResult);
+            addFunctionMetadataFailureTraces(metadataResult, totalPoints);
+            setFailedSubmission(submission, message);
+            return false;
+        }
+
+        if (GradingTraceCollector.isActive()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    GradingTraceItem.KIND_METADATA_CHECK,
+                    GradingTraceItem.STATUS_PASS,
+                    "Metadata Function hợp lệ",
+                    "Function đã vượt qua metadata gate; điểm được tính 100% từ test case.",
+                    null,
+                    null,
+                    "FUNCTION_CONTRACT",
+                    "MATCH",
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "Tên, loại, return type, số lượng/type/mode tham số",
+                    "Hợp lệ",
+                    "Metadata là điều kiện bắt buộc, không cộng điểm."));
+        }
+
+        boolean testCasesPassed = support.gradeByTestCases(
+                schemaName, teacherSchemaName, question, submission);
+        if (submission != null) {
+            BigDecimal ratio = submission.getScoreEarned() != null
+                    ? submission.getScoreEarned()
+                    : BigDecimal.ZERO;
+            ratio = ratio.max(BigDecimal.ZERO).min(BigDecimal.ONE);
+            submission.setScoreEarned(totalPoints.multiply(ratio));
+        }
+        return testCasesPassed;
+    }
+
+    private void addFunctionMetadataFailureTraces(
+            FunctionMetadataContractValidator.ValidationResult result,
+            BigDecimal totalPoints) {
+        if (!GradingTraceCollector.isActive()) {
+            return;
+        }
+        for (FunctionMetadataContractValidator.Violation violation : result.violations()) {
+            GradingTraceCollector.add(new GradingTraceItem(
+                    violation.configurationError()
+                            ? GradingTraceItem.KIND_TEACHER_CONFIG
+                            : GradingTraceItem.KIND_METADATA_CHECK,
+                    GradingTraceItem.STATUS_FAIL,
+                    violation.configurationError()
+                            ? "Cấu hình metadata Function không hợp lệ"
+                            : "Metadata Function không khớp",
+                    violation.message(),
+                    null,
+                    null,
+                    "FUNCTION_CONTRACT",
+                    violation.code(),
+                    violation.configurationError() ? "REVIEW_CONFIG" : null,
+                    null,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    violation.expected(),
+                    violation.actual(),
+                    "Metadata gate thất bại; bỏ qua toàn bộ test case và chấm 0 điểm."));
+        }
+        GradingTraceCollector.add(new GradingTraceItem(
+                GradingTraceItem.KIND_SUMMARY,
+                GradingTraceItem.STATUS_FAIL,
+                "Function không vượt qua metadata gate",
+                buildMetadataGateError(result),
+                null,
+                null,
+                "FUNCTION_CONTRACT",
+                "GATE_FAILED",
+                null,
+                null,
+                BigDecimal.ZERO,
+                totalPoints,
+                totalPoints,
+                "Metadata contract hợp lệ",
+                "Không hợp lệ",
+                "Test case không được thực thi."));
+    }
+
+    private String buildMetadataGateError(
+            FunctionMetadataContractValidator.ValidationResult result) {
+        boolean configurationError = result.violations().stream()
+                .anyMatch(FunctionMetadataContractValidator.Violation::configurationError);
+        String prefix = configurationError
+                ? "[LỖI CẤU HÌNH METADATA] "
+                : "[METADATA FUNCTION KHÔNG HỢP LỆ] ";
+        StringJoiner messages = new StringJoiner(" ");
+        result.violations().forEach(violation -> messages.add(violation.message()));
+        return prefix + messages;
+    }
+
+    private void setFailedSubmission(ExamSubmission submission, String message) {
+        if (submission == null) {
+            return;
+        }
+        submission.setScoreEarned(BigDecimal.ZERO);
+        submission.setErrorMessage(message);
+    }
+
+    private boolean extractCaseSensitiveNames(String gradingRubricJson) {
+        if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(gradingRubricJson)
+                    .path("grading_payload")
+                    .path("grading_settings")
+                    .path("case_sensitive_names")
+                    .asBoolean(false);
+        } catch (Exception e) {
+            log.warn("Không thể đọc case_sensitive_names từ rubric: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -242,25 +361,6 @@ public class RoutineQuestionGrader {
      * malformed, or omits the routines array — caller falls back to teacher
      * schema metadata in that case.
      */
-    /**
-     * Normalize routine type to a canonical form ("PROCEDURE" / "FUNCTION") so
-     * that the rubric-side label ("STORED_PROCEDURE" coming from the AI / enum
-     * domain) compares equal with the metadata-side label coming from
-     * INFORMATION_SCHEMA.ROUTINES.ROUTINE_TYPE ("PROCEDURE" / "FUNCTION").
-     */
-    private static String normalizeRoutineType(String raw) {
-        if (raw == null) return "";
-        String upper = raw.trim().toUpperCase(java.util.Locale.ROOT);
-        if ("STORED_PROCEDURE".equals(upper) || "SQL_STORED_PROCEDURE".equals(upper)) {
-            return "PROCEDURE";
-        }
-        if ("SCALAR_FUNCTION".equals(upper) || "TABLE_VALUED_FUNCTION".equals(upper)
-                || "SQL_SCALAR_FUNCTION".equals(upper) || "SQL_TABLE_VALUED_FUNCTION".equals(upper)) {
-            return "FUNCTION";
-        }
-        return upper;
-    }
-
     private List<RoutineMetadata> extractExpectedRoutinesFromRubric(String gradingRubricJson) {
         if (gradingRubricJson == null || gradingRubricJson.isBlank()) {
             return List.of();

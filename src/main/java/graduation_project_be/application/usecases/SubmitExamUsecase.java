@@ -86,10 +86,7 @@ public class SubmitExamUsecase {
                     log.info(
                             "Session invalid but exam {} already submitted for student {}. Returning successful status.",
                             request.examId(), studentId);
-                    // Return a "fake" successful response so FE doesn't logout
-                    return new SubmitExamResponse(
-                            existingResult.get().getId(), request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
-                            BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
+                    return toExistingResultResponse(existingResult.get());
                 }
                 throw new UnauthorizedException(
                         "Phiên thi không hợp lệ hoặc đã được thay thế bởi thiết bị khác. Vui lòng làm mới trang.");
@@ -98,9 +95,7 @@ public class SubmitExamUsecase {
             // Re-check submission state one last time in case of race condition
             Optional<ExamResult> existingResult = examResultRepository.findByExamIdAndStudentId(request.examId(), studentId);
             if (existingResult.isPresent()) {
-                return new SubmitExamResponse(
-                        existingResult.get().getId(), request.examId(), studentId, TimeUtils.now(), GradingStatus.COMPLETED,
-                        BigDecimal.ZERO, BigDecimal.ZERO, 0, 0, null, null);
+                return toExistingResultResponse(existingResult.get());
             }
             throw e;
         }
@@ -254,8 +249,28 @@ public class SubmitExamUsecase {
 
         return new SubmitExamResponse(
                 savedExamResult.getId(), examId, studentId, submittedAt, GradingStatus.PENDING,
-                BigDecimal.ZERO, maxScore, 0, totalQuestions,
+                null, maxScore, 0, totalQuestions,
                 details, null);
+    }
+
+    private SubmitExamResponse toExistingResultResponse(ExamResult result) {
+        boolean completed = result.getStatus() == GradingStatus.COMPLETED;
+        boolean includeScores = completed && examRepository.findById(result.getExamId())
+                .map(Exam::getSettings)
+                .map(settings -> Boolean.TRUE.equals(settings.getShowResultAfterSubmit()))
+                .orElse(false);
+        return new SubmitExamResponse(
+                result.getId(),
+                result.getExamId(),
+                result.getStudentId(),
+                result.getSubmittedAt(),
+                result.getStatus(),
+                includeScores ? result.getTotalScore() : null,
+                includeScores ? result.getMaxScore() : null,
+                includeScores ? result.getCorrectCount() : 0,
+                result.getTotalQuestions(),
+                null,
+                null);
     }
 
     /**

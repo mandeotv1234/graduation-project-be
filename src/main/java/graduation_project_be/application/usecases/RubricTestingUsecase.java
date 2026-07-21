@@ -10,6 +10,9 @@ import graduation_project_be.application.port.services.ExamSchemaService;
 import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.port.services.SelectQueryStructureAnalyzer;
 import graduation_project_be.application.usecases.grading.GradeDecision;
+import graduation_project_be.application.usecases.grading.FunctionMetadataContractValidator;
+import graduation_project_be.application.usecases.grading.StoredProcedureMetadataGateValidator;
+import graduation_project_be.application.usecases.grading.TestCaseWeightNormalizer;
 import graduation_project_be.application.usecases.grading.GradingSupport;
 import graduation_project_be.application.usecases.grading.InsertDataQuestionGrader;
 import graduation_project_be.application.usecases.grading.QueryStructureFacts;
@@ -3724,9 +3727,6 @@ public class RubricTestingUsecase {
             }
             List<RoutineMetadata> actualRoutines = examSchemaService.extractRoutineMetadata(studentSchema);
 
-            double earnedPoints = 0;
-            boolean allPassed = true;
-
             if (expectedRoutines.isEmpty()) {
                 details.add(Map.of(
                         "type", "error",
@@ -3735,119 +3735,35 @@ public class RubricTestingUsecase {
                 return RubricTestGradeResponse.of(0, totalPoints, false, details);
             }
 
-            boolean hasTestCases = testCases.isArray() && testCases.size() > 0;
-            boolean metadataDiagnosticOnly = hasTestCases
-                    && isStoredProcedureRubric(rubric, expectedRoutines);
-            double metadataMaxPoints = metadataDiagnosticOnly ? 0 : (hasTestCases ? totalPoints * 0.20 : totalPoints);
-            double testCaseMaxPoints = metadataDiagnosticOnly ? totalPoints : (hasTestCases ? totalPoints * 0.80 : 0);
-            double perRoutineWeight = metadataMaxPoints / expectedRoutines.size();
-
-            for (RoutineMetadata expected : expectedRoutines) {
-                RoutineMetadata actual = actualRoutines.stream()
-                        .filter(r -> caseSensitiveNames
-                                ? r.getRoutineName().equals(expected.getRoutineName())
-                                : r.getRoutineName().equalsIgnoreCase(expected.getRoutineName()))
-                        .findFirst()
-                        .orElse(null);
-
-                if (actual == null) {
-                    details.add(Map.of(
-                            "type", "error",
-                            "message",
-                            String.format("Thiếu %s %s", expected.getRoutineType(), expected.getRoutineName()),
-                            "points", 0));
-                    if (!metadataDiagnosticOnly) {
-                        allPassed = false;
-                    }
-                    continue;
-                }
-
-                double routineScore = perRoutineWeight;
-
-                if (!normalizeRoutineType(expected.getRoutineType())
-                        .equalsIgnoreCase(normalizeRoutineType(actual.getRoutineType()))) {
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", String.format("Sai loại routine %s (kỳ vọng: %s, thực tế: %s)",
-                                    expected.getRoutineName(), expected.getRoutineType(), actual.getRoutineType()),
-                            "points", (int) (-perRoutineWeight * 0.3)));
-                    routineScore *= 0.7;
-                    if (!metadataDiagnosticOnly) {
-                        allPassed = false;
-                    }
-                }
-
-                if (expected.getParameters().size() != actual.getParameters().size()) {
-                    details.add(Map.of(
-                            "type", "warning",
-                            "message", String.format("Sai số lượng tham số ở %s (kỳ vọng: %d, thực tế: %d)",
-                                    expected.getRoutineName(), expected.getParameters().size(),
-                                    actual.getParameters().size()),
-                            "points", (int) (-perRoutineWeight * 0.2)));
-                    routineScore *= 0.8;
-                    if (!metadataDiagnosticOnly) {
-                        allPassed = false;
-                    }
-                }
-
-                earnedPoints += routineScore;
-                details.add(Map.of(
-                        "type", "success",
-                        "message", String.format("%s %s: đúng", expected.getRoutineType(), expected.getRoutineName()),
-                        "points", (int) routineScore));
-            }
-
-            if (hasTestCases) {
-                RoutineTestCaseGrade routineTcGrade = executeRoutineTestCases(
+            boolean storedProcedureRubric = isStoredProcedureRubric(rubric, expectedRoutines);
+            if (!storedProcedureRubric) {
+                return executeFunctionRubricGrading(
                         studentSchema,
                         teacherSchema,
+                        gradingPayload,
                         testCases,
-                        testCaseMaxPoints,
+                        expectedRoutines,
+                        actualRoutines,
+                        caseSensitiveNames,
+                        positiveOnlyScoring,
                         printOutputCompareMode,
+                        totalPoints,
+                        studentQuery,
                         details);
-                earnedPoints += routineTcGrade.earnedPoints();
-                allPassed = metadataDiagnosticOnly
-                        ? routineTcGrade.allPassed()
-                        : allPassed && routineTcGrade.allPassed();
-
-                /*
-                 * double testCaseWeight = totalPoints * 0.3;
-                 * double perTestCase = testCaseWeight / testCases.size();
-                 * 
-                 * for (JsonNode tc : List.<JsonNode>of()) {
-                 * String caseName = tc.path("case_name").asText("Unnamed");
-                 * double penaltyValue = tc.path("penalty_value").asDouble(0.5);
-                 * 
-                 * details.add(Map.of(
-                 * "type", "info",
-                 * "message",
-                 * String.format("Test case '%s': chưa thực thi (cần triển khai thêm)",
-                 * caseName),
-                 * "points", 0));
-                 * }
-                 */
             }
-
-            double finalScore = Math.min(earnedPoints, totalPoints);
-            if (positiveOnlyScoring && finalScore < 0) {
-                finalScore = 0;
-            }
-
-            String questionTypeStr = isStoredProcedureRubric(rubric, expectedRoutines)
-                    ? "STORED_PROCEDURE" : "FUNCTION";
-
-            RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
-                    finalScore,
+            return executeStoredProcedureRubricGrading(
+                    studentSchema,
+                    teacherSchema,
+                    gradingPayload,
+                    testCases,
+                    expectedRoutines,
+                    actualRoutines,
+                    caseSensitiveNames,
+                    positiveOnlyScoring,
+                    printOutputCompareMode,
                     totalPoints,
-                    allPassed,
-                    details,
-                    Math.max(0d, totalPoints - finalScore));
-            return applyWhiteboxPreviewResponse(
-                    questionTypeStr,
                     studentQuery,
-                    objectMapper.readTree(gradingRubricJson).path("grading_payload"),
-                    totalPoints,
-                    blackbox);
+                    details);
 
         } catch (Exception e) {
             details.add(Map.of(
@@ -3856,6 +3772,176 @@ public class RubricTestingUsecase {
                     "points", 0));
             return RubricTestGradeResponse.of(0, totalPoints, false, details);
         }
+    }
+
+    private RubricTestGradeResponse executeStoredProcedureRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            JsonNode gradingPayload,
+            JsonNode testCases,
+            List<RoutineMetadata> expectedRoutines,
+            List<RoutineMetadata> actualRoutines,
+            boolean caseSensitiveNames,
+            boolean positiveOnlyScoring,
+            String printOutputCompareMode,
+            double totalPoints,
+            String studentQuery,
+            List<Map<String, Object>> details) {
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "[Metadata] Thiếu test case: Stored Procedure không được fallback sang chấm điểm metadata.",
+                    "points", 0));
+            return applyStoredProcedureWhiteboxPreview(
+                    gradingPayload, totalPoints, studentQuery, details, 0, false);
+        }
+
+        StoredProcedureMetadataGateValidator.ValidationResult metadataResult =
+                StoredProcedureMetadataGateValidator.validate(
+                        expectedRoutines, actualRoutines, caseSensitiveNames);
+        if (!metadataResult.passed()) {
+            for (StoredProcedureMetadataGateValidator.Violation violation : metadataResult.violations()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "[Metadata] " + violation.message(),
+                        "points", 0));
+            }
+            return applyStoredProcedureWhiteboxPreview(
+                    gradingPayload, totalPoints, studentQuery, details, 0, false);
+        }
+
+        details.add(Map.of(
+                "type", "success",
+                "message", "[Metadata] Stored Procedure hợp lệ; test case là nguồn điểm duy nhất.",
+                "points", 0));
+
+        RoutineTestCaseGrade testCaseGrade = executeRoutineTestCases(
+                studentSchema,
+                teacherSchema,
+                testCases,
+                totalPoints,
+                printOutputCompareMode,
+                details);
+        double finalScore = testCaseGrade.earnedPoints()
+                .min(BigDecimal.valueOf(totalPoints))
+                .max(BigDecimal.ZERO)
+                .doubleValue();
+        if (positiveOnlyScoring && finalScore < 0) {
+            finalScore = 0;
+        }
+        return applyStoredProcedureWhiteboxPreview(
+                gradingPayload,
+                totalPoints,
+                studentQuery,
+                details,
+                finalScore,
+                testCaseGrade.allPassed());
+    }
+
+    private RubricTestGradeResponse applyStoredProcedureWhiteboxPreview(
+            JsonNode gradingPayload,
+            double totalPoints,
+            String studentQuery,
+            List<Map<String, Object>> details,
+            double blackboxScore,
+            boolean allPassed) {
+        RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
+                blackboxScore,
+                totalPoints,
+                allPassed,
+                details,
+                Math.max(0d, totalPoints - blackboxScore));
+        return applyWhiteboxPreviewResponse(
+                "STORED_PROCEDURE",
+                studentQuery,
+                gradingPayload,
+                totalPoints,
+                blackbox);
+    }
+
+    private RubricTestGradeResponse executeFunctionRubricGrading(
+            String studentSchema,
+            String teacherSchema,
+            JsonNode gradingPayload,
+            JsonNode testCases,
+            List<RoutineMetadata> expectedRoutines,
+            List<RoutineMetadata> actualRoutines,
+            boolean caseSensitiveNames,
+            boolean positiveOnlyScoring,
+            String printOutputCompareMode,
+            double totalPoints,
+            String studentQuery,
+            List<Map<String, Object>> details) {
+        if (!testCases.isArray() || testCases.isEmpty()) {
+            details.add(Map.of(
+                    "type", "error",
+                    "message", "[Metadata] Thiếu test case: Function không được fallback sang chấm điểm metadata.",
+                    "points", 0));
+            return applyFunctionWhiteboxPreview(
+                    gradingPayload, totalPoints, studentQuery, details, 0, false);
+        }
+
+        FunctionMetadataContractValidator.ValidationResult metadataResult =
+                FunctionMetadataContractValidator.validate(
+                        expectedRoutines, actualRoutines, caseSensitiveNames);
+        if (!metadataResult.passed()) {
+            for (FunctionMetadataContractValidator.Violation violation : metadataResult.violations()) {
+                details.add(Map.of(
+                        "type", "error",
+                        "message", "[Metadata] " + violation.message(),
+                        "points", 0));
+            }
+            return applyFunctionWhiteboxPreview(
+                    gradingPayload, totalPoints, studentQuery, details, 0, false);
+        }
+
+        details.add(Map.of(
+                "type", "success",
+                "message", "[Metadata] Function hợp lệ; test case là nguồn điểm duy nhất.",
+                "points", 0));
+
+        RoutineTestCaseGrade testCaseGrade = executeRoutineTestCases(
+                studentSchema,
+                teacherSchema,
+                testCases,
+                totalPoints,
+                printOutputCompareMode,
+                details);
+        double finalScore = testCaseGrade.earnedPoints()
+                .min(BigDecimal.valueOf(totalPoints))
+                .max(BigDecimal.ZERO)
+                .doubleValue();
+        if (positiveOnlyScoring && finalScore < 0) {
+            finalScore = 0;
+        }
+        return applyFunctionWhiteboxPreview(
+                gradingPayload,
+                totalPoints,
+                studentQuery,
+                details,
+                finalScore,
+                testCaseGrade.allPassed());
+    }
+
+    private RubricTestGradeResponse applyFunctionWhiteboxPreview(
+            JsonNode gradingPayload,
+            double totalPoints,
+            String studentQuery,
+            List<Map<String, Object>> details,
+            double blackboxScore,
+            boolean allPassed) {
+        RubricTestGradeResponse blackbox = RubricTestGradeResponse.of(
+                blackboxScore,
+                totalPoints,
+                allPassed,
+                details,
+                Math.max(0d, totalPoints - blackboxScore));
+        return applyWhiteboxPreviewResponse(
+                "FUNCTION",
+                studentQuery,
+                gradingPayload,
+                totalPoints,
+                blackbox);
     }
 
     private static final String VALIDATION_MARKER_COLUMN = "__VALIDATION_MARKER__";
@@ -3867,25 +3953,20 @@ public class RubricTestingUsecase {
             double maxPoints,
             String printOutputCompareMode,
             List<Map<String, Object>> details) {
-        double totalWeight = 0;
+        List<BigDecimal> rawWeights = new ArrayList<>(testCases.size());
         for (JsonNode tc : testCases) {
-            totalWeight += Math.abs(readTestCaseWeight(tc));
+            rawWeights.add(BigDecimal.valueOf(readTestCaseWeight(tc)));
         }
-        if (totalWeight <= 0) {
-            totalWeight = testCases.size();
-        }
+        List<BigDecimal> normalizedWeights = TestCaseWeightNormalizer.normalize(rawWeights);
+        BigDecimal maxPointsValue = BigDecimal.valueOf(maxPoints);
 
-        double earned = 0;
+        BigDecimal earned = BigDecimal.ZERO;
         boolean allPassed = true;
 
         for (int i = 0; i < testCases.size(); i++) {
             JsonNode tc = testCases.get(i);
             String caseName = textOrDefault(tc, "case_name", "TC" + (i + 1));
-            double normalizedWeight = Math.abs(readTestCaseWeight(tc));
-            if (normalizedWeight <= 0) {
-                normalizedWeight = 1;
-            }
-            double casePoints = maxPoints * (normalizedWeight / totalWeight);
+            BigDecimal casePoints = maxPointsValue.multiply(normalizedWeights.get(i));
 
             try {
                 String expected = runRoutineTestCase(teacherSchema, teacherSchema, tc);
@@ -3898,11 +3979,11 @@ public class RubricTestingUsecase {
                         printOutputCompareMode);
 
                 if (passed) {
-                    earned += casePoints;
+                    earned = earned.add(casePoints);
                     details.add(Map.of(
                             "type", "success",
                             "message", String.format("Test case '%s': đúng", caseName),
-                            "points", roundTo2(casePoints)));
+                            "points", roundTo2(casePoints.doubleValue())));
                 } else {
                     allPassed = false;
                     details.add(Map.of(
@@ -4133,7 +4214,7 @@ public class RubricTestingUsecase {
         return value.length() <= 160 ? value : value.substring(0, 160) + "...";
     }
 
-    private record RoutineTestCaseGrade(double earnedPoints, boolean allPassed) {
+    private record RoutineTestCaseGrade(BigDecimal earnedPoints, boolean allPassed) {
     }
 
     private static class RoutineTestCaseExecutionException extends RuntimeException {

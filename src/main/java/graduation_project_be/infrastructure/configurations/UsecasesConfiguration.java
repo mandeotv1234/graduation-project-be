@@ -1074,6 +1074,13 @@ public class UsecasesConfiguration {
         return new GetFeedbacksUsecase(feedbackRepository, userRepository);
     }
 
+    @Bean
+    GetFeedbackDetailUsecase getFeedbackDetailUsecase(
+            FeedbackRepository feedbackRepository,
+            UserRepository userRepository) {
+        return new GetFeedbackDetailUsecase(feedbackRepository, userRepository);
+    }
+
     // ===== ADMIN USER USECASES =====
 
     @Bean

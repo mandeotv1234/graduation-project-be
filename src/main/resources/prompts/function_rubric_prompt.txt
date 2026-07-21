@@ -64,21 +64,39 @@ Generate JSON rubric with this structure:
         "setup_script": "-- MUST use [{SCHEMA}] when referencing tables\nDELETE FROM [{SCHEMA}].ChildTable WHERE ...;\nDELETE FROM [{SCHEMA}].ParentTable WHERE ...;\nINSERT INTO [{SCHEMA}].ParentTable VALUES (...);\nINSERT INTO [{SCHEMA}].ChildTable VALUES (...);",
         "input_parameters": {},
         "invocation_query": "",
-        "validation_query": "SELECT [{SCHEMA}].FunctionName(@param1, @param2)"
+        "validation_query": "SELECT [{SCHEMA}].FunctionName('VALUE1', 123)"
       }
     ]
   }
 }
 
 === TEST CASE CREATION RULES ===
-1. Generate 3-6 diverse test cases covering:
-   - Normal inputs (typical valid data)
-   - Boundary cases (min/max values, edge conditions)
-   - Null/empty cases (when relevant)
-   - Table-read scenarios (when function queries database)
-   - Multiple rows (if function aggregates or filters data)
+1. COVERAGE-DRIVEN CASE COUNT:
+   - Do not target a fixed number of test cases. Generate the number of non-redundant cases required by the observable branches in QUESTION and REFERENCE SQL.
+   - Generate at least three independent core valid cases.
+   - If there is only one core branch, exercise it with at least three meaningfully different literal inputs or database states and verify different business values when possible.
+   - Do not create cosmetic duplicates that only change case_id, description, or irrelevant data.
+   - Cover every materially different branch before adding lower-value edge cases. Never invent behavior that is not required by QUESTION or implemented by REFERENCE SQL.
 
-2. Each test case MUST have complete setup_script:
+2. FUNCTION-SPECIFIC COVERAGE:
+   - For a scalar function, cover relevant conditional branches, exact thresholds, immediately-below/immediately-above boundaries, and distinct return outcomes.
+   - For a scalar function that reads tables, include meaningful states such as no matching row, one matching row, multiple matching rows, and unrelated rows when those states can distinguish incorrect implementations.
+   - For aggregate or filtering logic, include data that distinguishes the intended filtered set from all rows in the table.
+   - For a table-valued function, cover empty result, one-row result, multiple-row result, qualifying rows, non-qualifying rows, and unrelated rows when relevant to the reference logic.
+   - Generate NULL or empty-string cases only when QUESTION or REFERENCE SQL defines meaningful behavior for them. Do not invent invalid-input requirements merely to add an edge case.
+   - Use ORDER BY in table-valued validation_query whenever row order is not otherwise deterministic. Order by stable key/output columns sufficient to make comparison repeatable.
+
+3. SCORE BALANCE:
+   - When both core valid cases and boundary/edge cases exist, assign exactly 60 percent of total score_weight to core valid cases and exactly 40 percent to boundary/edge cases.
+   - If no meaningful boundary or edge behavior exists, assign 100 percent to core valid cases. Do not invent edge cases merely to fill the edge pool.
+   - Every generated test case must have a positive score_weight no greater than 1.0.
+   - Each score_weight must use at most two decimal places. Values such as 0.25, 0.3, and 0.15 are valid; values such as 0.133333 are forbidden.
+   - The final score_weight total must equal exactly 1.0. When a pool cannot be divided evenly with two decimal places, distribute the remainder to one case, for example 0.13 + 0.13 + 0.14 = 0.40.
+   - Do not let numerous edge cases outweigh the function's core required behavior.
+
+4. DATABASE SETUP:
+   - If the function does not read database tables, set setup_script to an empty string and do not invent table data.
+   - If the function reads database tables, every test case MUST have a complete, self-contained setup_script.
    - **IMPORTANT**: Start with DELETE to clear old data and avoid duplicate primary key errors:
      ```sql
      DELETE FROM [{SCHEMA}].ChildTable WHERE PK IN ('TC01_C1', 'TC01_C2');
@@ -98,25 +116,23 @@ Generate JSON rubric with this structure:
    - DO NOT insert only the key if function needs other columns like name, amount, or status
    - Engine wraps test case in transaction and rollback, so no cleanup needed
 
-3. validation_query: REQUIRED. SQL SELECT that calls the function.
+5. validation_query: REQUIRED. SQL SELECT that calls the function.
    - **Scalar function** (returns single value):
      ```sql
-     SELECT [{SCHEMA}].FN_TongLuong(@MaPhongBan)
+     SELECT [{SCHEMA}].FN_TongLuong('PB001')
      ```
    - **Table-valued function** (returns rows):
      ```sql
      SELECT MaNV, HoTen, Luong
-     FROM [{SCHEMA}].FN_NhanVienTheoPhongBan(@MaPhongBan)
+     FROM [{SCHEMA}].FN_NhanVienTheoPhongBan('PB001')
      ORDER BY MaNV
      ```
    - Use literal arguments directly in validation_query
    - input_parameters is metadata only, engine does NOT convert it to SQL variables
 
-4. DO NOT generate "expected_result"/"expected_value" — engine derives automatically
+6. DO NOT generate "expected_result"/"expected_value" — engine derives automatically
 
-5. score_weight is 0..1. Total weights are normalized to 1.0 by engine
-
-6. verification_type for Functions:
+7. verification_type for Functions:
    - **RETURN_VALUE**: For scalar functions (INT, DECIMAL, VARCHAR, etc.)
    - **RESULT_SET**: For table-valued functions (returns rows)
    - DO NOT use SIDE_EFFECT, PRINT_OUTPUT, or OUT_PARAMETER for functions
@@ -147,5 +163,17 @@ Based on DDL schema context above, create test cases with:
 - Correct data types (VARCHAR use '', INT no quotes, DATETIME use '', NVARCHAR use N'')
 - **Appropriate value lengths**: VARCHAR(10) → use values ≤ 10 chars (e.g., 'EMP001' OK, 'EMPLOYEE_001' WRONG)
 - Include ALL columns the function needs (not just primary key)
+
+=== PRE-FLIGHT CHECK BEFORE RETURNING JSON ===
+- Return one complete, parseable JSON object with all arrays and objects properly closed.
+- routines[] contains only the function(s) explicitly required by QUESTION and preserves the exact required metadata contract.
+- test_cases[] contains at least three independent core valid cases.
+- Every materially different observable branch in QUESTION and REFERENCE SQL is covered by a non-redundant case.
+- Every scalar case uses RETURN_VALUE; every table-valued case uses RESULT_SET; no function case uses SIDE_EFFECT, PRINT_OUTPUT, or OUT_PARAMETER.
+- Every non-empty setup_script is self-contained, respects DDL types/lengths/FKs, and uses [{SCHEMA}] for all table references.
+- Every validation_query calls the required function through [{SCHEMA}], uses literal arguments, and returns deterministic output.
+- Table-valued validation_query uses ORDER BY whenever comparison would otherwise depend on row order.
+- Every score_weight has at most two decimal places, all weights are positive, core/edge pools follow the required balance, and the final total is exactly 1.0.
+- The JSON contains no expected_result, expected_value, markdown, comments outside SQL strings, or extra explanation.
 
 Return EXACT JSON FORMAT (no markdown, no extra explanation):

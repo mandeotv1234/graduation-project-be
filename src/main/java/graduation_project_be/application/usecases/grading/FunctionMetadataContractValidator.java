@@ -71,8 +71,8 @@ public final class FunctionMetadataContractValidator {
             }
 
             String expectedReturnType = normalizeDataType(expected.getDataType());
-            String actualReturnType = normalizeDataType(actual.getDataType());
-            if (!expectedReturnType.isBlank() && !expectedReturnType.equals(actualReturnType)) {
+            if (!expectedReturnType.isBlank()
+                    && !dataTypesEqual(expected.getDataType(), actual.getDataType())) {
                 violations.add(studentViolation(
                         "RETURN_TYPE_MISMATCH",
                         String.format("Function %s sai kiểu trả về: kỳ vọng %s nhưng thực tế là %s.",
@@ -101,8 +101,7 @@ public final class FunctionMetadataContractValidator {
                 String expectedParameterType = expectedParameter == null ? null : expectedParameter.getDataType();
                 String actualParameterType = actualParameter == null ? null : actualParameter.getDataType();
                 String expectedType = normalizeDataType(expectedParameterType);
-                String actualType = normalizeDataType(actualParameterType);
-                if (!expectedType.isBlank() && !expectedType.equals(actualType)) {
+                if (!expectedType.isBlank() && !dataTypesEqual(expectedParameterType, actualParameterType)) {
                     violations.add(studentViolation(
                             "PARAMETER_TYPE_MISMATCH",
                             String.format("Function %s sai kiểu tham số thứ %d: kỳ vọng %s nhưng thực tế là %s.",
@@ -142,10 +141,35 @@ public final class FunctionMetadataContractValidator {
                 .toUpperCase(Locale.ROOT)
                 .replaceAll("\\s+", " ");
         int argumentsStart = normalized.indexOf('(');
-        if (argumentsStart >= 0) {
-            normalized = normalized.substring(0, argumentsStart).trim();
+        String baseType = argumentsStart >= 0
+                ? normalized.substring(0, argumentsStart).trim()
+                : normalized;
+        String canonicalBaseType = TYPE_ALIASES.getOrDefault(baseType, baseType);
+        if (argumentsStart < 0) {
+            return canonicalBaseType;
         }
-        return TYPE_ALIASES.getOrDefault(normalized, normalized);
+
+        String arguments = normalized.substring(argumentsStart)
+                .replaceAll("\\s+", "");
+        return canonicalBaseType + arguments;
+    }
+
+    static boolean dataTypesEqual(String expectedRaw, String actualRaw) {
+        String expected = normalizeDataType(expectedRaw);
+        String actual = normalizeDataType(actualRaw);
+        if (expected.isBlank() || actual.isBlank()) {
+            return expected.equals(actual);
+        }
+
+        int expectedArgumentsStart = expected.indexOf('(');
+        if (expectedArgumentsStart < 0) {
+            int actualArgumentsStart = actual.indexOf('(');
+            String actualBase = actualArgumentsStart >= 0
+                    ? actual.substring(0, actualArgumentsStart)
+                    : actual;
+            return expected.equals(actualBase);
+        }
+        return expected.equals(actual);
     }
 
     static String normalizeParameterMode(String raw) {

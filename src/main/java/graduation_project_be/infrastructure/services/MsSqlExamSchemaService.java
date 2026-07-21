@@ -3,6 +3,7 @@ package graduation_project_be.infrastructure.services;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -1204,7 +1205,13 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
     @Override
     public java.util.List<RoutineMetadata> extractRoutineMetadata(String schemaName) {
         String sql = "SELECT r.ROUTINE_NAME, r.ROUTINE_TYPE, r.DATA_TYPE AS RET_TYPE, " +
-                "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE, p.ORDINAL_POSITION " +
+                "r.CHARACTER_MAXIMUM_LENGTH AS RET_CHAR_LENGTH, " +
+                "r.NUMERIC_PRECISION AS RET_NUMERIC_PRECISION, r.NUMERIC_SCALE AS RET_NUMERIC_SCALE, " +
+                "r.DATETIME_PRECISION AS RET_DATETIME_PRECISION, " +
+                "p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE AS PARAM_TYPE, p.ORDINAL_POSITION, " +
+                "p.CHARACTER_MAXIMUM_LENGTH AS PARAM_CHAR_LENGTH, " +
+                "p.NUMERIC_PRECISION AS PARAM_NUMERIC_PRECISION, p.NUMERIC_SCALE AS PARAM_NUMERIC_SCALE, " +
+                "p.DATETIME_PRECISION AS PARAM_DATETIME_PRECISION " +
                 "FROM INFORMATION_SCHEMA.ROUTINES r " +
                 "LEFT JOIN INFORMATION_SCHEMA.PARAMETERS p ON r.ROUTINE_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA "
                 +
@@ -1217,7 +1224,12 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
             while (rs.next()) {
                 String routineName = rs.getString("ROUTINE_NAME");
                 String routineType = rs.getString("ROUTINE_TYPE");
-                String retType = rs.getString("RET_TYPE");
+                String retType = formatRoutineDataType(
+                        rs.getString("RET_TYPE"),
+                        nullableInteger(rs, "RET_CHAR_LENGTH"),
+                        nullableInteger(rs, "RET_NUMERIC_PRECISION"),
+                        nullableInteger(rs, "RET_NUMERIC_SCALE"),
+                        nullableInteger(rs, "RET_DATETIME_PRECISION"));
 
                 RoutineMetadata routine = routines.computeIfAbsent(routineName,
                         k -> RoutineMetadata.builder()
@@ -1232,13 +1244,52 @@ public class MsSqlExamSchemaService implements ExamSchemaService {
                     RoutineMetadata.ParameterMetadata param = RoutineMetadata.ParameterMetadata.builder()
                             .parameterMode(rs.getString("PARAMETER_MODE"))
                             .parameterName(paramName)
-                            .dataType(rs.getString("PARAM_TYPE"))
+                            .dataType(formatRoutineDataType(
+                                    rs.getString("PARAM_TYPE"),
+                                    nullableInteger(rs, "PARAM_CHAR_LENGTH"),
+                                    nullableInteger(rs, "PARAM_NUMERIC_PRECISION"),
+                                    nullableInteger(rs, "PARAM_NUMERIC_SCALE"),
+                                    nullableInteger(rs, "PARAM_DATETIME_PRECISION")))
                             .build();
                     routine.getParameters().add(param);
                 }
             }
             return new ArrayList<>(routines.values());
         });
+    }
+
+    static String formatRoutineDataType(
+            String dataType,
+            Integer characterLength,
+            Integer numericPrecision,
+            Integer numericScale,
+            Integer datetimePrecision) {
+        if (dataType == null || dataType.isBlank()) {
+            return dataType;
+        }
+
+        String normalized = dataType.trim().toUpperCase(Locale.ROOT);
+        if (List.of("CHAR", "VARCHAR", "NCHAR", "NVARCHAR", "BINARY", "VARBINARY").contains(normalized)
+                && characterLength != null) {
+            return normalized + "(" + (characterLength == -1 ? "MAX" : characterLength) + ")";
+        }
+        if (("DECIMAL".equals(normalized) || "NUMERIC".equals(normalized))
+                && numericPrecision != null && numericScale != null) {
+            return normalized + "(" + numericPrecision + "," + numericScale + ")";
+        }
+        if ("FLOAT".equals(normalized) && numericPrecision != null) {
+            return normalized + "(" + numericPrecision + ")";
+        }
+        if (List.of("TIME", "DATETIME2", "DATETIMEOFFSET").contains(normalized)
+                && datetimePrecision != null) {
+            return normalized + "(" + datetimePrecision + ")";
+        }
+        return normalized;
+    }
+
+    private static Integer nullableInteger(ResultSet resultSet, String columnLabel) throws SQLException {
+        int value = resultSet.getInt(columnLabel);
+        return resultSet.wasNull() ? null : value;
     }
 
     @Override

@@ -3676,7 +3676,7 @@ public class RubricTestingUsecase {
                     params.add(RoutineMetadata.ParameterMetadata.builder()
                             .parameterName(p.path("name").asText("").trim())
                             .dataType(p.path("expected_type").asText("").trim())
-                            .parameterMode(p.path("expected_mode").asText("").trim())
+                            .parameterMode(p.path("expected_mode").asText("IN").trim())
                             .build());
                 }
             }

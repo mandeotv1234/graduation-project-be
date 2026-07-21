@@ -609,15 +609,17 @@ public class GradingSupport {
             return gradeByStrictComparison(schemaName, question);
         }
 
-        boolean useDeductionScoring = question.getQuestionType() == QuestionType.STORED_PROCEDURE;
-        BigDecimal earnedTotal = useDeductionScoring ? BigDecimal.ONE : BigDecimal.ZERO;
+        List<BigDecimal> normalizedWeights = TestCaseWeightNormalizer.normalize(
+                testCases.stream().map(TestCase::getScoreWeight).toList());
+        BigDecimal earnedTotal = BigDecimal.ZERO;
         boolean allPassed = true;
         StringBuilder errorBuilder = new StringBuilder();
         String printOutputCompareMode = readPrintOutputCompareMode(question);
 
-        for (TestCase tc : testCases) {
+        for (int testCaseIndex = 0; testCaseIndex < testCases.size(); testCaseIndex++) {
+            TestCase tc = testCases.get(testCaseIndex);
             int tcOrder = tc.getOrderIndex() != null ? tc.getOrderIndex() : 0;
-            BigDecimal caseWeight = tc.getScoreWeight() != null ? tc.getScoreWeight() : BigDecimal.ZERO;
+            BigDecimal caseWeight = normalizedWeights.get(testCaseIndex);
             try {
                 TestCaseRunResult run = runOneTestCase(schemaName, teacherSchemaName, tc);
                 String actualSerialized = run.actualValue;
@@ -631,14 +633,9 @@ public class GradingSupport {
                         truncateForLog(actualSerialized), truncateForLog(expected), isTcCorrect);
 
                 if (isTcCorrect) {
-                    if (!useDeductionScoring) {
-                        earnedTotal = earnedTotal.add(caseWeight);
-                    }
+                    earnedTotal = earnedTotal.add(caseWeight);
                 } else {
                     allPassed = false;
-                    if (useDeductionScoring) {
-                        earnedTotal = earnedTotal.subtract(caseWeight);
-                    }
                     String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
                 errorBuilder.append(String.format("[%s] mong đợi='%s', thực tế='%s'. ",
                             tcLabel, truncateForLog(expected), truncateForLog(actualSerialized)));
@@ -663,9 +660,6 @@ public class GradingSupport {
                 }
             } catch (Exception e) {
                 allPassed = false;
-                if (useDeductionScoring) {
-                    earnedTotal = earnedTotal.subtract(caseWeight);
-                }
                 String tcLabel = tc.getCaseName() != null ? tc.getCaseName() : "TC" + tcOrder;
                 errorBuilder.append(String.format("[%s] lỗi khi chạy test case: %s. ", tcLabel, e.getMessage()));
                 log.error("[gradeByTestCases] Câu {} TC{} phát sinh lỗi: {}",

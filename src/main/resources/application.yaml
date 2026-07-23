@@ -9,9 +9,27 @@ spring:
     redis:
       repositories:
         enabled: false
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_APP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
 app:
   upload:
     pdf-dir: ${APP_UPLOAD_PDF_DIR:uploads/exams/pdf}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:${MAIL_USERNAME:}}
+    from-name: ${MAIL_FROM_NAME:Ứng dụng Hỗ trợ Giảng dạy và Đánh giá Học phần Cơ sở Dữ liệu}
 
 grading:
   worker:

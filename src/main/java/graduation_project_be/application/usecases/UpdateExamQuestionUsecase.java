@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 
 @RequiredArgsConstructor
 public class UpdateExamQuestionUsecase {
@@ -52,6 +54,16 @@ public class UpdateExamQuestionUsecase {
         if (!question.getExamId().equals(request.examId())) {
             throw new RuntimeException("Question does not belong to this exam");
         }
+
+        ExamSettingsValidator.validateQuestionPoints(request.points());
+        ExamSettingsValidator.validateQuestionMetadata(
+                request.difficultyLevel(), request.orderIndex());
+        List<BigDecimal> totalPoints = examQuestionRepository.findByExamId(request.examId()).stream()
+                .filter(item -> !item.getId().equals(question.getId()))
+                .map(ExamQuestion::getPoints).toList();
+        totalPoints = new java.util.ArrayList<>(totalPoints);
+        totalPoints.add(request.points());
+        ExamSettingsValidator.validateTotalPoints(totalPoints);
 
         question.setContent(request.content());
         question.setCorrectQuery(request.correctQuery());

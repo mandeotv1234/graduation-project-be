@@ -1,5 +1,6 @@
 package graduation_project_be.application.usecases;
 
+import graduation_project_be.application.exceptions.UnauthorizedException;
 import graduation_project_be.application.port.repositories.UserRepository;
 import graduation_project_be.application.port.services.GoogleAuthService;
 import graduation_project_be.application.port.services.MicrosoftAuthService;
@@ -16,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -72,6 +74,61 @@ class OAuthLoginNameSyncUsecaseTest {
         assertThat(existingUser.getPassword()).isEqualTo("$2a$10$existing-hash");
         assertThat(response).isSameAs(expectedResponse);
         verify(userRepository).save(existingUser);
+    }
+
+    @Test
+    void googleLogin_should_allowExistingVngTeacher() {
+        User existingUser = User.builder()
+                .id(4L)
+                .email("manh@vng.com.vn")
+                .password("$2a$10$existing-hash")
+                .fullName("Mạnh Huỳnh")
+                .role(Role.TEACHER)
+                .isActive(true)
+                .build();
+        GoogleAuthService.GoogleUserInfo googleUserInfo = new GoogleAuthService.GoogleUserInfo(
+                existingUser.getEmail(),
+                "vng-google-subject",
+                "Mạnh Huỳnh");
+        LoginResponse expectedResponse = LoginResponse.builder().accessToken("access-token").build();
+
+        when(googleAuthService.verifyGoogleToken("code", "http://localhost:3000"))
+                .thenReturn(googleUserInfo);
+        when(userRepository.findByEmail(existingUser.getEmail())).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(existingUser)).thenReturn(existingUser);
+        when(tokenIssuer.issueToken(existingUser)).thenReturn(expectedResponse);
+
+        GoogleLoginUsecase usecase = new GoogleLoginUsecase(userRepository, googleAuthService, tokenIssuer);
+        LoginResponse response = usecase.execute(new GoogleLoginRequest(
+                "code",
+                "http://localhost:3000",
+                true));
+
+        assertThat(response).isSameAs(expectedResponse);
+        assertThat(existingUser.getGoogleSubject()).isEqualTo("vng-google-subject");
+        verify(userRepository).save(existingUser);
+    }
+
+    @Test
+    void googleLogin_should_rejectOtherVngAccounts() {
+        GoogleAuthService.GoogleUserInfo googleUserInfo = new GoogleAuthService.GoogleUserInfo(
+                "other@vng.com.vn",
+                "other-vng-subject",
+                "Other VNG User");
+
+        when(googleAuthService.verifyGoogleToken("code", "http://localhost:3000"))
+                .thenReturn(googleUserInfo);
+
+        GoogleLoginUsecase usecase = new GoogleLoginUsecase(userRepository, googleAuthService, tokenIssuer);
+
+        assertThatThrownBy(() -> usecase.execute(new GoogleLoginRequest(
+                "code",
+                "http://localhost:3000",
+                true)))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessageContaining("không thuộc danh sách");
+
+        verify(userRepository, never()).findByEmail("other@vng.com.vn");
     }
 
     @Test

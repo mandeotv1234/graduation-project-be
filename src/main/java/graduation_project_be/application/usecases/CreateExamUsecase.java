@@ -44,21 +44,30 @@ public class CreateExamUsecase {
                 examSpecificationRepository,
                 specificationId,
                 request.settings());
-        ExamSettingsValidator.validateExamTimeWindow(request.startTime(), request.endTime());
+        int maxAttempts = request.maxAttempts() != null ? request.maxAttempts() : 1;
+        int lateThreshold = request.lateThreshold() != null ? request.lateThreshold() : 0;
+        ExamSettingsValidator.validateExamConfiguration(
+                request.title(),
+                request.durationMinutes(),
+                request.startTime(),
+                request.endTime(),
+                maxAttempts,
+                lateThreshold,
+                request.settings());
 
         Exam exam = Exam.builder()
                 .specificationId(specificationId)
                 .classId(request.classId())
                 .creatorId(currentUserId)
-                .title(request.title())
+                .title(request.title().trim())
                 .durationMinutes(request.durationMinutes())
                 .startTime(request.startTime())
                 .endTime(request.endTime())
                 .isPublished(request.isPublished() != null ? request.isPublished() : false)
                 .createdAt(TimeUtils.now())
                 .description(request.description())
-                .maxAttempts(request.maxAttempts() != null ? request.maxAttempts() : 1)
-                .lateThreshold(request.lateThreshold() != null ? request.lateThreshold() : 0)
+                .maxAttempts(maxAttempts)
+                .lateThreshold(lateThreshold)
                 .settings(request.settings())
                 .pdfFilePath(hasPdf ? request.pdfFilePath() : null)
                 .originalPdfFileName(hasPdf ? request.originalPdfFileName() : null)

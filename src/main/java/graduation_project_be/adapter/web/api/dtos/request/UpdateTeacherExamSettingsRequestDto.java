@@ -5,19 +5,31 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 
 import java.time.LocalDateTime;
 
 public record UpdateTeacherExamSettingsRequestDto(
-        @NotBlank(message = "Title is required") String title,
-        @NotNull(message = "Duration is required") @Positive(message = "Duration must be positive") Integer durationMinutes,
+        @NotBlank(message = "Title is required")
+        @Size(max = 255, message = "Title must not exceed 255 characters")
+        String title,
+        @NotNull(message = "Duration is required")
+        @Positive(message = "Duration must be positive")
+        @Max(value = 240, message = "Duration must not exceed 240 minutes")
+        Integer durationMinutes,
         LocalDateTime startTime,
         LocalDateTime endTime,
         Boolean isPublished,
         String description,
-        @Positive(message = "Max attempts must be positive") Integer maxAttempts,
-        @PositiveOrZero(message = "Late threshold must be positive or zero") Integer lateThreshold,
-        ExamSettingsDto settings
+        @Positive(message = "Max attempts must be positive")
+        @Max(value = 99, message = "Max attempts must not exceed 99")
+        Integer maxAttempts,
+        @PositiveOrZero(message = "Late threshold must be positive or zero")
+        @Max(value = 240, message = "Late threshold must not exceed 240 minutes")
+        Integer lateThreshold,
+        @Valid ExamSettingsDto settings
 ) {
     public UpdateTeacherExamSettingsRequest toRequest() {
         return new UpdateTeacherExamSettingsRequest(

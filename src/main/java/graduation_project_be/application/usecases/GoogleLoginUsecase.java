@@ -15,6 +15,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class GoogleLoginUsecase {
 
+    private static final String VNG_TEST_TEACHER_EMAIL = "manh@vng.com.vn";
+
     private final UserRepository userRepository;
     private final GoogleAuthService googleAuthService;
     private final TokenIssuer tokenIssuer;
@@ -25,16 +27,19 @@ public class GoogleLoginUsecase {
                     request.code(),
                     request.redirectUri());
 
-             if (!googleUserInfo.email().endsWith("@fit.hcmus.edu.vn")) {
-                 throw new UnauthorizedException("Chỉ cho phép sử dụng email thuộc @fit.hcmus.edu.vn để đăng nhập");
-             }
+            String normalizedEmail = googleUserInfo.email().trim().toLowerCase();
+            if (!normalizedEmail.endsWith("@fit.hcmus.edu.vn")
+                    && !VNG_TEST_TEACHER_EMAIL.equals(normalizedEmail)) {
+                throw new UnauthorizedException(
+                        "Email Google không thuộc danh sách được phép đăng nhập");
+            }
 
-            Optional<User> userOptional = userRepository.findByEmail(googleUserInfo.email());
+            Optional<User> userOptional = userRepository.findByEmail(normalizedEmail);
 
             User user;
             if (userOptional.isEmpty()) {
                 user = User.builder()
-                        .email(googleUserInfo.email())
+                        .email(normalizedEmail)
                         .fullName(normalizeProviderName(googleUserInfo.name()))
                         .googleSubject(googleUserInfo.subject())
                         .role(Role.TEACHER)

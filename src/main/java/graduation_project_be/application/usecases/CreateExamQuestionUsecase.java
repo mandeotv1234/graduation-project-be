@@ -10,11 +10,16 @@ import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.AIService;
 import graduation_project_be.application.usecases.request.CreateExamQuestionRequest;
 import graduation_project_be.application.usecases.response.ExamQuestionResponse;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 import graduation_project_be.domain.models.Exam;
 import graduation_project_be.domain.models.ExamQuestion;
 import graduation_project_be.domain.models.QuestionType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -37,6 +42,15 @@ public class CreateExamQuestionUsecase {
         if (!hasAccess) {
             throw new UnauthorizedException("You do not have access to this exam");
         }
+
+        ExamSettingsValidator.validateQuestionPoints(request.points());
+        ExamSettingsValidator.validateQuestionMetadata(
+                request.difficultyLevel(), request.orderIndex());
+        List<BigDecimal> totalPoints = new ArrayList<>(examQuestionRepository.findByExamId(request.examId()).stream()
+                .map(ExamQuestion::getPoints)
+                .toList());
+        totalPoints.add(request.points());
+        ExamSettingsValidator.validateTotalPoints(totalPoints);
 
         // Validate & parse question type
         QuestionType questionType;

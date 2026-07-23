@@ -53,7 +53,15 @@ public class UpdateTeacherExamSettingsUsecase {
                 examSpecificationRepository,
                 updatedExam.getSpecificationId(),
                 updatedExam.getSettings());
-        ExamSettingsValidator.validateExamTimeWindow(updatedExam.getStartTime(), updatedExam.getEndTime());
+        ExamSettingsValidator.validateExamConfiguration(
+                updatedExam.getTitle(),
+                updatedExam.getDurationMinutes(),
+                updatedExam.getStartTime(),
+                updatedExam.getEndTime(),
+                updatedExam.getMaxAttempts(),
+                updatedExam.getLateThreshold(),
+                updatedExam.getSettings());
+        updatedExam.setTitle(updatedExam.getTitle().trim());
 
         return CreateExamResponse.fromModel(examRepository.save(updatedExam));
     }

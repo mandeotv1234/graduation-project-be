@@ -5,16 +5,21 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 
 public record CreateExamRequestDto(
         Long specificationId,
 
-        @NotNull(message = "Class ID is required") Long classId,
+        @NotNull(message = "Class ID is required") @Positive(message = "Class ID must be positive") Long classId,
 
-        @NotBlank(message = "Title is required") String title,
+        @NotBlank(message = "Title is required")
+        @Size(max = 255, message = "Title must not exceed 255 characters")
+        String title,
 
-        @NotNull(message = "Duration is required") @Positive(message = "Duration must be positive") Integer durationMinutes,
+        @NotNull(message = "Duration is required") @Positive(message = "Duration must be positive") @Max(value = 240, message = "Duration must not exceed 240 minutes") Integer durationMinutes,
 
         LocalDateTime startTime,
 
@@ -24,11 +29,15 @@ public record CreateExamRequestDto(
 
         String description,
 
-        @Positive(message = "Max attempts must be positive") Integer maxAttempts,
+        @Positive(message = "Max attempts must be positive")
+        @Max(value = 99, message = "Max attempts must not exceed 99")
+        Integer maxAttempts,
 
-        @PositiveOrZero(message = "Late threshold must be positive or zero") Integer lateThreshold,
+        @PositiveOrZero(message = "Late threshold must be positive or zero")
+        @Max(value = 240, message = "Late threshold must not exceed 240 minutes")
+        Integer lateThreshold,
 
-        ExamSettingsDto settings) {
+        @Valid ExamSettingsDto settings) {
     public CreateExamRequest toRequest() {
         return toRequest(null, null);
     }

@@ -26,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import graduation_project_be.application.usecases.support.ExamSettingsValidator;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -54,6 +56,19 @@ public class CreateExamQuestionsUsecase {
         if (!hasAccess) {
             throw new UnauthorizedException("You do not have access to this exam");
         }
+
+        request.questions().forEach(item -> {
+            ExamSettingsValidator.validateQuestionPoints(item.points());
+            ExamSettingsValidator.validateQuestionMetadata(
+                    item.difficultyLevel(), item.orderIndex());
+        });
+        List<BigDecimal> existingPoints = examQuestionRepository.findByExamId(request.examId()).stream()
+                .map(ExamQuestion::getPoints)
+                .toList();
+        ExamSettingsValidator.validateTotalPoints(java.util.stream.Stream.concat(
+                        existingPoints.stream(),
+                        request.questions().stream().map(CreateExamQuestionsRequest.QuestionItem::points))
+                .toList());
 
         boolean requiresAi = request.questions().stream()
                 .anyMatch(item -> item.correctQuery() == null || item.correctQuery().isBlank());

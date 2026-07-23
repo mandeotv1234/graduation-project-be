@@ -804,11 +804,13 @@ public class UsecasesConfiguration {
     AddTeacherToClassUsecase addTeacherToClassUsecase(
             ClassRepository classRepository,
             UserRepository userRepository,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            TeacherClassNotificationService teacherClassNotificationService) {
         return new AddTeacherToClassUsecase(
                 classRepository,
                 userRepository,
-                currentUserService);
+                currentUserService,
+                teacherClassNotificationService);
     }
 
     @Bean
@@ -825,10 +827,14 @@ public class UsecasesConfiguration {
     @Bean
     RemoveTeacherFromClassUsecase removeTeacherFromClassUsecase(
             ClassRepository classRepository,
-            CurrentUserService currentUserService) {
+            UserRepository userRepository,
+            CurrentUserService currentUserService,
+            TeacherClassNotificationService teacherClassNotificationService) {
         return new RemoveTeacherFromClassUsecase(
                 classRepository,
-                currentUserService);
+                userRepository,
+                currentUserService,
+                teacherClassNotificationService);
     }
 
     // ===== LIBRARY USECASES =====

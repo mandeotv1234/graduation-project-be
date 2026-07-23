@@ -1,0 +1,36 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2307260101
+      author: manhuynh
+      comment: "GRAD-229: Seed VNG teacher account for email testing"
+      preConditions:
+        - onFail: MARK_RAN
+          sqlCheck:
+            expectedResult: 0
+            sql: "SELECT COUNT(*) FROM users WHERE LOWER(email) = 'manh@vng.com.vn'"
+      changes:
+        - insert:
+            tableName: users
+            columns:
+              - column:
+                  name: email
+                  value: manh@vng.com.vn
+              - column:
+                  name: password
+                  value: '$2a$10$/oj89qu3DgWb7DQYcnoKceWN1l8kfODnG01r/lbpquQ.p.esvH2AW'
+              - column:
+                  name: full_name
+                  value: Mạnh Huỳnh
+              - column:
+                  name: role
+                  value: TEACHER
+              - column:
+                  name: is_active
+                  valueBoolean: true
+              - column:
+                  name: created_at
+                  valueDate: now()
+      rollback:
+        - delete:
+            tableName: users
+            where: email = 'manh@vng.com.vn'

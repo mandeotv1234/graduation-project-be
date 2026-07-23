@@ -38,7 +38,7 @@ public class UpdateExamUsecase {
 
         // Update fields if provided
         if (request.title() != null) {
-            exam.setTitle(request.title());
+            exam.setTitle(request.title().trim());
         }
         // Spec và PDF độc lập: gắn/gỡ đặc tả không còn xoá PDF (và ngược lại).
         if (request.specificationId() != null) {
@@ -88,7 +88,14 @@ public class UpdateExamUsecase {
                 examSpecificationRepository,
                 exam.getSpecificationId(),
                 exam.getSettings());
-        ExamSettingsValidator.validateExamTimeWindow(exam.getStartTime(), exam.getEndTime());
+        ExamSettingsValidator.validateExamConfiguration(
+                exam.getTitle(),
+                exam.getDurationMinutes(),
+                exam.getStartTime(),
+                exam.getEndTime(),
+                exam.getMaxAttempts(),
+                exam.getLateThreshold(),
+                exam.getSettings());
 
         Exam savedExam = examRepository.save(exam);
         log.info("Exam updated successfully: {}", savedExam.getId());

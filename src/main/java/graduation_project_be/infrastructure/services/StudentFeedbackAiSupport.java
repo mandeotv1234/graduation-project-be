@@ -24,6 +24,8 @@ final class StudentFeedbackAiSupport {
                 - Feedback phải cụ thể theo lỗi: JOIN, điều kiện WHERE, ORDER BY, PK/FK, kiểu dữ liệu, test case, trigger/procedure/function nếu có.
                 - Giọng văn thẳng, dễ hiểu, có định hướng học tập.
                 - Chỉ trả JSON hợp lệ, không markdown.
+                - `questionId` trong dữ liệu và JSON đầu ra là số thứ tự câu hiển thị trong đề.
+                  Khi viết nhận xét, chỉ gọi "Câu <questionId>"; tuyệt đối không suy diễn hoặc dùng khóa chính database.
                 - Nếu trace item có trường `mutation_type=<loại>`, hãy dùng loại đó để chỉ đích danh lỗi sinh viên mắc:
                   MISSING_JOIN_CONDITION=thiếu điều kiện JOIN, WRONG_JOIN_TYPE=sai loại JOIN, NULL_HANDLING=xử lý NULL sai,
                   WRONG_AGGREGATE=hàm tổng hợp sai, MISSING_GROUP_BY=thiếu GROUP BY, WRONG_HAVING_VS_WHERE=nhầm HAVING/WHERE,

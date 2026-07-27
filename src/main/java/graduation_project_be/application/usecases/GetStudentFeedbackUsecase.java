@@ -32,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -104,6 +105,15 @@ public class GetStudentFeedbackUsecase {
                 .filter(snapshot -> !isFeedbackStale(result, snapshot))
                 .map(ExamResultFeedback::getFeedbackJson)
                 .map(this::parseStoredFeedback)
+                .filter(feedback -> {
+                    boolean hasLegacyReferences = hasLegacyDatabaseQuestionReferences(feedback);
+                    if (hasLegacyReferences) {
+                        log.info(
+                                "Regenerating student feedback snapshot for result {} because it references database question IDs",
+                                result.getId());
+                    }
+                    return !hasLegacyReferences;
+                })
                 .orElse(null);
     }
 
@@ -376,7 +386,7 @@ public class GetStudentFeedbackUsecase {
                         .toList();
 
         return new AIService.StudentFeedbackQuestion(
-                question.getId(),
+                (long) context.orderIndex(),
                 context.orderIndex(),
                 question.getQuestionType() != null ? question.getQuestionType().name() : "UNKNOWN",
                 truncate(stripHtml(question.getContent()), 1200),
@@ -391,18 +401,18 @@ public class GetStudentFeedbackUsecase {
     private GetStudentFeedbackResponse mergeAiDraft(
             GetStudentFeedbackResponse fallback,
             AIService.StudentFeedbackDraft draft) {
-        Map<Long, AIService.StudentQuestionFeedbackDraft> aiByQuestionId = draft.questionFeedbacks() == null
+        Map<Integer, AIService.StudentQuestionFeedbackDraft> aiByOrderIndex = draft.questionFeedbacks() == null
                 ? Map.of()
                 : draft.questionFeedbacks().stream()
                         .filter(item -> item.questionId() != null)
                         .collect(Collectors.toMap(
-                                AIService.StudentQuestionFeedbackDraft::questionId,
+                                item -> item.questionId().intValue(),
                                 item -> item,
                                 (left, ignored) -> left,
                                 LinkedHashMap::new));
 
         List<GetStudentFeedbackResponse.QuestionFeedback> mergedQuestions = fallback.questionFeedbacks().stream()
-                .map(question -> mergeQuestionFeedback(question, aiByQuestionId.get(question.questionId())))
+                .map(question -> mergeQuestionFeedback(question, aiByOrderIndex.get(question.orderIndex())))
                 .toList();
 
         return new GetStudentFeedbackResponse(
@@ -422,6 +432,43 @@ public class GetStudentFeedbackUsecase {
                 chooseList(draft.weaknesses(), fallback.weaknesses()),
                 chooseList(draft.studyAdvice(), fallback.studyAdvice()),
                 mergedQuestions);
+    }
+
+    static boolean hasLegacyDatabaseQuestionReferences(GetStudentFeedbackResponse feedback) {
+        if (feedback == null || !feedback.generatedByAi() || feedback.questionFeedbacks() == null) {
+            return false;
+        }
+
+        List<String> feedbackTexts = new ArrayList<>();
+        feedbackTexts.add(feedback.overallFeedback());
+        feedbackTexts.add(feedback.progressFeedback());
+        addTexts(feedbackTexts, feedback.strengths());
+        addTexts(feedbackTexts, feedback.weaknesses());
+        addTexts(feedbackTexts, feedback.studyAdvice());
+        feedback.questionFeedbacks().forEach(question -> {
+            feedbackTexts.add(question.diagnosis());
+            addTexts(feedbackTexts, question.mistakes());
+            addTexts(feedbackTexts, question.advice());
+        });
+
+        return feedback.questionFeedbacks().stream()
+                .filter(question -> question.questionId() != null)
+                .filter(question -> question.questionId().longValue() != question.orderIndex())
+                .anyMatch(question -> {
+                    Pattern legacyReference = Pattern.compile(
+                            "(?iu)(?<!\\p{L})câu\\s+(?:số\\s+)?"
+                                    + Pattern.quote(String.valueOf(question.questionId()))
+                                    + "(?!\\d)");
+                    return feedbackTexts.stream()
+                            .filter(text -> text != null && !text.isBlank())
+                            .anyMatch(text -> legacyReference.matcher(text).find());
+                });
+    }
+
+    private static void addTexts(List<String> target, List<String> values) {
+        if (values != null) {
+            target.addAll(values);
+        }
     }
 
     private GetStudentFeedbackResponse.QuestionFeedback mergeQuestionFeedback(

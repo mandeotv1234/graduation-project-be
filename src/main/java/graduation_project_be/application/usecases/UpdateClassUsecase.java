@@ -9,6 +9,7 @@ import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.PasswordEncoder;
 import graduation_project_be.application.usecases.request.UpdateClassRequest;
 import graduation_project_be.application.usecases.response.CreateClassResponse;
+import graduation_project_be.application.usecases.support.ClassInputValidator;
 import graduation_project_be.domain.models.Class;
 import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.User;
@@ -51,9 +52,10 @@ public class UpdateClassUsecase {
             throw new RuntimeException("You are not authorized to update this class");
         }
 
+        ClassInputValidator.validateClassDetails(request.classCode(), request.semester());
         
-        existingClass.setClassCode(request.classCode());
-        existingClass.setSemester(request.semester());
+        existingClass.setClassCode(request.classCode().trim());
+        existingClass.setSemester(request.semester().trim());
         
         Class savedClass = classRepository.save(existingClass);
 
@@ -117,8 +119,8 @@ public class UpdateClassUsecase {
                 continue;
             }
             String studentCode = studentInfo.studentId().trim();
-            if (!studentCode.matches("\\d+")) {
-                throw new BadRequestException("MSSV chỉ được chứa chữ số: " + studentCode);
+            if (!ClassInputValidator.isValidStudentCode(studentCode)) {
+                throw new BadRequestException("MSSV phải gồm đúng 8 chữ số: " + studentCode);
             }
             if (normalized.containsKey(studentCode)) {
                 throw new BadRequestException("Danh sách sinh viên có MSSV bị trùng: " + studentCode);

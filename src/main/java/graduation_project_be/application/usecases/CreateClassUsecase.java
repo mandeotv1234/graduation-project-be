@@ -9,6 +9,7 @@ import graduation_project_be.application.port.services.CurrentUserService;
 import graduation_project_be.application.port.services.PasswordEncoder;
 import graduation_project_be.application.usecases.request.CreateClassRequest;
 import graduation_project_be.application.usecases.response.CreateClassResponse;
+import graduation_project_be.application.usecases.support.ClassInputValidator;
 import graduation_project_be.domain.models.Class;
 import graduation_project_be.domain.models.ClassEnrollment;
 import graduation_project_be.domain.models.TeacherClass;
@@ -38,10 +39,11 @@ public class CreateClassUsecase {
     @Transactional
     public CreateClassResponse execute(CreateClassRequest request) {
         Long teacherId = currentUserService.getCurrentUserId();
+        ClassInputValidator.validateClassDetails(request.classCode(), request.semester());
 
         Class newClass = Class.builder()
-                .classCode(request.classCode())
-                .semester(request.semester())
+                .classCode(request.classCode().trim())
+                .semester(request.semester().trim())
                 .creatorId(teacherId)
                 .createdAt(TimeUtils.now())
                 .build();
@@ -114,8 +116,8 @@ public class CreateClassUsecase {
                 continue;
             }
             String studentCode = studentInfo.studentId().trim();
-            if (!studentCode.matches("\\d+")) {
-                throw new BadRequestException("MSSV chỉ được chứa chữ số: " + studentCode);
+            if (!ClassInputValidator.isValidStudentCode(studentCode)) {
+                throw new BadRequestException("MSSV phải gồm đúng 8 chữ số: " + studentCode);
             }
             if (normalized.containsKey(studentCode)) {
                 throw new BadRequestException("Danh sách sinh viên có MSSV bị trùng: " + studentCode);

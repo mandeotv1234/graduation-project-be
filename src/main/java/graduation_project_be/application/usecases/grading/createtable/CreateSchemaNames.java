@@ -73,13 +73,76 @@ final class CreateSchemaNames {
     }
 
     static String extractTypeFamily(String normalizedType) {
+        return extractTypeFamily(normalizedType, false, null);
+    }
+
+    static String extractTypeFamily(String normalizedType, boolean checkDataTypeFamily, java.util.Map<String, String> customTypeFamilies) {
         if (normalizedType == null) {
             return "";
         }
+        String baseType;
         int parenIndex = normalizedType.indexOf('(');
         if (parenIndex > 0) {
-            return normalizedType.substring(0, parenIndex).trim();
+            baseType = normalizedType.substring(0, parenIndex).trim();
+        } else {
+            baseType = normalizedType.trim();
         }
-        return normalizedType.trim();
+
+        if (!checkDataTypeFamily) {
+            return baseType;
+        }
+
+        int spaceIndex = baseType.indexOf(' ');
+        if (spaceIndex > 0) {
+            baseType = baseType.substring(0, spaceIndex).trim();
+        }
+
+        if (customTypeFamilies != null && !customTypeFamilies.isEmpty()) {
+            return customTypeFamilies.getOrDefault(baseType, baseType);
+        }
+
+        switch (baseType) {
+            case "VARCHAR":
+            case "NVARCHAR":
+            case "CHAR":
+            case "NCHAR":
+            case "TEXT":
+            case "NTEXT":
+                return "STRING_FAMILY";
+            case "FLOAT":
+            case "DOUBLE":
+            case "REAL":
+            case "DECIMAL":
+            case "NUMERIC":
+            case "MONEY":
+            case "SMALLMONEY":
+                return "NUMERIC_FAMILY";
+            case "INT":
+            case "INTEGER":
+            case "BIGINT":
+            case "SMALLINT":
+            case "TINYINT":
+                return "INT_FAMILY";
+            case "DATE":
+            case "DATETIME":
+            case "DATETIME2":
+            case "SMALLDATETIME":
+            case "TIME":
+            case "TIMESTAMP":
+                return "DATETIME_FAMILY";
+            default:
+                return baseType;
+        }
+    }
+
+    static String extractTypeLength(String normalizedType) {
+        if (normalizedType == null) {
+            return "";
+        }
+        int start = normalizedType.indexOf('(');
+        if (start < 0) return "";
+        int end = normalizedType.lastIndexOf(')');
+        if (end > start) return normalizedType.substring(start + 1, end).trim();
+        return "";
     }
 }

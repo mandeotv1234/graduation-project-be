@@ -23,6 +23,16 @@ public final class CreateSchemaGraphComparator {
             CreateSchemaGraph expected,
             CreateSchemaGraph actual,
             boolean caseSensitive) {
+        return compare(expected, actual, caseSensitive, false, false, Map.of());
+    }
+
+    public static List<CreateSchemaEdit> compare(
+            CreateSchemaGraph expected,
+            CreateSchemaGraph actual,
+            boolean caseSensitive,
+            boolean checkDataTypeFamily,
+            boolean strictDataTypeLength,
+            Map<String, String> customTypeFamilies) {
         List<CreateSchemaEdit> edits = new ArrayList<>();
         Map<String, CreateSchemaGraph.TableNode> expectedTables = expected.tables();
         Map<String, CreateSchemaGraph.TableNode> actualTables = actual.tables();
@@ -97,7 +107,7 @@ public final class CreateSchemaGraphComparator {
             CreateSchemaGraph.TableNode actualTable = entry.getValue();
             
             if (expectedTable != null && actualTable != null) {
-                compareColumns(edits, expectedTable, actualTable, caseSensitive);
+                compareColumns(edits, expectedTable, actualTable, caseSensitive, checkDataTypeFamily, strictDataTypeLength, customTypeFamilies);
                 comparePrimaryOrUnique(edits, expectedTable, actualTable, "PRIMARY_KEY",
                         "PRIMARY_KEY", "IS_MISSING", "PRIMARY_KEY", "IS_EXTRA", caseSensitive);
                 compareForeignKeys(edits, expectedTable, actualTable, caseSensitive);
@@ -115,7 +125,10 @@ public final class CreateSchemaGraphComparator {
             List<CreateSchemaEdit> edits,
             CreateSchemaGraph.TableNode expectedTable,
             CreateSchemaGraph.TableNode actualTable,
-            boolean caseSensitive) {
+            boolean caseSensitive,
+            boolean checkDataTypeFamily,
+            boolean strictDataTypeLength,
+            Map<String, String> customTypeFamilies) {
         
         List<CreateSchemaGraph.ColumnNode> unmappedExpected = new ArrayList<>();
         List<CreateSchemaGraph.ColumnNode> unmappedActual = new ArrayList<>();
@@ -151,8 +164,8 @@ public final class CreateSchemaGraphComparator {
                 CreateSchemaGraph.ColumnNode bestMatch = null;
                 for (CreateSchemaGraph.ColumnNode act : unmappedActual) {
                     if (newlyMappedAct.contains(act)) continue;
-                    String expFamily = CreateSchemaNames.extractTypeFamily(exp.normalizedType());
-                    String actFamily = CreateSchemaNames.extractTypeFamily(act.normalizedType());
+                    String expFamily = CreateSchemaNames.extractTypeFamily(exp.normalizedType(), checkDataTypeFamily, customTypeFamilies);
+                    String actFamily = CreateSchemaNames.extractTypeFamily(act.normalizedType(), checkDataTypeFamily, customTypeFamilies);
                     if (expFamily.equals(actFamily) && !expFamily.isBlank()) {
                         bestMatch = act;
                         break;
@@ -188,10 +201,12 @@ public final class CreateSchemaGraphComparator {
             if (expectedColumn == null) continue;
 
             if (!expectedColumn.normalizedType().isBlank()) {
-                String expectedFamily = CreateSchemaNames.extractTypeFamily(expectedColumn.normalizedType());
-                String actualFamily = CreateSchemaNames.extractTypeFamily(actualColumn.normalizedType());
+                String expectedFamily = CreateSchemaNames.extractTypeFamily(expectedColumn.normalizedType(), checkDataTypeFamily, customTypeFamilies);
+                String actualFamily = CreateSchemaNames.extractTypeFamily(actualColumn.normalizedType(), checkDataTypeFamily, customTypeFamilies);
                 
                 if (!expectedFamily.equals(actualFamily)) {
+                    String expectedDisplayType = displaySqlType(expectedColumn.rawType(), expectedColumn.normalizedType());
+                    String actualDisplayType = displaySqlType(actualColumn.rawType(), actualColumn.normalizedType());
                     edits.add(edit(
                             "DATA_TYPE", "FAMILY_MISMATCH",
                             expectedTable.name(),
@@ -199,11 +214,13 @@ public final class CreateSchemaGraphComparator {
                             null,
                             null,
                             List.of(),
-                            expectedFamily,
-                            actualFamily,
+                            expectedDisplayType,
+                            actualDisplayType,
                             String.format("Bảng %s: cột %s sai họ kiểu dữ liệu (kỳ vọng: %s, thực tế: %s)",
-                                    expectedTable.name(), expectedColumn.name(), expectedFamily, actualFamily)));
-                } else if (!expectedColumn.normalizedType().equals(actualColumn.normalizedType())) {
+                                    expectedTable.name(), expectedColumn.name(), expectedDisplayType, actualDisplayType)));
+                } else if (strictDataTypeLength
+                        && !CreateSchemaNames.extractTypeLength(expectedColumn.normalizedType())
+                                .equals(CreateSchemaNames.extractTypeLength(actualColumn.normalizedType()))) {
                     edits.add(edit(
                             "DATA_TYPE", "SIZE_MISMATCH",
                             expectedTable.name(),
@@ -257,6 +274,36 @@ public final class CreateSchemaGraphComparator {
                         String.format("Bảng %s: cột %s sai IDENTITY", expectedTable.name(), expectedColumn.name())));
             }
         }
+    }
+
+    private static boolean sameSqlTypeBase(String expectedType, String actualType) {
+        return sqlTypeBase(expectedType).equals(sqlTypeBase(actualType));
+    }
+
+    private static String sqlTypeBase(String sqlType) {
+        if (sqlType == null) {
+            return "";
+        }
+        String normalized = sqlType.trim();
+        int parenIndex = normalized.indexOf('(');
+        if (parenIndex >= 0) {
+            normalized = normalized.substring(0, parenIndex);
+        }
+        int spaceIndex = normalized.indexOf(' ');
+        if (spaceIndex >= 0) {
+            normalized = normalized.substring(0, spaceIndex);
+        }
+        return normalized.trim();
+    }
+
+    private static String displaySqlType(String rawType, String normalizedType) {
+        if (rawType != null && !rawType.isBlank()) {
+            return rawType.trim();
+        }
+        if (normalizedType != null && !normalizedType.isBlank()) {
+            return normalizedType.trim();
+        }
+        return "";
     }
 
     private static void comparePrimaryOrUnique(

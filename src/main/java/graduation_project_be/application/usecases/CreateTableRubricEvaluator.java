@@ -35,9 +35,29 @@ public final class CreateTableRubricEvaluator {
         JsonNode gradingRules = resolveCreateGradingRules(rubric, payload);
 
         boolean caseSensitive = settings.path("case_sensitive_names").asBoolean(false);
+        JsonNode familiesNode = settings.path("data_type_families");
+        boolean strictDataTypeLength = hasCreateRule(gradingRules, "DATA_TYPE", "SIZE_MISMATCH");
+        
+        Map<String, String> customTypeFamilies = new java.util.HashMap<>();
+        if (familiesNode.isArray()) {
+            for (int i = 0; i < familiesNode.size(); i++) {
+                JsonNode group = familiesNode.get(i);
+                if (group.isArray() && group.size() > 0) {
+                    String familyName = "CUSTOM_FAMILY_" + i;
+                    for (JsonNode typeNode : group) {
+                        String type = typeNode.asText("").trim().toUpperCase(Locale.ROOT);
+                        if (!type.isEmpty()) {
+                            customTypeFamilies.put(type, familyName);
+                        }
+                    }
+                }
+            }
+        }
+        boolean checkDataTypeFamily = !customTypeFamilies.isEmpty();
+
         CreateSchemaGraph expectedGraph = CreateSchemaGraphBuilder.fromRubric(tables, caseSensitive);
         CreateSchemaGraph actualGraph = CreateSchemaGraphBuilder.fromMetadata(actualTables, caseSensitive);
-        List<CreateSchemaEdit> edits = CreateSchemaGraphComparator.compare(expectedGraph, actualGraph, caseSensitive);
+        List<CreateSchemaEdit> edits = CreateSchemaGraphComparator.compare(expectedGraph, actualGraph, caseSensitive, checkDataTypeFamily, strictDataTypeLength, customTypeFamilies);
         CreateWeightedEditScorer.CreateScoringResult result = CreateWeightedEditScorer.score(
                 edits,
                 tables,
@@ -100,6 +120,22 @@ public final class CreateTableRubricEvaluator {
         }
 
         return com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
+    }
+
+    private static boolean hasCreateRule(JsonNode gradingRules, String target, String condition) {
+        if (gradingRules == null || !gradingRules.isArray()) {
+            return false;
+        }
+
+        for (JsonNode rule : gradingRules) {
+            String ruleTarget = rule.path("target").asText("").trim();
+            String ruleCondition = rule.path("condition").asText("").trim();
+            if (target.equalsIgnoreCase(ruleTarget) && condition.equalsIgnoreCase(ruleCondition)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static CreateRuleAdjustment applyCreateRuleAdjustments(
